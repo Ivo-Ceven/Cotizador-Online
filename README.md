@@ -1,59 +1,55 @@
-# Cotizador Online · Ceven
+# Cotizadores Ceven
 
-Aplicación web para armar cotizaciones de productos Apple (Mac, iPhone, iPad, accesorios y servicios), con gestión de pipeline de ventas, historial, garantías extendidas **CevenCare**, exportación a PDF/Excel y target anual de facturación.
+Plataforma de cotizadores multi-marca de Ceven. Hoy incluye el cotizador **Apple** (Mac, iPhone, iPad, accesorios y servicios) con pipeline de ventas, historial, garantías extendidas **CevenCare**, exportación a PDF/Excel y target anual; los cotizadores **Poly** y **HP** están planificados y aparecen como "Próximamente" en el panel.
 
-Es una app **100% estática** (HTML + CSS + JavaScript vanilla, sin build ni framework). Los datos viven en `localStorage` del navegador y se sincronizan entre usuarios a través de **Supabase** (auth + 2 tablas + 1 Edge Function).
-
-> ⚠️ **Estado actual de la base de datos**: la base Supabase anterior fue **descartada**. La app quedó desconectada de ella a propósito: `src/js/config.js` tiene los valores vacíos y, mientras estén así, la app corre 100% local (sin login funcional y sin sincronización). Cuando se cree la base nueva, seguir [docs/BASE-DE-DATOS.md](docs/BASE-DE-DATOS.md) y completar `src/js/config.js`.
+Es una app **100% estática** (HTML + CSS + JavaScript vanilla, sin build ni framework). Los datos viven en `localStorage` del navegador y se sincronizan entre usuarios a través de **Supabase** (auth + 2 tablas + 1 Edge Function). El acceso a los datos requiere usuario logueado: las policies RLS de la base rechazan cualquier request sin el JWT de un usuario autenticado.
 
 ## Estructura del proyecto
 
 ```
 Cotizador Online/
 ├── README.md                  ← este archivo
+├── vercel.json                ← deploy estático de src/ en Vercel
 ├── docs/
 │   ├── ARQUITECTURA.md        ← cómo está organizado el código y por qué
-│   └── BASE-DE-DATOS.md       ← esquema requerido para la base Supabase NUEVA
-├── src/                       ← la aplicación reestructurada (usar esta)
-│   ├── index.html             ← markup del cotizador (SPA de 7 "páginas")
-│   ├── cevencare.html         ← cotizador de garantías CevenCare (iframe/popup)
-│   ├── css/
-│   │   ├── base.css           ← estilos base (modo claro)
-│   │   ├── dark.css           ← tokens de color + overrides de modo oscuro
-│   │   └── cevencare.css      ← estilos de CevenCare
-│   └── js/                    ← 24 módulos (ver docs/ARQUITECTURA.md)
-│       ├── config.js          ← ⚠️ ÚNICO lugar con credenciales de Supabase
-│       ├── auth.js            ← login, sesión, roles, gestión de usuarios
-│       ├── sync.js            ← sincronización localStorage ⇄ Supabase
-│       ├── state.js … target.js  ← lógica de la app (orden de carga importa)
-│       └── cevencare.js       ← lógica de CevenCare
+│   └── BASE-DE-DATOS.md       ← esquema de la base Supabase
+└── src/
+    ├── index.html             ← SHELL: login + panel selector de marcas + gestión de usuarios
+    ├── shared/
+    │   ├── config.js          ← ⚠️ ÚNICO lugar con URL/key de Supabase (compartido por todas las marcas)
+    │   └── auth.js            ← login, sesión, roles, gestión de usuarios (compartido)
+    ├── vendor/                ← libs auto-hospedadas: xlsx, html2canvas, jsPDF (+autotable)
+    └── apple/                 ← cotizador Apple completo
+        ├── index.html         ← SPA de 7 "páginas" (exige sesión; sin sesión vuelve al shell)
+        ├── cevencare.html     ← cotizador de garantías CevenCare (iframe/popup)
+        ├── css/               ← base.css, dark.css, cevencare.css
+        └── js/                ← 22 módulos (ver docs/ARQUITECTURA.md; el orden de carga importa)
 ```
 
-> La carpeta legacy `Cotizador Online/` (los 2 HTML monolíticos originales) fue **eliminada** una vez completada y verificada la migración a `src/`.
+Para agregar una marca nueva (cuando esté su catálogo): copiar `src/apple/` como plantilla, cambiar `BRAND` en su `sync.js`, prefijar sus claves de localStorage (`poly_*`) y activar la tarjeta en el shell. Receta completa en docs/ARQUITECTURA.md.
 
 ## Cómo correr la app
 
-No hay build. Opciones:
+No hay build:
 
-1. **Servidor local** (recomendado — el iframe de CevenCare funciona igual que en producción):
-   ```
-   cd src
-   python -m http.server 8000
-   # abrir http://localhost:8000
-   ```
-2. **Doble click** en `src/index.html` (protocolo `file://`) — también funciona; si el iframe de CevenCare no carga, la app cae automáticamente a abrirlo en un popup.
+```
+cd src
+python -m http.server 8000
+# abrir http://localhost:8000  →  login  →  panel de marcas  →  Apple
+```
 
-Dependencias externas (CDN, requieren internet): SheetJS (`xlsx`) para Excel, `html2canvas` + `jsPDF` para PDF.
+También funciona por `file://` (doble click en `src/index.html`), aunque el flujo recomendado es servirla por HTTP. No requiere internet para las libs (viven en `src/vendor/`); sí para login y sincronización.
 
-## Configurar la base nueva
+## Deploy (Vercel)
 
-1. Crear el proyecto en Supabase y aplicar el esquema de [docs/BASE-DE-DATOS.md](docs/BASE-DE-DATOS.md) (tablas `pipeline` y `app_settings`, Edge Function `admin-users`, usuario `admin@ceven.com`).
-2. Completar en `src/js/config.js`:
-   ```js
-   var SUPABASE_URL      = 'https://TU-PROYECTO.supabase.co';
-   var SUPABASE_ANON_KEY = 'TU_PUBLISHABLE_KEY';
-   ```
-3. Listo — el login y la sincronización se activan solos al recargar.
+`vercel.json` sirve `src/` como sitio estático con headers de seguridad. Deploy: `npx vercel deploy` (preview) o `npx vercel deploy --prod`, o vía integración GitHub → Vercel.
+
+## Base de datos y seguridad
+
+- Proyecto Supabase: `iqewnebpdyctexavtpmt`. Esquema y policies en [docs/BASE-DE-DATOS.md](docs/BASE-DE-DATOS.md).
+- Tablas `pipeline` y `app_settings` con columna `brand`: los datos de cada marca están separados; los usuarios son compartidos.
+- RLS: solo usuarios autenticados leen/escriben (la publishable key sola recibe 401). La sync manda el `access_token` del usuario en cada request.
+- Gestión de usuarios: Edge Function `admin-users` (solo `admin@ceven.com`, validado server-side).
 
 ## Datos y backups
 
@@ -65,4 +61,4 @@ Todo el estado local vive en `localStorage` (claves `c*`: `cquotes`, `cpipeline`
 
 ## Versión
 
-`APP_VERSION` se define en `src/js/config.js` (actualmente `4.0`) y se muestra en el zócalo inferior.
+`APP_VERSION` se define en `src/shared/config.js` (actualmente `4.0`) y se muestra en el zócalo inferior.

@@ -1,12 +1,14 @@
-# Base de datos · Esquema requerido (Supabase)
+# Base de datos · Esquema (Supabase)
 
-La base anterior fue descartada. Este documento describe **todo lo que la app espera** de un proyecto Supabase para volver a funcionar con sincronización y login. Una vez creado, completar `src/js/config.js`.
+Proyecto activo: **`iqewnebpdyctexavtpmt`** (config en `src/shared/config.js`). Este documento describe el esquema desplegado y cómo lo usa la app. Estado 2026-07-14: tablas + policies + Edge Function **aplicadas**.
 
 La app habla con Supabase **por REST puro** (sin SDK):
 
-- **PostgREST** (`/rest/v1/`) para las tablas `pipeline` y `app_settings` — usando **solo la anon key** (sin JWT de usuario).
+- **PostgREST** (`/rest/v1/`) para las tablas `pipeline` y `app_settings` — con `apikey` = publishable key y `Authorization: Bearer <access_token del usuario logueado>`. Sin JWT de usuario la base rechaza el request (401).
 - **GoTrue** (`/auth/v1/`) para login con email/contraseña, refresh de token y cambio de contraseña propia.
 - **Edge Function** `admin-users` (`/functions/v1/admin-users`) para gestión de usuarios (solo el admin).
+
+Las tablas separan los datos **por marca** (columna `brand`): el cotizador Apple opera siempre con `brand='apple'`; los futuros cotizadores Poly/HP usarán su propio valor. Los usuarios son compartidos entre marcas.
 
 ## 1. Tablas
 
@@ -15,7 +17,8 @@ Los nombres de columna son **camelCase** — en el DDL van entre comillas dobles
 ```sql
 -- Pipeline: una fila por entrada de pipeline (espeja localStorage.cpipeline)
 create table public.pipeline (
-  id              bigint primary key,        -- Date.now() generado por el cliente
+  brand           text not null default 'apple',  -- marca dueña de la fila
+  id              bigint,                    -- Date.now() generado por el cliente
   fecha           text,                      -- dd/mm/aaaa (para mostrar)
   "fechaISO"      text,                      -- aaaa-mm-dd (para ordenar)
   "qNum"          bigint,                    -- nro de cotización (el cliente lo re-normaliza a "0071")
@@ -37,41 +40,50 @@ create table public.pipeline (
   "skuPartialRemSt"  jsonb,   -- estado del remanente parcial
   "skuPartialRemMes" jsonb,   -- mes del remanente parcial
   "skuArchivedQty"   jsonb,   -- qty ya archivada por línea
-  "ovLink"        text        -- link a la orden de venta
+  "ovLink"        text,       -- link a la orden de venta
+  primary key (brand, id)
 );
 -- Nota: el campo local `skuOvLinks` NO se sincroniza (excluido a propósito en sync.js).
 
--- Settings compartidos: espeja claves de localStorage como key/value
+-- Settings compartidos: espeja claves de localStorage como key/value, por marca
 create table public.app_settings (
-  key   text primary key,     -- cquotes | cpl | carchive | cnac | cqc | ctarget |
+  brand text not null default 'apple',
+  key   text,                 -- cquotes | cpl | carchive | cnac | cqc | ctarget |
                               -- ctarget_manual | clogo | clogo_dark | cnac_mac24_v2
-  value text                  -- el JSON serializado tal cual está en localStorage
+  value text,                 -- el JSON serializado tal cual está en localStorage
+  primary key (brand, key)
 );
 ```
 
 Requisitos que impone `sync.js`:
 
-- **PK obligatoria** en `pipeline.id` y `app_settings.key`: los upserts usan `Prefer: resolution=merge-duplicates`.
+- **PK compuestas obligatorias** `(brand,id)` / `(brand,key)`: los upserts usan `Prefer: resolution=merge-duplicates` y resuelven sobre la PK; la marca aísla los datos de cada cotizador.
+- Todos los GET/DELETE de la sync filtran `brand=eq.<marca>`; cada fila subida lleva su `brand`.
 - Los `jsonb` reciben `null` cuando el override se limpia localmente (no omitir la columna).
 - `app_settings.value` puede ser **grande** (el price list entero, o el logo en base64) — es `text`, sin límite.
 
-### Permisos (RLS)
+### Permisos (RLS) — solo usuarios autenticados
 
-La capa de sync manda `apikey` y `Authorization: Bearer <anon key>` — es decir, opera como rol `anon`, **sin JWT del usuario logueado**. Para que funcione igual que antes, `anon` necesita select/insert/update/delete en ambas tablas:
+La sync manda `apikey` = publishable key y `Authorization: Bearer <access_token del usuario>` (lo toma de `ceven_auth_session` en cada request, con retry post-refresh si expira). Las policies exigen usuario logueado; el rol `anon` no tiene ningún privilegio:
 
 ```sql
 alter table public.pipeline     enable row level security;
 alter table public.app_settings enable row level security;
-create policy "anon full access" on public.pipeline     for all to anon using (true) with check (true);
-create policy "anon full access" on public.app_settings for all to anon using (true) with check (true);
+create policy "authenticated full access" on public.pipeline
+  for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on public.app_settings
+  for all to authenticated using (true) with check (true);
+revoke all on table public.pipeline from anon;
+revoke all on table public.app_settings from anon;
 ```
 
-> ⚠️ **Seguridad**: esto replica el diseño original — cualquiera con la anon key (que viaja en el JS) puede leer/escribir estas tablas. El login protege la *UI*, no la *API*. Si se quiere endurecer en la base nueva, la mejora natural es que `sync.js` use el `access_token` de la sesión (`Authorization: Bearer <token del usuario>`) y las policies exijan `to authenticated` — requiere un cambio chico en `sync.js` (tomar el token de `ceven_auth_session`).
+> Nota de diseño: cualquier usuario **logueado** puede leer/escribir todo — los datos son compartidos por el equipo y los roles (admin/ventas/lector) se aplican en la UI. El linter de Supabase lo marca como WARN (`using (true)`); es deliberado en esta etapa. Un endurecimiento futuro por roles requeriría claims en el JWT y policies por rol.
 
 ## 2. Autenticación (GoTrue)
 
 - Proveedor **Email/Password** habilitado, sin confirmación por mail (los usuarios los crea el admin ya confirmados).
-- Usuarios con email `@ceven.com` (la app lo valida client-side).
+- **Signups públicos deshabilitados** (Dashboard → Authentication → Sign In/Up): la única vía de alta es la Edge Function `admin-users`, que valida dominio y admin server-side.
+- Usuarios con email `@ceven.com` (validado server-side en la Edge Function; el client-side es solo UX).
 - Perfil en `user_metadata`: `{ "nombre": "Fer Castro", "role": "admin" | "ventas" | "lector" }`.
 - **Crear manualmente el usuario `admin@ceven.com`** (Dashboard → Authentication → Add user, auto-confirm). Es admin por bootstrap aunque no tenga `role` en metadata.
 
@@ -79,7 +91,7 @@ Endpoints que usa la app: `POST /auth/v1/token?grant_type=password`, `?grant_typ
 
 ## 3. Edge Function `admin-users`
 
-El código de la función vivía en el proyecto viejo; hay que **volver a desplegarla**. Contrato que espera el frontend (`auth.js`):
+**Desplegada** (2026-07-14, verify_jwt on) con validaciones server-side adicionales al código de referencia de abajo: dominio `@ceven.com` y rol válido en `create`/`update_profile`, largo mínimo de contraseña, y bloqueo de `delete` sobre la cuenta del admin. Contrato que espera el frontend (`shared/auth.js`):
 
 - `POST /functions/v1/admin-users` con `Authorization: Bearer <access_token del usuario>`.
 - Solo debe aceptar llamadas cuyo token pertenezca a `admin@ceven.com` (validar server-side).
@@ -173,9 +185,9 @@ Deno.serve(async (req) => {
 
 ## 4. Checklist de puesta en marcha
 
-1. Crear proyecto Supabase nuevo.
-2. Correr el SQL de tablas + policies (sección 1).
-3. Desplegar la Edge Function `admin-users` (sección 3).
-4. Crear `admin@ceven.com` en Authentication (auto-confirmado).
-5. Completar `src/js/config.js` con la URL y la anon/publishable key nuevas.
-6. Abrir la app: al loguearse por primera vez con la base vacía, la sync **siembra** Supabase con lo que haya en el `localStorage` del navegador (o restaurar antes un backup JSON con el botón ⬆️ y dejar que el post-import siembre eso).
+1. ~~Crear proyecto Supabase nuevo~~ ✔ (`iqewnebpdyctexavtpmt`)
+2. ~~Correr el SQL de tablas + policies~~ ✔ (migraciones `esquema_inicial_pipeline_y_settings`, `brand_multimarcas_pk_compuestas`, `rls_solo_usuarios_autenticados`)
+3. ~~Desplegar la Edge Function `admin-users`~~ ✔
+4. ~~Completar `src/shared/config.js`~~ ✔ (publishable key)
+5. **Pendiente (Dashboard):** deshabilitar signups públicos y crear `admin@ceven.com` (auto-confirmado).
+6. **Pendiente:** abrir la app, loguearse y restaurar el backup JSON con el botón ⬆️ — el post-import siembra Supabase con esos datos (con la base vacía, el primer login también siembra lo que haya en el localStorage del navegador).
