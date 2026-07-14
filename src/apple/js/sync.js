@@ -1,10 +1,13 @@
 /* ============================================================
-   CAPA DE SINCRONIZACION SUPABASE  ·  Ceven Cotizador  (v3)
+   CAPA DE SINCRONIZACION SUPABASE  ·  Ceven Cotizador  (v4)
    - Intercepta el guardado de forma robusta (Storage.prototype),
      sin ensuciar el almacenamiento ni romper la app.
    - La app arranca al instante; los datos compartidos llegan async.
    - Replica cada cambio: pipeline fila por fila, el resto en bloque.
    - Cada 15s trae los cambios del equipo.
+   - v4: autentica cada request con el access_token del usuario
+     (policies RLS `to authenticated`; la anon key sola no puede
+     leer ni escribir) y aisla los datos por marca (columna brand).
    ============================================================ */
 (function(){
   // 0) Limpiar basura que una version anterior pudo dejar (clave 'setItem', etc.)
@@ -25,7 +28,7 @@
   if(!SUPABASE_URL){
     window._syncPause  = function(){};
     window._syncResume = function(){};
-    console.warn('[sync] Supabase sin configurar (js/config.js) — la app corre 100% local, sin sincronización');
+    console.warn('[sync] Supabase sin configurar (shared/config.js) — la app corre 100% local, sin sincronización');
     return;
   }
 
@@ -43,7 +46,45 @@
   // coerce las parsea de vuelta si vienen como string por algún motivo
   var OBJ_COLS = ['skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt','skuPartialRemMes','skuArchivedQty'];
 
-  var H = {'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'};
+  // Marca de este cotizador: TODA la sync filtra y estampa esta marca.
+  // (Los cotizadores de otras marcas usan su propio valor y no se mezclan.)
+  var BRAND = 'apple';
+  var BQ = 'brand=eq.' + BRAND;
+
+  // Headers autenticados con el token del usuario logueado (auth.js se carga antes).
+  // Sin sesión, el Bearer va vacío y Supabase rechaza el request (fail-safe).
+  function authHeaders(){
+    var sess = (typeof cevenGetSession === 'function') ? cevenGetSession() : null;
+    return {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + ((sess && sess.access_token) || ''),
+      'Content-Type': 'application/json'
+    };
+  }
+  function sessionOk(){
+    return (typeof cevenIsValidSession === 'function') && cevenIsValidSession();
+  }
+  // fetch autenticado contra PostgREST con un retry si el token venció justo
+  // a tiempo (mismo patrón que cevenAuthedFetch en auth.js).
+  function sfetch(path, opts){
+    opts = opts || {};
+    function call(){
+      return fetch(REST + path, Object.assign({}, opts, {headers: Object.assign(authHeaders(), opts.headers || {})}));
+    }
+    return call().then(function(r){
+      if(r.status !== 401) return r;
+      var sess = (typeof cevenGetSession === 'function') ? cevenGetSession() : null;
+      var prev = sess && sess.access_token;
+      if(typeof cevenRefreshToken === 'function') cevenRefreshToken();
+      return new Promise(function(resolve){
+        setTimeout(function(){
+          var s2 = (typeof cevenGetSession === 'function') ? cevenGetSession() : null;
+          if(!s2 || s2.access_token === prev){ resolve(r); return; }
+          call().then(resolve, function(){ resolve(r); });
+        }, 800);
+      });
+    });
+  }
 
   // Original confiable, tomado del prototipo (nunca queda tapado por un item)
   var SP = window.Storage && window.Storage.prototype;
@@ -51,7 +92,11 @@
   function rawSet(k,v){ _origSetItem.call(localStorage, k, v); }
 
   var _pipeSnap = {};
-  var _pushing = false;
+  // Contador de pushes en vuelo (no booleano: varios pushes pueden solaparse
+  // y un flag simple se apagaba cuando terminaba el primero, no el último).
+  var _pushing = 0;
+  function pushBegin(){ _pushing++; }
+  function pushDone(){ if(_pushing > 0) _pushing--; }
   var _booted = false;
   var _timers = {};
   // Expuesto para que importFullBackup() pueda pausar la sync durante la restauración
@@ -75,10 +120,12 @@
         o[c] = row[c];
       }
     }
+    o.brand = BRAND;
     return o;
   }
   function snapKey(row){ return JSON.stringify(pickPipe(row)); }
   function coerce(r){
+    delete r.brand; // dato redundante localmente (este cotizador es 100% de su marca)
     for(var i=0;i<NUM_COLS.length;i++){ var c=NUM_COLS[i]; if(r[c]!==null && r[c]!==undefined && r[c]!=='') r[c]=Number(r[c]); }
     // qNum viene como número de Supabase (bigint) pero cquotes lo guarda como "0071"
     // Normalizar a string con ceros para que el match funcione
@@ -97,24 +144,26 @@
   function visible(id){ var el=document.getElementById(id); return el && el.classList.contains('on'); }
 
   function fetchJSON(path){
-    return fetch(REST+path, {headers:H}).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
+    return sfetch(path).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
   }
   function pushPipeRows(rows){
     if(!rows.length) return Promise.resolve();
-    return fetch(REST+'pipeline', {method:'POST', headers:Object.assign({'Prefer':'resolution=merge-duplicates,return=minimal'},H), body:JSON.stringify(rows)})
-      .then(function(r){ if(!r.ok) r.text().then(function(t){ console.warn('[sync] upsert pipeline 400:', t); }); return r; })
+    return sfetch('pipeline', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(rows)})
+      .then(function(r){ if(!r.ok) r.text().then(function(t){ console.warn('[sync] upsert pipeline '+r.status+':', t); }); return r; })
       .catch(function(e){ console.warn('[sync] upsert pipeline', e); });
   }
   function delPipeRows(ids){
     if(!ids.length) return Promise.resolve();
-    return fetch(REST+'pipeline?id=in.('+ids.join(',')+')', {method:'DELETE', headers:H})
+    return sfetch('pipeline?'+BQ+'&id=in.('+ids.join(',')+')', {method:'DELETE'})
       .catch(function(e){ console.warn('[sync] delete pipeline', e); });
   }
   function pushSettings(rows){
     if(!rows.length) return Promise.resolve();
-    _pushing=true;
-    return fetch(REST+'app_settings', {method:'POST', headers:Object.assign({'Prefer':'resolution=merge-duplicates,return=minimal'},H), body:JSON.stringify(rows)})
-      .then(function(){_pushing=false;}, function(e){_pushing=false; console.warn('[sync] upsert settings', e);});
+    rows = rows.map(function(r){ return {brand:BRAND, key:r.key, value:r.value}; });
+    pushBegin();
+    return sfetch('app_settings', {method:'POST', headers:{'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(rows)})
+      .then(function(r){ pushDone(); if(!r.ok) r.text().then(function(t){ console.warn('[sync] upsert settings '+r.status+':', t); }); },
+            function(e){ pushDone(); console.warn('[sync] upsert settings', e); });
   }
 
   function seedFromLocal(){
@@ -125,14 +174,14 @@
       if(!lp.length && !sets.length) return;
       // Bloquear el poll mientras el seed sube a Supabase
       // (evita race condition donde poll lee Supabase vacío y pisa el localStorage recién restaurado)
-      _pushing = true;
+      pushBegin();
       lp.forEach(function(r){ if(r.id!=null) _pipeSnap[r.id]=snapKey(r); });
       Promise.all([
         pushPipeRows(lp.map(pickPipe)),
         pushSettings(sets)
       ]).then(
-        function(){ _pushing=false; console.log('[sync] base sembrada'); },
-        function(e){ _pushing=false; console.warn('[sync] seed error', e); }
+        function(){ pushDone(); console.log('[sync] base sembrada'); },
+        function(e){ pushDone(); console.warn('[sync] seed error', e); }
       );
     }catch(e){ console.warn('[sync] seed', e); }
   }
@@ -153,11 +202,14 @@
       _origSetItem.call(this, k, v);
       if(this===window.localStorage && _booted && (k==='cpipeline' || SETTING_KEYS.indexOf(k)>=0)){
         clearTimeout(_timers[k]);
-        _timers[k]=setTimeout(function(){ flush(k); }, 350);
+        // borrar la entrada al disparar: _timers[k] truthy significa "flush pendiente"
+        // y el poll lo usa para no pisar cambios locales todavía no subidos
+        _timers[k]=setTimeout(function(){ delete _timers[k]; flush(k); }, 350);
       }
     };
   }
   function flush(k){
+    if(!sessionOk()) return; // sin sesión no se empuja; el próximo flush/poll con sesión lo resuelve
     if(k==='cpipeline'){ syncPipeline(); }
     else { var v=localStorage.getItem(k); if(v!==null) pushSettings([{key:k,value:v}]); }
   }
@@ -172,14 +224,17 @@
     var toDelete=[];
     for(var id in _pipeSnap){ if(!(id in nextSnap)) toDelete.push(id); }
     _pipeSnap=nextSnap;
-    _pushing=true;
-    Promise.all([pushPipeRows(toUpsert), delPipeRows(toDelete)]).then(function(){_pushing=false;}, function(){_pushing=false;});
+    pushBegin();
+    Promise.all([pushPipeRows(toUpsert), delPipeRows(toDelete)]).then(pushDone, pushDone);
   }
 
   function poll(){
-    if(!_booted || _pushing) return;
-    fetchJSON('pipeline?select=*').then(function(rows){
+    if(!_booted || _pushing > 0 || !sessionOk()) return;
+    fetchJSON('pipeline?'+BQ+'&select=*').then(function(rows){
       if(!Array.isArray(rows)) return;
+      // No pisar el estado local si hay un cambio propio esperando su flush
+      // (el debounce de 350ms): primero sube lo nuestro, el próximo poll trae el merge.
+      if(_timers['cpipeline'] || _pushing > 0) return;
       rows.forEach(coerce);
       var lp; try{ lp=JSON.parse(localStorage.getItem('cpipeline')||'[]'); }catch(e){ lp=[]; }
       if(normPipe(lp)!==normPipe(rows)){
@@ -189,11 +244,12 @@
         if(visible('p-pipeline') && typeof renderPipeline==='function') renderPipeline();
       }
     });
-    fetchJSON('app_settings?select=*').then(function(sets){
+    fetchJSON('app_settings?'+BQ+'&select=*').then(function(sets){
       if(!Array.isArray(sets)) return;
       var changed={};
       sets.forEach(function(row){
         if(SETTING_KEYS.indexOf(row.key)<0) return;
+        if(_timers[row.key]) return; // cambio propio pendiente de flush: no pisarlo
         var v=String(row.value);
         if(localStorage.getItem(row.key)!==v){ rawSet(row.key, v); changed[row.key]=1; }
       });
@@ -205,6 +261,12 @@
   }
 
   function bootstrap(){
+    // Sin sesión válida no hay sync (las policies de la base la rechazarían
+    // igual). El guard de index.html ya redirige al login del shell.
+    if(!sessionOk()){
+      console.warn('[sync] sin sesión válida — sync desactivada');
+      return;
+    }
     // ¿Venimos de un import manual? Si es así, el localStorage es la fuente
     // de verdad y hay que empujarlo a Supabase, no al revés.
     var fromImport = false;
@@ -218,7 +280,7 @@
       }
     }catch(e){}
 
-    Promise.all([ fetchJSON('pipeline?select=*'), fetchJSON('app_settings?select=*') ]).then(function(res){
+    Promise.all([ fetchJSON('pipeline?'+BQ+'&select=*'), fetchJSON('app_settings?'+BQ+'&select=*') ]).then(function(res){
       var serverPipe=res[0], serverSetsArr=res[1];
       if(serverPipe===null && serverSetsArr===null){
         console.warn('[sync] sin conexion con Supabase — la app corre con datos locales');

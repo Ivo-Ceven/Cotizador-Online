@@ -107,9 +107,12 @@ function closeCevenCare() {
 
 // Called from CevenCare iframe via postMessage
 window.addEventListener('message', function(e) {
+  // Solo aceptar mensajes del propio origin (CevenCare es same-origin);
+  // 'null' cubre el modo file:// donde origin no existe.
+  if (e.origin !== location.origin && e.origin !== 'null') return;
   if (!e.data || e.data.type !== 'cevencare-add-warranty') return;
   var items_to_add = e.data.items;
-  if (!items_to_add || !items_to_add.length) return;
+  if (!Array.isArray(items_to_add) || !items_to_add.length) return;
   items_to_add.forEach(function(w) {
     var key = w.equipo + '|' + w.canal + '|' + w.años + '|' + w.sku;
     var existing = warrantyItems.find(function(x){ return x.key === key; });

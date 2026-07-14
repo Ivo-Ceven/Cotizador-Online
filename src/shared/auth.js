@@ -294,18 +294,61 @@ function cevenCallUsersFn(action, body){
 }
 /* Cualquier usuario logueado puede cambiar SU PROPIA contraseña (no requiere ser admin
    ni la Edge Function: GoTrue lo permite con el propio access_token del usuario). */
+
+/* Modal genérico para pedir una contraseña sin mostrarla en claro (reemplaza
+   a prompt(), que la exponía en pantalla). Se construye por JS para funcionar
+   igual en el shell y en los cotizadores sin duplicar markup. */
+function cevenAskPassword(title, onSubmit){
+  var old = document.getElementById('ceven-pass-modal');
+  if(old) old.parentNode.removeChild(old);
+  var wrap = document.createElement('div');
+  wrap.id = 'ceven-pass-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif';
+  wrap.innerHTML =
+    '<div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:24px;width:330px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">' +
+      '<div id="ceven-pass-title" style="font-size:15px;font-weight:600;color:#1d1d1f;margin-bottom:14px"></div>' +
+      '<input id="ceven-pass-input" type="password" autocomplete="new-password" placeholder="Mínimo 6 caracteres"' +
+        ' style="border:0.5px solid #d2d2d7;border-radius:8px;padding:9px 11px;font-size:14px;width:100%;outline:none;margin-bottom:10px;box-sizing:border-box;font-family:inherit">' +
+      '<div id="ceven-pass-err" style="display:none;background:#fff0f0;color:#d70015;font-size:12px;padding:7px 10px;border-radius:8px;margin-bottom:10px"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button id="ceven-pass-cancel" style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit">Cancelar</button>' +
+        '<button id="ceven-pass-ok" style="border:none;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#1d1d1f;color:#fff;font-family:inherit">Guardar</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(wrap);
+  wrap.querySelector('#ceven-pass-title').textContent = title;
+  var input = wrap.querySelector('#ceven-pass-input');
+  function close(){ if(wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+  function submit(){
+    var np = (input.value || '').trim();
+    if(np.length < 6){
+      var err = wrap.querySelector('#ceven-pass-err');
+      err.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+      err.style.display = 'block';
+      return;
+    }
+    close();
+    onSubmit(np);
+  }
+  wrap.querySelector('#ceven-pass-ok').onclick = submit;
+  wrap.querySelector('#ceven-pass-cancel').onclick = close;
+  input.onkeydown = function(ev){
+    if(ev.key === 'Enter'){ ev.preventDefault(); submit(); }
+    if(ev.key === 'Escape') close();
+  };
+  input.focus();
+}
+
 function cevenChangeMyPassword(){
-  var np = prompt('Nueva contraseña para tu cuenta (mínimo 6 caracteres):', '');
-  if(np === null) return;
-  np = np.trim();
-  if(np.length < 6){ alert('La contraseña debe tener al menos 6 caracteres.'); return; }
-  cevenAuthedFetch(SUPABASE_URL + '/auth/v1/user', {
-    method: 'PUT',
-    body: JSON.stringify({password: np})
-  }).then(function(){
-    alert('Tu contraseña fue actualizada correctamente.');
-  }).catch(function(e){
-    alert((e && e.message) || cevenAuthErrorMsg(e) || 'No se pudo cambiar la contraseña.');
+  cevenAskPassword('Nueva contraseña para tu cuenta', function(np){
+    cevenAuthedFetch(SUPABASE_URL + '/auth/v1/user', {
+      method: 'PUT',
+      body: JSON.stringify({password: np})
+    }).then(function(){
+      alert('Tu contraseña fue actualizada correctamente.');
+    }).catch(function(e){
+      alert((e && e.message) || cevenAuthErrorMsg(e) || 'No se pudo cambiar la contraseña.');
+    });
   });
 }
 function cevenCreateUser(ev){
@@ -342,14 +385,12 @@ function cevenDeleteUser(u){
   });
 }
 function cevenResetPassword(u){
-  var np = prompt('Nueva contraseña para "' + u + '":', '');
-  if(np === null) return;
-  np = np.trim();
-  if(!np || np.length < 6){ alert('La contraseña debe tener al menos 6 caracteres.'); return; }
-  cevenCallUsersFn('reset_password', {email:u, password:np}).then(function(){
-    alert('Contraseña de "' + u + '" actualizada.');
-  }).catch(function(e){
-    alert((e && e.message) || 'No se pudo blanquear la contraseña.');
+  cevenAskPassword('Nueva contraseña para "' + u + '"', function(np){
+    cevenCallUsersFn('reset_password', {email:u, password:np}).then(function(){
+      alert('Contraseña de "' + u + '" actualizada.');
+    }).catch(function(e){
+      alert((e && e.message) || 'No se pudo blanquear la contraseña.');
+    });
   });
 }
 var _cevenEditProfileEmail = null;
