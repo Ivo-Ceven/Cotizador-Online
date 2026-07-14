@@ -1,24 +1,17 @@
 /* ============================================================
-   CONFIGURACIÓN GLOBAL · Cotizador Ceven
+   CONFIGURACIÓN GLOBAL · Cotizadores Ceven (compartida por el
+   shell y los cotizadores de todas las marcas)
    ------------------------------------------------------------
-   ⚠️  BASE DE DATOS NUEVA PENDIENTE DE CONFIGURAR
-   La base Supabase anterior fue descartada y quedó desconectada.
-   Cuando esté creada la nueva, completar estos dos valores:
+   SUPABASE_ANON_KEY es la publishable key: identifica el proyecto
+   pero NO da acceso a los datos — las policies RLS exigen el JWT
+   de un usuario logueado en cada request (ver apple/js/sync.js).
 
-     SUPABASE_URL      → ej: 'https://xxxxxxxxxxxx.supabase.co'
-     SUPABASE_ANON_KEY → la publishable/anon key del proyecto
-
-   Mientras estén vacíos:
-     - La capa de sincronización (js/sync.js) queda desactivada y
-       la app trabaja 100% local (localStorage), sin ningún request.
-     - El login (js/auth.js) avisa que falta configurar la base.
-
-   El esquema que necesita la base nueva (tablas pipeline y
-   app_settings + Edge Function admin-users) está documentado en
-   docs/BASE-DE-DATOS.md.
+   Si ambos valores quedan vacíos la app corre 100% local
+   (localStorage), sin ningún request; el login avisa que falta
+   configurar la base. Esquema documentado en docs/BASE-DE-DATOS.md.
    ============================================================ */
-var SUPABASE_URL      = '';
-var SUPABASE_ANON_KEY = '';
+var SUPABASE_URL      = 'https://iqewnebpdyctexavtpmt.supabase.co';
+var SUPABASE_ANON_KEY = 'sb_publishable_Za9l64nzVBsaKHrSCgeu0w_x7Vhe7Aa';
 var CEVEN_AUTH_FN_URL = SUPABASE_URL + '/functions/v1/admin-users';
 
 /* Los usuarios deben ser emails del dominio @ceven.com (excluyente). */
