@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CevenCare V2 · Cotizador</title>
+<link rel="stylesheet" href="css/cevencare.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+
+<!-- ── LANDING ── -->
+<div id="landing">
+  <header>
+    <h1>CevenCare</h1>
+    <p>Cotizador de planes de servicio</p>
+  </header>
+
+  <div class="landing-question">¿Qué vas a cotizar?</div>
+
+  <div class="landing-buttons">
+    <div style="display:flex;flex-direction:column;gap:12px;width:100%;">
+      <button class="landing-btn btn-canales" id="btnCanales" onclick="toggleCanales()">
+        Cotizar a Canales <i class="chevron">⌄</i>
+      </button>
+      <div id="canales-sub">
+        <button class="btn-canal-sub btn-sub-nuevo" onclick="selectMode('nuevo')">📦 Nuevo</button>
+        <button class="btn-canal-sub btn-sub-usado" onclick="selectMode('usado')">🔄 Usado</button>
+      </div>
+    </div>
+    <button class="landing-btn btn-cf" onclick="selectMode('cf')">Clientes Finales</button>
+    <button class="landing-btn btn-presupuestar" onclick="openBudget()">Presupuestar</button>
+  </div>
+  <button class="tc-link-btn" onclick="openModal()">
+    <span class="tc-link-btn-icon">📋</span>
+    <span class="tc-link-btn-text">
+      <span>Términos, Condiciones y Preguntas Frecuentes</span>
+      <span class="tc-link-sub">Garantía Limitada Apple · CevenCare</span>
+    </span>
+    <span class="tc-link-btn-arrow">›</span>
+  </button>
+</div>
+
+<!-- ── T&C MODAL ── -->
+<div id="tcModal" onclick="closeTCModal(event)">
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>CevenCare · Información</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div id="tab-tc">
+        <div class="accordion-intro">
+          Ceven Care es un servicio de extensión de la Garantía Limitada de Apple, prestado por <strong>Ceven S.A.</strong>
+          Estos términos rigen la relación entre Ceven S.A. y el cliente durante la vigencia del plan contratado.
+          <br>
+          <a class="apple-link" href="https://www.apple.com/legal/warranty/products/warranty-alac-spanish.html" target="_blank">
+            Ver Garantía Limitada Apple
+          </a>
+        </div>
+
+        <div id="tcAccordion"></div>
+
+        <div class="faq-block-title">Preguntas Frecuentes</div>
+        <div id="faqCombinado"></div>
+
+        <a class="apple-warranty-link-btn" href="https://www.apple.com/legal/warranty/products/warranty-alac-spanish.html" target="_blank" rel="noopener">
+          <span class="apple-warranty-link-btn-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 170">
+              <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.2-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.93.21-9.84-1.96-14.75-6.52-3.13-2.73-7.04-7.41-11.73-14.04-5.03-7.08-9.17-15.29-12.41-24.65-3.47-10.11-5.21-19.9-5.21-29.38 0-10.86 2.35-20.22 7.05-28.07 3.69-6.3 8.61-11.27 14.76-14.92 6.15-3.65 12.79-5.51 19.95-5.63 3.91 0 9.05 1.21 15.43 3.59 6.36 2.39 10.45 3.6 12.24 3.6 1.34 0 5.88-1.42 13.57-4.24 7.28-2.62 13.42-3.7 18.45-3.28 13.63 1.1 23.87 6.47 30.68 16.15-12.19 7.39-18.22 17.73-18.1 31 .11 10.34 3.86 18.94 11.23 25.77 3.34 3.17 7.07 5.62 11.22 7.36-.9 2.61-1.85 5.11-2.86 7.51zM119.11 7.24c0 8.1-2.96 15.67-8.86 22.67-7.12 8.32-15.73 13.13-25.07 12.38a25.3 25.3 0 0 1-.19-3.07c0-7.78 3.39-16.1 9.4-22.91 3-3.45 6.82-6.31 11.45-8.6 4.62-2.25 8.99-3.49 13.09-3.71.12 1.02.17 2.04.17 3.04z"/>
+            </svg>
+          </span>
+          <span class="apple-warranty-link-btn-text">
+            <span class="apple-warranty-link-btn-title">Garantía Limitada Apple</span>
+            <span class="apple-warranty-link-btn-sub">Ver texto oficial en apple.com →</span>
+          </span>
+        </a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ── BUDGET AUDIENCE SCREEN ── -->
+<div id="budgetAudienceScreen">
+  <div class="screen-header" style="max-width:480px;width:100%;">
+    <button class="back-btn" onclick="goBackFromAudience()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Volver
+    </button>
+    <div class="screen-title-wrap">
+      <h1>Presupuestar</h1>
+    </div>
+    <div style="width:56px"></div>
+  </div>
+
+  <div class="audience-question">¿A quién vas a presupuestar?</div>
+
+  <div class="audience-buttons">
+    <button class="audience-btn btn-audience-canales" onclick="selectAudience('canales')">
+      <span class="audience-btn-icon">🏪</span>
+      <span class="audience-btn-text">
+        <span class="audience-btn-title">Canales</span>
+        <span class="audience-btn-sub">Revendedores · Precios de canal (Nuevo y Usado)</span>
+      </span>
+    </button>
+    <button class="audience-btn btn-audience-cf" onclick="selectAudience('cf')">
+      <span class="audience-btn-icon">👤</span>
+      <span class="audience-btn-text">
+        <span class="audience-btn-title">Clientes Finales</span>
+        <span class="audience-btn-sub">Precios para el consumidor final</span>
+      </span>
+    </button>
+  </div>
+</div>
+
+<!-- ── BUDGET SCREEN ── -->
+<div id="budgetScreen">
+
+  <div class="screen-header">
+    <button class="back-btn" onclick="goBackFromBudget()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Volver
+    </button>
+    <div class="screen-title-wrap">
+      <h1>Presupuesto</h1>
+      <p>Seleccioná equipos y planes</p>
+    </div>
+    <div style="width:56px"></div>
+  </div>
+
+  <div class="budget-tabs">
+    <button class="budget-tab active" id="btab-nuevo" onclick="setBudgetTab('nuevo')">Nuevo Canales</button>
+    <button class="budget-tab" id="btab-usado" onclick="setBudgetTab('usado')">Usado Canales</button>
+    <button class="budget-tab" id="btab-cf" onclick="setBudgetTab('cf')">Clientes Finales</button>
+  </div>
+
+  <div class="search-container">
+    <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input type="text" id="budgetSearch" placeholder="Buscar modelo Apple..." autocomplete="off" spellcheck="false">
+    <div id="budgetSugg"></div>
+  </div>
+
+  <div id="budgetResults">
+    <div class="empty-state"><div class="icon">🔍</div><p>Escribí el nombre del equipo para ver los planes disponibles</p></div>
+  </div>
+
+  <div class="cart-section">
+    <div class="cart-section-header">
+      <span class="cart-section-title">Presupuesto</span>
+      <button class="cart-clear-btn" onclick="clearCart()">Vaciar todo</button>
+    </div>
+    <div id="cartItems">
+      <div class="cart-empty">Tocá "+ Agregar" en los planes de arriba para armar el presupuesto</div>
+    </div>
+  </div>
+
+  <div class="budget-total-bar">
+    <div class="budget-total-info">
+      <div class="budget-total-label">Total presupuesto</div>
+      <div class="budget-total-count" id="budgetTotalCount">0 equipos</div>
+    </div>
+    <div class="budget-total-amount" id="budgetTotalAmt">USD 0</div>
+    <button class="budget-pdf-btn" id="budgetPdfBtn" onclick="openClientModal()" disabled>📄 PDF</button>
+    <button class="budget-pdf-btn" id="budgetSendBtn" onclick="sendToCotizador()" disabled style="background:#1d1d1f;margin-left:6px">📋 Agregar al cotizador</button>
+  </div>
+
+</div>
+
+<!-- ── CLIENT DATA MODAL ── -->
+<div id="clientModal" onclick="closeClientModalOutside(event)">
+  <div class="client-modal-sheet">
+    <div class="client-modal-title">Datos del cliente</div>
+    <div class="client-modal-sub">Aparecerán en el encabezado del presupuesto PDF</div>
+    <div class="client-field">
+      <label for="clientNombre">Nombre y apellido</label>
+      <input type="text" id="clientNombre" placeholder="Ej: Juan García" autocomplete="name">
+    </div>
+    <div class="client-field">
+      <label for="clientEmpresa">Empresa</label>
+      <input type="text" id="clientEmpresa" placeholder="Opcional" autocomplete="organization">
+    </div>
+    <div class="client-field">
+      <label for="clientCUIT">CUIT / DNI</label>
+      <input type="text" id="clientCUIT" placeholder="Opcional">
+    </div>
+    <div style="height:1px;background:#f2f2f7;margin:16px 0;"></div>
+    <div class="client-field">
+      <label for="repNombre">Representante de ventas</label>
+      <input type="text" id="repNombre" placeholder="Nombre y apellido" autocomplete="name">
+    </div>
+    <div class="client-field">
+      <label for="repEmail">Email del representante</label>
+      <input type="email" id="repEmail" placeholder="Ej: nombre@ceven.com.ar" autocomplete="email">
+    </div>
+    <div class="client-field">
+      <label for="repTel">Teléfono del representante</label>
+      <input type="tel" id="repTel" placeholder="Ej: +54 11 1234-5678" autocomplete="tel">
+    </div>
+    <div class="client-modal-btns">
+      <button class="btn-cancel-modal" onclick="closeClientModal()">Cancelar</button>
+      <button class="btn-generate-pdf" onclick="generatePDF()">📄 Generar PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── PRINT VIEW ── -->
+<div id="printView"></div>
+
+<!-- ── SEARCH SCREEN ── -->
+<div id="searchScreen">
+
+  <div class="screen-header">
+    <button class="back-btn" onclick="goBack()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Volver
+    </button>
+    <div class="screen-title-wrap">
+      <h1>CevenCare</h1>
+      <p>Cotizador de planes de servicio</p>
+    </div>
+    <div id="modeBadge" class="mode-badge"></div>
+  </div>
+
+  <div id="warningBanner">
+    <span class="warn-icon">⚠️</span>
+    <div class="warn-text">
+      <strong>Recordatorio importante</strong>
+      La cobertura solo quedará activa luego de la aprobación del servicio técnico oficial Apple en Ceven. Las unidades deben contar con al menos 90 días de garantía oficial Apple vigente al momento de la contratación.
+    </div>
+  </div>
+
+  <div class="search-container">
+    <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input type="text" id="searchInput" placeholder="Buscar modelo Apple..." autocomplete="off" spellcheck="false">
+    <div id="suggestions"></div>
+  </div>
+
+  <div id="results">
+    <div class="empty-state">
+      <div class="icon">🔍</div>
+      <p>Escribí el nombre del equipo para ver los planes disponibles</p>
+    </div>
+  </div>
+
+</div>
+
+<script src="js/cevencare.js"></script>
+<div class="apple-partner-badge">
+  <span class="badge-ceven">ceven</span>
+  <span class="badge-sep"></span>
+  <div class="badge-apple">
+    <span class="badge-apple-logo">
+      <!-- Apple logo SVG -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 170">
+        <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.2-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.93.21-9.84-1.96-14.75-6.52-3.13-2.73-7.04-7.41-11.73-14.04-5.03-7.08-9.17-15.29-12.41-24.65-3.47-10.11-5.21-19.9-5.21-29.38 0-10.86 2.35-20.22 7.05-28.07 3.69-6.3 8.61-11.27 14.76-14.92 6.15-3.65 12.79-5.51 19.95-5.63 3.91 0 9.05 1.21 15.43 3.59 6.36 2.39 10.45 3.6 12.24 3.6 1.34 0 5.88-1.42 13.57-4.24 7.28-2.62 13.42-3.7 18.45-3.28 13.63 1.1 23.87 6.47 30.68 16.15-12.19 7.39-18.22 17.73-18.1 31 .11 10.34 3.86 18.94 11.23 25.77 3.34 3.17 7.07 5.62 11.22 7.36-.9 2.61-1.85 5.11-2.86 7.51zM119.11 7.24c0 8.1-2.96 15.67-8.86 22.67-7.12 8.32-15.73 13.13-25.07 12.38a25.3 25.3 0 0 1-.19-3.07c0-7.78 3.39-16.1 9.4-22.91 3-3.45 6.82-6.31 11.45-8.6 4.62-2.25 8.99-3.49 13.09-3.71.12 1.02.17 2.04.17 3.04z"/>
+      </svg>
+    </span>
+    <span class="badge-apple-text">Business Partner<br>Authorized Service Provider</span>
+  </div>
+</div>
+</body>

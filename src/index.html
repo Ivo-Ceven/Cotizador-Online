@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cotizador Ceven</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/dark.css">
+</head>
+<body>
+
+<!-- ============================================================
+     LOGIN  ·  Acceso al cotizador (Supabase Auth real)
+     Usuarios se gestionan desde el botón "👤 Usuarios" (solo admin@ceven.com).
+     ============================================================ -->
+<div id="ceven-login" style="position:fixed;inset:0;z-index:99999;background:#f5f5f7;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif">
+  <div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:34px 32px;width:340px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.08)">
+    <div style="text-align:center;margin-bottom:22px">
+      <div style="font-size:30px;line-height:1">🔐</div>
+      <div style="font-size:19px;font-weight:600;color:#1d1d1f;margin-top:8px">Cotizador Ceven</div>
+      <div style="font-size:13px;color:#6e6e73;margin-top:2px">Inicia sesión para continuar</div>
+    </div>
+    <form id="ceven-login-form" onsubmit="return cevenDoLogin(event)">
+      <label style="font-size:11px;color:#6e6e73;font-weight:500;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px">Usuario (email @ceven.com)</label>
+      <input id="ceven-user" type="email" autocomplete="username" autofocus placeholder="nombre@ceven.com"
+             style="border:0.5px solid #d2d2d7;border-radius:8px;padding:9px 11px;font-size:14px;width:100%;outline:none;margin-bottom:13px">
+      <label style="font-size:11px;color:#6e6e73;font-weight:500;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px">Contraseña</label>
+      <input id="ceven-pass" type="password" autocomplete="current-password"
+             style="border:0.5px solid #d2d2d7;border-radius:8px;padding:9px 11px;font-size:14px;width:100%;outline:none;margin-bottom:13px">
+      <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#1d1d1f;margin-bottom:16px;cursor:pointer">
+        <input id="ceven-remember" type="checkbox" checked style="width:auto;margin:0"> Mantener sesión iniciada
+      </label>
+      <div id="ceven-login-err" style="display:none;background:#fff0f0;color:#d70015;font-size:12px;padding:8px 11px;border-radius:8px;margin-bottom:13px"></div>
+      <button type="submit" style="width:100%;border:none;border-radius:980px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;background:#1d1d1f;color:#fff;font-family:inherit">Entrar</button>
+    </form>
+  </div>
+</div>
+<div id="ceven-account-bar" style="display:none;position:fixed;bottom:16px;right:16px;z-index:9000;gap:8px;font-family:-apple-system,BlinkMacSystemFont,sans-serif">
+  <button id="ceven-users-btn" onclick="cevenOpenUsers()" title="Gestionar usuarios"
+          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">👤 Usuarios</button>
+  <button onclick="cevenChangeMyPassword()" title="Cambiar mi contraseña"
+          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">🔑 Cambiar contraseña</button>
+  <button onclick="cevenLogout()" title="Cerrar sesión"
+          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">🚪 <span id="ceven-logout-label">Salir</span></button>
+</div>
+
+<!-- Modal: gestión de usuarios -->
+<div id="ceven-users-modal" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.3);align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif">
+  <div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:26px 26px;width:400px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:17px;font-weight:600;color:#1d1d1f">👤 Usuarios</div>
+      <button onclick="cevenCloseUsers()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#6e6e73;line-height:1">×</button>
+    </div>
+    <form onsubmit="return cevenCreateUser(event)" style="border:0.5px solid #d2d2d7;border-radius:12px;padding:14px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;color:#1d1d1f;margin-bottom:10px">Crear usuario nuevo</div>
+      <input id="ceven-new-user" type="email" placeholder="nombre@ceven.com"
+             style="border:0.5px solid #d2d2d7;border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;margin-bottom:8px">
+      <input id="ceven-new-pass" type="text" placeholder="Contraseña (mínimo 6 caracteres)"
+             style="border:0.5px solid #d2d2d7;border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;margin-bottom:8px">
+      <input id="ceven-new-nombre" type="text" placeholder="Nombre (vendedor), ej: Fer Castro"
+             style="border:0.5px solid #d2d2d7;border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;margin-bottom:8px">
+      <select id="ceven-new-role"
+              style="border:0.5px solid #d2d2d7;border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;margin-bottom:10px;font-family:inherit;background:#fff">
+        <option value="admin">Administrador</option>
+        <option value="ventas" selected>Ventas</option>
+        <option value="lector">Lector</option>
+      </select>
+      <div id="ceven-users-err" style="display:none;background:#fff0f0;color:#d70015;font-size:12px;padding:7px 10px;border-radius:8px;margin-bottom:10px"></div>
+      <button type="submit" style="border:none;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#1d1d1f;color:#fff;font-family:inherit">Crear</button>
+    </form>
+    <div style="font-size:11px;color:#6e6e73;font-weight:500;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Usuarios actuales</div>
+    <div id="ceven-users-list" style="max-height:240px;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- Modal: editar perfil (nombre + rol) de un usuario existente -->
+<div id="ceven-edit-profile-modal" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.3);align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif">
+  <div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:26px 26px;width:360px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:17px;font-weight:600;color:#1d1d1f">Editar usuario</div>
+      <button onclick="cevenCloseEditProfile()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#6e6e73;line-height:1">×</button>
+    </div>
+    <form onsubmit="return cevenSubmitEditProfile(event)">
+      <div id="ceven-edit-profile-email" style="font-size:13px;color:#6e6e73;margin-bottom:10px"></div>
+      <input id="ceven-edit-profile-nombre" type="text" placeholder="Nombre (vendedor)"
+             style="border:0.5px solid #d2d2d7;border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;margin-bottom:8px">
+      <select id="ceven-edit-profile-role"
+              style="border:0.5px solid #d2d2d7;border-radius:8px;padding:8px 10px;font-size:13px;width:100%;outline:none;margin-bottom:10px;font-family:inherit;background:#fff">
+        <option value="admin">Administrador</option>
+        <option value="ventas">Ventas</option>
+        <option value="lector">Lector</option>
+      </select>
+      <div id="ceven-edit-profile-err" style="display:none;background:#fff0f0;color:#d70015;font-size:12px;padding:7px 10px;border-radius:8px;margin-bottom:10px"></div>
+      <button type="submit" style="border:none;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#1d1d1f;color:#fff;font-family:inherit">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Config de Supabase (base NUEVA — completar) + Login -->
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+
+<!-- QUOTE -->
+<div id="p-quote" class="pg on">
+  <div style="text-align:center;margin-bottom:14px">
+    <img id="logo-img" style="max-height:85px;max-width:380px;object-fit:contain;display:none;cursor:pointer" onclick="document.getElementById('logo-up').click()" title="Cambiar logo">
+    <div id="logo-ph" onclick="document.getElementById('logo-up').click()" style="display:inline-block;border:1.5px dashed #d2d2d7;border-radius:10px;padding:11px 26px;cursor:pointer;color:#6e6e73">+ Subir logo</div>
+    <input type="file" id="logo-up" accept="image/*" style="display:none" onchange="handleLogo(this.files[0])">
+  </div>
+  <div class="tb">
+    <div style="flex:1;min-width:140px">
+      <div id="qnum" style="font-size:11px;color:#6e6e73;font-weight:500">Cotización #—</div>
+      <div style="font-size:16px;font-weight:600;margin-top:2px">Productos recomendados para su operación</div>
+    </div>
+    <button class="bi" onclick="nuevaCotizacion()" title="Nueva cotización">＋</button>
+    <button class="bi" onclick="copiarCotizacion()" title="Copiar cotización (crea una nueva con los mismos productos)">⧉</button>
+    <button class="bi" onclick="saveQuote()" title="Guardar cotización">💾</button>
+    <button class="bi" onclick="goTo('history')" title="Historial de cotizaciones">📋</button>
+    <button id="btn-add-pipeline" class="bi" onclick="addToPipeline()" title="Agregar al Pipeline" style="border-color:#34c759;color:#15863a;font-size:14px;font-weight:700;letter-spacing:-1px">+📊</button>
+    <button class="bi" onclick="goTo('pipeline')" title="Ver Pipeline">🎯</button>
+    <button class="bi dark-btn" onclick="toggleDark()" title="Modo oscuro / claro">🌙</button>
+    <button class="bi" onclick="openCevenCare()" title="Garantías CevenCare" style="border-color:#0071e3;color:#0071e3">🛡️</button>
+    <button class="bi" onclick="exportFullBackup()" title="Descargar backup completo (cotizaciones, pipeline, price list, NAC, logo)">⬇️</button>
+    <button class="bi" onclick="document.getElementById('backup-import').click()" title="Restaurar desde un archivo de backup">⬆️</button>
+    <input type="file" id="backup-import" accept=".json" style="display:none" onchange="importFullBackup(this)">
+    <button class="bi" onclick="buildPDF()" title="Exportar PDF">📄</button>
+  </div>
+  <div class="card">
+    <div class="g2">
+      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" style="font-size:14px;font-weight:500"></div>
+      <div><label class="lbl">Ejecutivo</label>
+        <select id="exec">
+          <option value="">Seleccionar ejecutivo</option>
+          <option>Fer Castro</option><option>Tsu Rivas</option><option>Jenny Tofel</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Mes estimado de cierre</label>
+        <select id="mes-cierre-mY" style="width:100%">
+          <option value="">— Mes/Año —</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Estado</label>
+        <select id="quote-estado" style="width:100%">
+          <option value="Proyecto">Proyecto</option>
+          <option value="Cotizado" selected>Cotizado</option>
+          <option value="Negociacion">Negociación</option>
+          <option value="Commit">Commit</option>
+          <option value="Con OC">Con OC</option>
+          <option value="Autorizando">Autorizando</option>
+          <option value="Facturado">Facturado</option>
+          <option value="Perdido">Perdido</option>
+        </select>
+      </div>
+      <div><label class="lbl">Observaciones / Proyecto</label><input id="obs" type="text" placeholder="Nombre o referencia del proyecto..." oninput="onObsChange()"></div>
+    </div>
+  </div>
+  <div id="qbody-wrap" class="tw" style="margin-bottom:18px">
+    <table style="table-layout:fixed;min-width:780px">
+      <colgroup>
+        <col style="width:11%"><col style="width:25%"><col style="width:6%">
+        <col style="width:8%"><col style="width:13%"><col style="width:10%">
+        <col style="width:9%"><col style="width:8%"><col style="width:78px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="qsrt" onclick="sortQBy('sku')" title="Ordenar por SKU">SKU</th>
+          <th class="qsrt" onclick="sortQBy('desc')" title="Ordenar por nombre">Descripción</th>
+          <th style="text-align:right">Qty</th>
+          <th style="text-align:center">Margen %</th>
+          <th class="qsrt" onclick="sortQBy('price')" style="text-align:right" title="Ordenar por precio">P. Venta</th>
+          <th style="text-align:right">Total</th>
+          <th style="text-align:center">IVA/Imp.Int.</th>
+          <th style="text-align:center">Disponib.</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="qbody"></tbody>
+    </table>
+  </div>
+
+  <!-- SECCIÓN GARANTÍAS -->
+  <div id="warranty-section">
+    <div class="warranty-header">
+      <span class="warranty-badge">CevenCare</span>
+      <span class="warranty-title">Garantías Extendidas</span>
+    </div>
+    <div class="warranty-subtitle">Agregados desde CevenCare · Se presentan como opcionales separados de la cotización</div>
+    <div class="tw" style="margin-bottom:8px">
+      <table style="table-layout:fixed;min-width:780px">
+        <colgroup>
+          <col style="width:11%"><col style="width:25%"><col style="width:6%">
+          <col style="width:8%"><col style="width:14%"><col style="width:11%">
+          <col style="width:9%"><col style="width:8%"><col style="width:44px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>SKU</th><th>Descripción</th>
+            <th style="text-align:right">Qty</th>
+            <th style="text-align:center">Canal</th>
+            <th style="text-align:right">P. Venta</th>
+            <th style="text-align:right">Total</th>
+            <th style="text-align:center">IVA</th>
+            <th style="text-align:center">Años</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="wbody"></tbody>
+      </table>
+    </div>
+    <div id="franchise-note" class="franchise-note">
+      <strong>⚠ Nota sobre planes CC (Complete Care)</strong>
+      Los planes CC incluyen cobertura de daños accidentales (1 evento por contrato) con un cargo por servicio a cargo del cliente: pantalla USD 99 (SKU: DADIACC) · otros daños USD 249 / USD 149 para MacBook Neo (SKU: OTDAACC).
+    </div>
+    <button class="btn-add-warranty" onclick="openCevenCare()">+ Agregar garantía desde CevenCare</button>
+  </div>
+  <div style="border-top:0.5px solid #d2d2d7;padding-top:16px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:11px">Condiciones Comerciales</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;font-weight:600">
+      <span>Propuesta efectiva hasta:</span><input id="eff-date" type="date" style="width:auto;font-weight:400">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;font-weight:600">
+      <span>Condición de pago:</span>
+      <select id="pay-mode" style="width:auto;font-weight:400">
+        <option>Contado anticipado</option><option>30 días FF</option><option>45 días FF</option><option>60 días FF</option>
+      </select>
+      <span>– TC Dólar billete BNA del día del pago</span>
+    </div>
+    <div id="cond-cur" style="font-size:13px;font-weight:700;margin-bottom:7px">Precios unitarios expresados en dólares estadounidenses</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:7px">Los precios expresados NO incluyen Impuestos</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:7px">Incluye enrolamiento en Apple Business Manager</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:600">
+      <span>Entrega:</span><input id="delivery" type="text" placeholder="Ej: 5 a 7 días hábiles" style="flex:1;min-width:160px;font-weight:400">
+    </div>
+  </div>
+</div>
+
+<!-- CATALOG -->
+<div id="p-catalog" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <h2 style="font-size:16px;font-weight:500;flex:1">Agregar productos</h2>
+    <button class="bo" onclick="clearCatalogFilters()" title="Limpiar búsqueda y filtros">✕ Filtros</button>
+    <button class="bo" onclick="goTo('addprod')">+ Nuevo artículo</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:10px">
+    <div class="card" style="margin:0">
+      <div class="lbl">% Margen</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+        <input type="number" id="msl-input" min="0" max="80" step="0.25" value="20" style="width:70px;padding:4px 8px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:14px;font-weight:600;font-family:inherit;text-align:right" oninput="syncMarginFromInput()">
+        <span style="font-size:12px;color:#6e6e73">%</span>
+      </div>
+      <input type="range" id="msl" min="0" max="80" value="20" style="width:100%;margin-top:8px;accent-color:#1d1d1f" oninput="syncMarginFromSlider()">
+    </div>
+    <div class="card" style="margin:0;display:flex;flex-direction:column;gap:8px;justify-content:center">
+      <div class="lbl">% Nacionalización</div>
+      <button class="bd" onclick="goTo('nac')">Ver / editar</button>
+    </div>
+    <div class="card" style="margin:0">
+      <div class="lbl">Moneda</div>
+      <select id="cur" onchange="toggleTC()" style="margin-bottom:6px"><option value="USD">USD</option><option value="ARS">ARS</option></select>
+      <input type="number" id="tc" value="1200" style="display:none" placeholder="Tipo de cambio">
+    </div>
+  </div>
+  <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <div id="plbadge" class="bk bkw">Sin price list</div>
+    <div style="flex:1;min-width:8px"></div>
+    <button class="bo" onclick="document.getElementById('plup').click()" title="Reemplaza todo el catálogo (perdés los productos manuales)">📂 Cargar Excel/CSV</button>
+    <input type="file" id="plup" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handlePL(this.files[0])">
+    <button class="bo" onclick="document.getElementById('plprice-up').click()" title="Actualiza solo los precios de los SKU que coincidan, agrega los nuevos, y conserva tus productos manuales">💲 Actualizar precios</button>
+    <input type="file" id="plprice-up" accept=".xls,.xlsx" multiple style="display:none" onchange="handlePriceUpdate(this.files)">
+    <div style="position:relative">
+      <button class="bo red" onclick="toggleCleanupMenu(event)">🧹 Limpiar SKU ▾</button>
+      <div id="cleanup-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:0.5px solid #d2d2d7;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);min-width:210px;z-index:50;overflow:hidden">
+        <button onclick="closeCleanupMenu();deleteLLASkus()" title="Elimina del catálogo los SKU terminados en LL/A (EE.UU./Canadá)" style="display:block;width:100%;text-align:left;border:none;background:none;border-radius:0;padding:10px 14px;font-size:13px;color:#d70015;cursor:pointer;font-family:inherit">🗑️ Eliminar SKU LL/A</button>
+        <button onclick="closeCleanupMenu();deleteEASkus()" title="Elimina del catálogo los SKU con sufijo de 1 letra E/A (no toca LE/A ni BE/A, que son países reales)" style="display:block;width:100%;text-align:left;border:none;background:none;border-radius:0;padding:10px 14px;font-size:13px;color:#d70015;cursor:pointer;font-family:inherit;border-top:0.5px solid #f0f0f0">🗑️ Eliminar SKU E/A</button>
+      </div>
+    </div>
+  </div>
+  <div id="errbox" style="display:none;background:#fff2f2;color:#d70015;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px"></div>
+  <div id="nopl" style="text-align:center;padding:36px;background:#fff;border-radius:12px;border:1.5px dashed #d2d2d7;cursor:pointer;margin-bottom:12px" onclick="document.getElementById('plup').click()">
+    <div style="font-size:26px;margin-bottom:6px">📂</div>
+    <strong>Subí tu Price List</strong>
+    <p style="color:#6e6e73;font-size:12px;margin-top:4px">Se guarda automáticamente para la próxima vez</p>
+  </div>
+  <div id="catui" style="display:none">
+    <div class="gf" style="margin-bottom:10px">
+      <div style="grid-column:1/-1">
+        <label class="lbl">Buscar / Pegar SKUs <span style="color:#6e6e73;font-weight:400">— pegá varios SKUs separados por enter, tab o coma</span></label>
+        <textarea id="fsearch" rows="1" placeholder="ej: macbook pro 14 m4  /  pegá varios SKUs aquí" oninput="handleSearchInput()" onpaste="handleSearchPaste(event)" style="width:100%;padding:8px 12px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;resize:vertical;min-height:36px;line-height:1.4"></textarea>
+      </div>
+      <div><label class="lbl">Model</label><select id="fmodel" onchange="renderCat()"></select></div>
+      <div><label class="lbl">País</label><select id="fcountry" onchange="renderCat()"></select></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span id="catcount" style="color:#6e6e73"></span>
+      <button class="bd" id="addbtn" onclick="addToQuote()" style="display:none">Agregar</button>
+    </div>
+    <div class="tw">
+      <table style="table-layout:fixed;width:100%">
+        <colgroup><col style="width:32px"><col style="width:14%"><col><col style="width:13%"><col style="width:13%"><col style="width:14%"><col style="width:44px"></colgroup>
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="chkall" onchange="toggleAll(this)"></th>
+            <th>SKU</th><th>Descripción</th>
+            <th style="text-align:right">Costo</th>
+            <th style="text-align:right">C. Nac.</th>
+            <th style="text-align:right">P. Venta</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="catbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ADD PRODUCT -->
+<div id="p-addprod" class="pg">
+  <div class="tb"><button class="bo" onclick="cancelEditManual()">← Volver</button><h2 id="addprod-title" style="font-size:16px;font-weight:500">Agregar artículo al price list</h2></div>
+  <div class="card">
+    <div class="g2">
+      <div><label class="lbl">SKU *</label><input id="np-sku" type="text" placeholder="Ej: MW0Y3LL/A"></div>
+      <div><label class="lbl">Descripción *</label><input id="np-desc" type="text" placeholder="Descripción del producto"></div>
+      <div><label class="lbl" id="np-price-lbl">Precio de costo (USD) *</label><input id="np-price" type="number" step="0.01" min="0" placeholder="0.00"></div>
+      <div><label class="lbl">Model</label><select id="np-model"></select></div>
+      <div><label class="lbl">País</label><select id="np-country"></select></div>
+      <div style="grid-column:1/-1;margin-top:4px">
+        <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer">
+          <input type="checkbox" id="np-nacincluded" style="margin-top:2px;width:15px;height:15px;flex-shrink:0" onchange="var l=document.getElementById('np-price-lbl');l.textContent=this.checked?'Precio nacionalizado (USD) *':'Precio de costo (USD) *'">
+          <span style="font-size:13px;color:#1d1d1f">Precio ya nacionalizado
+            <span style="display:block;font-size:11px;color:#6e6e73;margin-top:1px">El precio ingresado ya incluye la nacionalización — no se sumará el % adicional al cotizar</span>
+          </span>
+        </label>
+      </div>
+    </div>
+    <div id="nperr" style="display:none;color:#d70015;font-size:13px;margin-top:10px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="bo" onclick="cancelEditManual()">Cancelar</button>
+      <button class="bd" onclick="saveNewProd()">Guardar en price list</button>
+    </div>
+  </div>
+</div>
+
+<!-- NAC -->
+<div id="p-nac" class="pg">
+  <div class="tb"><button class="bo" onclick="goTo('catalog')">← Volver</button><h2 style="font-size:16px;font-weight:500">% Nacionalización por modelo</h2></div>
+  <div class="tw" style="margin-bottom:10px">
+    <table><thead><tr><th style="width:70%">Modelo</th><th style="text-align:right">%</th></tr></thead><tbody id="nacbody"></tbody></table>
+  </div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:14px">
+    <button class="bo" onclick="resetNac()">Restablecer</button>
+    <button class="bo" onclick="renderNacDiag()">🔍 Diagnóstico</button>
+    <button class="bd" onclick="goTo('catalog')">Listo</button>
+  </div>
+  <div id="nac-diag" style="display:none">
+    <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:#1d1d1f">Diagnóstico — qué % se aplica a cada modelo del price list</div>
+    <div style="font-size:11px;color:#6e6e73;margin-bottom:10px">Filtrá por SKU para verificar productos específicos. La columna "Coincide con" muestra qué clave de la tabla NAC se usó.</div>
+    <input id="diag-search" type="text" placeholder="Buscar SKU o LOB..." oninput="renderNacDiag()" style="width:100%;padding:8px 10px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:10px;background:#fff">
+    <div class="tw">
+      <table style="min-width:680px">
+        <thead><tr>
+          <th>SKU</th><th>LOB</th><th>Model</th>
+          <th style="text-align:center">Coincide con</th>
+          <th style="text-align:right">% NAC</th>
+        </tr></thead>
+        <tbody id="diag-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- NAC POR COTIZACIÓN -->
+<div id="p-qnac" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <h2 style="font-size:16px;font-weight:500">% Nacionalización · Solo esta cotización</h2>
+  </div>
+  <div style="background:#fff8e1;border:0.5px solid #ffe082;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#7a5800;line-height:1.5">
+    <strong style="display:block;margin-bottom:2px;font-size:11px;text-transform:uppercase;letter-spacing:.3px">⚠ Override por cotización</strong>
+    Estos valores reemplazan al preset global <strong>solo en esta cotización</strong>. Los demás presupuestos siguen usando el % global. Las celdas en blanco usan el valor del preset global.
+  </div>
+  <div class="tw" style="margin-bottom:10px">
+    <table>
+      <thead><tr>
+        <th style="width:55%">Modelo</th>
+        <th style="text-align:right;width:20%">% Global</th>
+        <th style="text-align:right;width:25%">% Esta cotización</th>
+      </tr></thead>
+      <tbody id="qnacbody"></tbody>
+    </table>
+  </div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button class="bo" onclick="clearQuoteNac()">Limpiar overrides</button>
+    <button class="bd" onclick="applyQuoteNac()">Aplicar y volver</button>
+  </div>
+</div>
+<div id="p-history" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <h2 style="font-size:16px;font-weight:500;flex:1">Historial</h2>
+    <button class="bo" onclick="exportDB()">⬇ Excel</button>
+    <button class="bo red" id="hist-del-btn" onclick="deleteSelected()" style="display:none">✕ Eliminar</button>
+    <button class="bd" id="hist-pdf-btn" onclick="exportSelectedPDF()" style="display:none">PDF seleccionadas</button>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="gf">
+      <div><label class="lbl">Buscar cliente</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
+      <div><label class="lbl">Ejecutivo</label><select id="hexec" onchange="renderHistory()"><option value="">Todos</option><option>Fer Castro</option><option>Tsu Rivas</option><option>Jenny Tofel</option></select></div>
+      <div><label class="lbl">Desde</label><input id="hfrom" type="date" onchange="renderHistory()"></div>
+      <div><label class="lbl">Hasta</label><input id="hto" type="date" onchange="renderHistory()"></div>
+      <div style="display:flex;align-items:flex-end"><button class="bo" style="width:100%" onclick="clearHF()">Limpiar</button></div>
+    </div>
+  </div>
+  <div id="histwrap"></div>
+</div>
+
+<!-- PIPELINE -->
+<div id="p-pipeline" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <button class="bo" onclick="nuevaCotizacion();goTo('quote')" style="border-color:#34c759;color:#15863a">+ Nueva cotización</button>
+    <h2 style="font-size:16px;font-weight:500;flex:1">🎯 Pipeline</h2>
+    <select id="archive-month-sel" onchange="renderPipeline()" title="Ver meses archivados" style="padding:4px 8px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;max-width:160px">
+      <option value="">Pipeline actual</option>
+    </select>
+    <button class="bo" onclick="openTargetAnual()" title="Ver y configurar objetivo anual de facturación" style="font-weight:600">📈 Target Anual</button>
+    <button class="bo" onclick="openSkuDashboard()" title="Análisis por SKU: unidades por estado y clientes" style="font-weight:600">📦 Por SKU</button>
+    <button class="bo" onclick="clearPipelineFilters()" title="Limpiar todos los filtros">✕ Filtros</button>
+    <button class="bi dark-btn" onclick="toggleDark()" title="Modo oscuro / claro">🌙</button>
+    <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer último cambio de estado o fecha" disabled>↩</button>
+    <button class="bo" id="pipe-backup-btn" onclick="pickBackupFolder()" title="Elegí una carpeta donde guardar backups automáticos">📂 Elegir carpeta backup</button>
+    <button class="bo" onclick="exportPipeline()">⬇ Excel</button>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="gf">
+      <div><label class="lbl">Buscar cliente / proyecto</label><input id="pipe-search" type="text" placeholder="..." oninput="renderPipeline()"></div>
+      <div><label class="lbl">Ejecutivo</label><select id="pipe-exec" onchange="renderPipeline()"><option value="">Todos</option><option>Fer Castro</option><option>Tsu Rivas</option><option>Jenny Tofel</option></select></div>
+      <div><label class="lbl">Familia</label>
+        <select id="pipe-family" onchange="renderPipeline()">
+          <option value="">Todas</option>
+          <option value="mac">Mac</option>
+          <option value="iphone">iPhone</option>
+          <option value="ipad">iPad</option>
+          <option value="serv">Servicios</option>
+          <option value="acc">Accesorios</option>
+        </select>
+      </div>
+      <div><label class="lbl">Estado</label>
+        <select id="pipe-status" onchange="window._pipeStatusFilters=this.value?[this.value]:[];renderPipeline()">
+          <option value="">Todos</option>
+          <option value="Proyecto">Proyecto</option>
+          <option value="Cotizado">Cotizado</option>
+          <option value="Negociacion">Negociación</option>
+          <option value="Commit">Commit</option>
+          <option value="Con OC">Con OC</option>
+          <option value="Autorizando">Autorizando</option>
+          <option value="Facturado">Facturado</option>
+          <option value="Perdido">Perdido</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="pipe-dashboard" style="display:none;margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
+      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Cotizaciones</div>
+        <div id="dash-count" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+      </div>
+      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Macs</div>
+        <div id="dash-mac" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+        <div id="dash-mac-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
+      </div>
+      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">iPhone</div>
+        <div id="dash-iph" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+        <div id="dash-iph-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
+      </div>
+      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">iPad</div>
+        <div id="dash-ipad" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+        <div id="dash-ipad-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
+      </div>
+      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Servicios</div>
+        <div id="dash-serv" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+        <div id="dash-serv-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
+      </div>
+      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Accesorios</div>
+        <div id="dash-acc" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+        <div id="dash-acc-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
+      </div>
+      <div id="dash-facturado-card" class="kpi" style="background:#17a589;color:#fff;border-radius:12px;padding:12px 14px">
+        <div id="dash-facturado-lbl" style="font-size:11px;color:#a5d6a7;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Facturado</div>
+        <div id="dash-facturado" style="font-size:22px;font-weight:600">USD 0</div>
+        <div id="dash-facturado-mgpd" style="font-size:11px;color:#a5d6a7;margin-top:2px">MgPd —</div>
+      </div>
+      <div id="dash-proy-card" class="kpi" style="background:#0a7d52;color:#fff;border-radius:12px;padding:12px 14px">
+        <div id="dash-proy-lbl" style="font-size:11px;color:#9ad9bc;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Proyectado</div>
+        <div id="dash-proy" style="font-size:22px;font-weight:600">USD 0</div>
+        <div id="dash-proy-mgpd" style="font-size:11px;color:#9ad9bc;margin-top:2px">MgPd —</div>
+      </div>
+      <div id="dash-total-card" class="kpi" style="background:#1d1d1f;color:#fff;border-radius:12px;padding:12px 14px">
+        <div id="dash-total-lbl" style="font-size:11px;color:#aeaeb2;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Total pipeline</div>
+        <div id="dash-total" style="font-size:22px;font-weight:600">USD 0</div>
+        <div id="dash-margen" style="font-size:11px;color:#aeaeb2;margin-top:2px">Margen pond. 0%</div>
+      </div>
+    </div>
+    <!-- Filtros tipo pastillas: Cierre estimado + Top clientes en una sola fila -->
+    <div id="pipe-pills-row" style="display:flex;flex-wrap:nowrap;gap:8px 20px;align-items:center;margin-bottom:10px;overflow:hidden">
+      <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;flex-shrink:0">
+        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Cierre est.</span>
+        <div id="pipe-month-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
+      </div>
+      <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;min-width:0">
+        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Top clientes</span>
+        <div id="pipe-topclients-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
+      </div>
+    </div>
+    <!-- Por estado -->
+    <div id="dash-by-status" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  </div>
+
+  <div class="tw">
+    <table style="min-width:1400px">
+      <thead><tr>
+        <th class="srt" data-sort="fechaISO">Fecha</th>
+        <th class="srt" data-sort="ejecutivo">Ejecutivo</th>
+        <th class="srt" data-sort="cliente">Cliente</th>
+        <th class="srt" data-sort="proyecto">Proyecto</th>
+        <th class="srt" data-sort="mesCierre" title="Mes estimado de cierre">Cierre est.</th>
+        <th class="srt" data-sort="estado" style="text-align:center">Estado</th>
+        <th class="srt" data-sort="qMac" style="text-align:center" title="Cantidad total de Mac (todos los modelos sumados)">Macs</th>
+        <th class="srt" data-sort="qIph" style="text-align:center" title="Cantidad de iPhone">iPhone</th>
+        <th class="srt" data-sort="qIpad" style="text-align:center" title="Cantidad de iPad">iPad</th>
+        <th class="srt" data-sort="qServ" style="text-align:center" title="Cantidad de Servicios/Garantías">Serv.</th>
+        <th class="srt" data-sort="qAcc" style="text-align:center" title="Cantidad de Accesorios (todo lo que no es Mac, iPhone, iPad ni Servicio)">Acc.</th>
+        <th class="srt" data-sort="margenPond" style="text-align:right" title="Margen ponderado por línea de producto">Margen</th>
+        <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
+        <th class="stk-act" style="width:130px;text-align:center">Acciones</th>
+      </tr></thead>
+      <tbody id="pipe-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TARGET ANUAL MODAL -->
+<div id="target-modal" onclick="if(event.target===this)closeTargetAnual()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;overflow-y:auto;padding:24px 16px">
+  <div style="max-width:980px;margin:0 auto;background:#f5f5f7;border-radius:20px;overflow:hidden">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:#fff;border-bottom:0.5px solid #d2d2d7">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:#1d1d1f">📈 Target Anual</div>
+        <div style="font-size:12px;color:#6e6e73;margin-top:2px">Objetivo de facturación y seguimiento mensual</div>
+      </div>
+      <button onclick="closeTargetAnual()" style="background:#f2f2f7;border:none;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:18px;color:#6e6e73;display:flex;align-items:center;justify-content:center;font-family:inherit">×</button>
+    </div>
+    <!-- Body -->
+    <div style="padding:20px">
+      <!-- Botón para mostrar/ocultar configuración -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <button id="target-config-toggle" onclick="toggleTargetConfig()" style="background:none;border:0.5px solid #d2d2d7;border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer;color:#6e6e73;font-family:inherit;font-weight:500">⚙ Configurar</button>
+      </div>
+      <!-- Configuración del target (oculta por defecto) -->
+      <div id="target-config-wrap" style="display:none;background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:16px;border:0.5px solid #d2d2d7">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:13px;color:#1d1d1f;white-space:nowrap">Año:</label>
+            <input id="target-year" type="number" min="2020" max="2050" style="width:80px;padding:6px 8px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff" onchange="renderTargetAnual()">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:13px;color:#1d1d1f;white-space:nowrap">Target USD:</label>
+            <input id="target-amount" type="number" min="0" step="1000" placeholder="Ej: 5000000" class="no-spin" style="width:140px;padding:6px 8px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff">
+          </div>
+          <button onclick="saveTargetAnual()" style="background:#0071e3;color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Guardar</button>
+        </div>
+      </div>
+      <!-- Dashboard dinámico -->
+      <div id="target-dashboard"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ANÁLISIS POR SKU MODAL -->
+<div id="sku-modal" onclick="if(event.target===this)closeSkuDashboard()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;overflow-y:auto;padding:24px 16px">
+  <div style="max-width:1100px;margin:0 auto;background:#f5f5f7;border-radius:20px;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:#fff;border-bottom:0.5px solid #d2d2d7">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:#1d1d1f">📦 Análisis por SKU</div>
+        <div style="font-size:12px;color:#6e6e73;margin-top:2px">Unidades por estado de venta y clientes que lo están cotizando</div>
+      </div>
+      <button onclick="closeSkuDashboard()" style="background:#f2f2f7;border:none;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:18px;color:#6e6e73;display:flex;align-items:center;justify-content:center;font-family:inherit">×</button>
+    </div>
+    <div style="padding:20px">
+      <div id="sku-dashboard"></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Capa de sincronización con Supabase -->
+<script src="js/sync.js"></script>
+
+<!-- Lógica de la app (el orden de carga importa: replica el orden del monolito original) -->
+<script src="js/state.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/catalog.js"></script>
+<script src="js/quote.js"></script>
+<script src="js/nac.js"></script>
+<script src="js/products.js"></script>
+<script src="js/quotes-db.js"></script>
+<script src="js/pipeline-data.js"></script>
+<script src="js/backup.js"></script>
+<script src="js/pipeline-core.js"></script>
+<script src="js/archive-view.js"></script>
+<script src="js/pipeline-view.js"></script>
+<script src="js/pipeline-detail.js"></script>
+<script src="js/backup-folder.js"></script>
+<script src="js/history.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/warranties.js"></script>
+<script src="js/undo.js"></script>
+<script src="js/target.js"></script>
+<div id="app-ver-bar"><span>Cotizador Ceven v<span id="app-ver-num"></span></span></div>
+<script src="js/init.js"></script>
+
+<!-- ── Modal edición de ítem en cotización ── -->
+<div id="qitem-edit-modal" onclick="if(event.target===this)closeQuoteItemEdit()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9100;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#f5f5f7;border-radius:20px;width:100%;max-width:680px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:#fff;border-bottom:0.5px solid #d2d2d7">
+      <div style="font-size:16px;font-weight:600;color:#1d1d1f">Editar artículo <span style="font-size:12px;font-weight:400;color:#6e6e73;margin-left:6px">· solo afecta esta cotización</span></div>
+      <button onclick="closeQuoteItemEdit()" style="background:#f2f2f7;border:none;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:18px;color:#6e6e73;line-height:1;font-family:inherit">×</button>
+    </div>
+    <div style="padding:20px">
+      <div class="g2" style="gap:12px">
+        <div><label class="lbl">SKU</label><input id="qie-sku" type="text" class="si" style="width:100%"></div>
+        <div><label class="lbl">Descripción</label><input id="qie-desc" type="text" class="si" style="width:100%"></div>
+        <div><label class="lbl" id="qie-price-lbl">Precio de costo (USD)</label><input id="qie-price" type="number" step="0.01" min="0" class="si" style="width:100%"></div>
+        <div><label class="lbl">Model</label><select id="qie-model" class="si" style="width:100%"></select></div>
+        <div>
+          <label class="lbl">Nacionalización %</label>
+          <input id="qie-nac" type="number" step="0.5" min="0" max="100" class="si" style="width:100%" placeholder="Automático según modelo">
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer">
+            <input type="checkbox" id="qie-nacincluded" style="margin-top:2px;width:15px;height:15px;flex-shrink:0" onchange="
+              var chk=this.checked;
+              document.getElementById('qie-price-lbl').textContent=chk?'Precio nacionalizado (USD)':'Precio de costo (USD)';
+              document.getElementById('qie-nac').value=chk?'0':'';
+              document.getElementById('qie-nac').disabled=chk;
+            ">
+            <span style="font-size:13px;color:#1d1d1f">Precio ya nacionalizado
+              <span style="display:block;font-size:11px;color:#6e6e73;margin-top:1px">Tildá esto para forzar nac = 0%, o escribí el % manualmente arriba</span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div id="qie-err" style="display:none;color:#d70015;font-size:13px;margin-top:10px"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+        <button class="bo" onclick="closeQuoteItemEdit()">Cancelar</button>
+        <button class="bd" onclick="saveQuoteItemEdit()">Guardar en cotización</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
