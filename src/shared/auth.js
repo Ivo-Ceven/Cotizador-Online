@@ -64,12 +64,14 @@ function cevenShowApp(){
   cevenUpdateAccountBar();
   cevenApplyVendorAutofill();
 }
-/* La barra (Usuarios / Salir) solo se ve en la página principal (cotización). */
+/* La barra (Usuarios / Salir) se ve en la página principal (cotización)
+   o en el shell (panel selector de marcas, #brand-panel). */
 function cevenUpdateAccountBar(){
   var bar = document.getElementById('ceven-account-bar');
   if(!bar) return;
   var quote = document.getElementById('p-quote');
-  var onMain = cevenIsValidSession() && quote && quote.classList.contains('on');
+  var onMain = cevenIsValidSession() &&
+    ((quote && quote.classList.contains('on')) || !!document.getElementById('brand-panel'));
   bar.style.display = onMain ? 'flex' : 'none';
   var ubtn = document.getElementById('ceven-users-btn');
   if(ubtn) ubtn.style.display = cevenIsAdmin() ? '' : 'none';
