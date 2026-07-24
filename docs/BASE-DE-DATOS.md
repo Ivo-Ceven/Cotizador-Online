@@ -41,9 +41,14 @@ create table public.pipeline (
   "skuPartialRemMes" jsonb,   -- mes del remanente parcial
   "skuArchivedQty"   jsonb,   -- qty ya archivada por línea
   "ovLink"        text,       -- link a la orden de venta
+  opg             text,       -- usada solo por brand='poly': número de precio especial que asigna la marca
+  salas           jsonb,      -- usada solo por brand='poly': desglose [{qNum,sala,monto,fecha}] de las Salas agrupadas bajo el OPG
+  factura         text,       -- usada solo por brand='poly': número de factura, se completa post-hoc (análogo a ovLink)
   primary key (brand, id)
 );
 -- Nota: el campo local `skuOvLinks` NO se sincroniza (excluido a propósito en sync.js).
+-- Nota: qMac/qIph/qIpad/qServ/qAcc/montoMac.../qNum/margenPond/skuStatus/skuMesCierre/skuPartial*/ovLink
+-- son 100% de brand='apple' — para brand='poly' quedan siempre NULL (agregados 2026-07-24, migración aditiva).
 
 -- Settings compartidos: espeja claves de localStorage como key/value, por marca
 create table public.app_settings (

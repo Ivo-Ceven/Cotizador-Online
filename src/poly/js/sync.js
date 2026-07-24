@@ -32,23 +32,21 @@
     return;
   }
 
-  var SETTING_KEYS = ['cquotes','cpl','carchive','cnac','cqc','ctarget','ctarget_manual','clogo','clogo_dark','cnac_mac24_v2'];
+  var SETTING_KEYS = ['poly_cquotes','poly_cpl','poly_carchive','poly_cqc','poly_clogo','poly_clogo_dark'];
   var METHOD_KEYS = {setItem:1,getItem:1,removeItem:1,clear:1,key:1,length:1};
 
-  var PIPE_COLS = ['id','fecha','fechaISO','qNum','cliente','proyecto','ejecutivo','mesCierre','estado',
-    'qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad','montoAcc','montoServ',
-    'monto','margenPond','moneda','skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',
-    'skuPartialRemMes','skuArchivedQty','ovLink'];
-  // skuOvLinks NO existe como columna en Supabase — se excluye del payload
-  var NUM_COLS = ['id','qNum','qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad',
-    'montoAcc','montoServ','monto','margenPond'];
-  // Columnas jsonb en Supabase: van como objeto nativo (no string)
+  // Fila de pipeline por OPG (no por qNum — ver pipeline-core.js): sin familias
+  // Apple (qMac/qIph/...), con opg/salas/factura en su lugar.
+  var PIPE_COLS = ['id','fecha','fechaISO','cliente','ejecutivo','mesCierre','estado',
+    'monto','moneda','opg','salas','factura'];
+  var NUM_COLS = ['id','monto'];
+  // Columnas jsonb en Supabase: van como objeto/array nativo (no string)
   // coerce las parsea de vuelta si vienen como string por algún motivo
-  var OBJ_COLS = ['skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt','skuPartialRemMes','skuArchivedQty'];
+  var OBJ_COLS = ['salas'];
 
   // Marca de este cotizador: TODA la sync filtra y estampa esta marca.
   // (Los cotizadores de otras marcas usan su propio valor y no se mezclan.)
-  var BRAND = 'apple';
+  var BRAND = 'poly';
   var BQ = 'brand=eq.' + BRAND;
 
   // Headers autenticados con el token del usuario logueado (auth.js se carga antes).
@@ -127,11 +125,6 @@
   function coerce(r){
     delete r.brand; // dato redundante localmente (este cotizador es 100% de su marca)
     for(var i=0;i<NUM_COLS.length;i++){ var c=NUM_COLS[i]; if(r[c]!==null && r[c]!==undefined && r[c]!=='') r[c]=Number(r[c]); }
-    // qNum viene como número de Supabase (bigint) pero cquotes lo guarda como "0071"
-    // Normalizar a string con ceros para que el match funcione
-    if(r.qNum!==null && r.qNum!==undefined && r.qNum!==''){
-      r.qNum = String(parseInt(r.qNum)||0).padStart(4,'0');
-    }
     // jsonb fields: Supabase devuelve objetos nativos, pero por si acaso vienen como string
     for(var j=0;j<OBJ_COLS.length;j++){
       var oc=OBJ_COLS[j];
@@ -200,7 +193,7 @@
 
   function seedFromLocal(){
     try{
-      var lp = JSON.parse(localStorage.getItem('cpipeline')||'[]');
+      var lp = JSON.parse(localStorage.getItem('poly_cpipeline')||'[]');
       var sets=[];
       SETTING_KEYS.forEach(function(k){ var v=localStorage.getItem(k); if(v!==null) sets.push({key:k,value:v}); });
       if(!lp.length && !sets.length) return;
@@ -213,20 +206,19 @@
         pushSettings(sets)
       ]).then(function(res){
         pushDone();
-        if(res[0] && res[1]){ console.log('[sync] base sembrada'); retryDone('cpipeline'); return; }
+        if(res[0] && res[1]){ console.log('[sync] base sembrada'); retryDone('poly_cpipeline'); return; }
         // El seed es EL momento crítico (el localStorage es la única copia de los
         // datos): si no subió, hay que reintentar, no seguir como si nada.
         console.warn('[sync] el seed no subió completo — reintentando');
         _pipeSnap={};   // forzar el re-diff completo en el próximo intento
-        retryLater('cpipeline');
+        retryLater('poly_cpipeline');
         sets.forEach(function(s){ retryLater(s.key); });
       });
     }catch(e){ console.warn('[sync] seed', e); }
   }
 
   function rehydrate(){
-    try{ window.products = JSON.parse(localStorage.getItem('cpl')||'[]'); if(typeof initCat==='function') initCat(); }catch(e){}
-    try{ var n=localStorage.getItem('cnac'); if(n){ window.nacRates=JSON.parse(n); if(visible('p-nac') && typeof renderNac==='function') renderNac(); } }catch(e){}
+    try{ window.products = JSON.parse(localStorage.getItem('poly_cpl')||'[]'); if(typeof initCat==='function') initCat(); }catch(e){}
     try{ if(typeof applyLogo==='function') applyLogo(); }catch(e){}
     try{ if(typeof renderQ==='function') renderQ(); }catch(e){}
     try{ if(visible('p-pipeline') && typeof renderPipeline==='function') renderPipeline(); }catch(e){}
@@ -238,7 +230,7 @@
     SP.setItem = function(k,v){
       if(METHOD_KEYS[k]) return;            // nunca guardar claves con nombre de metodo (evita el bug)
       _origSetItem.call(this, k, v);
-      if(this===window.localStorage && _booted && (k==='cpipeline' || SETTING_KEYS.indexOf(k)>=0)){
+      if(this===window.localStorage && _booted && (k==='poly_cpipeline' || SETTING_KEYS.indexOf(k)>=0)){
         clearTimeout(_timers[k]);
         // borrar la entrada al disparar: _timers[k] truthy significa "flush pendiente"
         // y el poll lo usa para no pisar cambios locales todavía no subidos
@@ -250,7 +242,7 @@
     // Sin sesión tampoco se puede empujar, pero el cambio local sigue sin subir:
     // reintentar (y de paso _timers[k] evita que el poll lo pise cuando vuelva).
     if(!sessionOk()){ retryLater(k); return; }
-    if(k==='cpipeline'){ syncPipeline(); }
+    if(k==='poly_cpipeline'){ syncPipeline(); }
     else {
       var v=localStorage.getItem(k);
       if(v===null) return;
@@ -258,7 +250,7 @@
     }
   }
   function syncPipeline(){
-    var arr; try{ arr=JSON.parse(localStorage.getItem('cpipeline')||'[]'); }catch(e){ return; }
+    var arr; try{ arr=JSON.parse(localStorage.getItem('poly_cpipeline')||'[]'); }catch(e){ return; }
     var nextSnap={}, toUpsert=[];
     for(var i=0;i<arr.length;i++){
       var r=arr[i]; if(r.id==null) continue;
@@ -275,10 +267,10 @@
     pushBegin();
     Promise.all([pushPipeRows(toUpsert), delPipeRows(toDelete)]).then(function(res){
       pushDone();
-      if(res[0] && res[1]){ retryDone('cpipeline'); return; }
+      if(res[0] && res[1]){ retryDone('poly_cpipeline'); return; }
       _pipeSnap=prevSnap;
-      retryLater('cpipeline');
-    }, function(){ pushDone(); _pipeSnap=prevSnap; retryLater('cpipeline'); });
+      retryLater('poly_cpipeline');
+    }, function(){ pushDone(); _pipeSnap=prevSnap; retryLater('poly_cpipeline'); });
   }
 
   function poll(){
@@ -287,12 +279,12 @@
       if(!Array.isArray(rows)) return;
       // No pisar el estado local si hay un cambio propio esperando su flush
       // (el debounce de 350ms): primero sube lo nuestro, el próximo poll trae el merge.
-      if(_timers['cpipeline'] || _pushing > 0) return;
+      if(_timers['poly_cpipeline'] || _pushing > 0) return;
       rows.forEach(coerce);
-      var lp; try{ lp=JSON.parse(localStorage.getItem('cpipeline')||'[]'); }catch(e){ lp=[]; }
+      var lp; try{ lp=JSON.parse(localStorage.getItem('poly_cpipeline')||'[]'); }catch(e){ lp=[]; }
       if(normPipe(lp)!==normPipe(rows)){
         var sorted=rows.slice().sort(byId);
-        rawSet('cpipeline', JSON.stringify(sorted));
+        rawSet('poly_cpipeline', JSON.stringify(sorted));
         _pipeSnap={}; sorted.forEach(function(r){ _pipeSnap[r.id]=snapKey(r); });
         if(visible('p-pipeline') && typeof renderPipeline==='function') renderPipeline();
       }
@@ -306,10 +298,9 @@
         var v=String(row.value);
         if(localStorage.getItem(row.key)!==v){ rawSet(row.key, v); changed[row.key]=1; }
       });
-      if(changed['cpl']){ try{ window.products=JSON.parse(localStorage.getItem('cpl')||'[]'); if(typeof initCat==='function') initCat(); }catch(e){} }
-      if(changed['cnac']){ try{ window.nacRates=JSON.parse(localStorage.getItem('cnac')||'{}'); if(visible('p-nac')&&typeof renderNac==='function') renderNac(); }catch(e){} }
-      if(changed['clogo'] && typeof applyLogo==='function'){ try{ applyLogo(); }catch(e){} }
-      if(changed['cquotes'] && visible('p-history') && typeof renderHistory==='function') renderHistory();
+      if(changed['poly_cpl']){ try{ window.products=JSON.parse(localStorage.getItem('poly_cpl')||'[]'); if(typeof initCat==='function') initCat(); }catch(e){} }
+      if(changed['poly_clogo'] && typeof applyLogo==='function'){ try{ applyLogo(); }catch(e){} }
+      if(changed['poly_cquotes'] && visible('p-history') && typeof renderHistory==='function') renderHistory();
     });
   }
 
@@ -349,7 +340,7 @@
         seedFromLocal();
         rehydrate(); // renderizar la UI inmediatamente con los datos locales restaurados
       } else {
-        rawSet('cpipeline', JSON.stringify(serverPipe.slice().sort(byId)));
+        rawSet('poly_cpipeline', JSON.stringify(serverPipe.slice().sort(byId)));
         serverPipe.forEach(function(r){ _pipeSnap[r.id]=snapKey(r); });
         SETTING_KEYS.forEach(function(k){
           if(serverSets[k]!==undefined && serverSets[k]!==null){ rawSet(k, String(serverSets[k])); }
@@ -360,10 +351,10 @@
         });
         if(serverPipe.length===0){
           try{
-            var lp=JSON.parse(localStorage.getItem('cpipeline')||'[]');
+            var lp=JSON.parse(localStorage.getItem('poly_cpipeline')||'[]');
             if(lp.length){
               lp.forEach(function(r){ if(r.id!=null) _pipeSnap[r.id]=snapKey(r); });
-              pushPipeRows(lp.map(pickPipe)).then(function(ok){ if(!ok){ _pipeSnap={}; retryLater('cpipeline'); } });
+              pushPipeRows(lp.map(pickPipe)).then(function(ok){ if(!ok){ _pipeSnap={}; retryLater('poly_cpipeline'); } });
             }
           }catch(e){}
         }

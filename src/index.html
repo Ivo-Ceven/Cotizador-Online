@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cotizadores Ceven</title>
+<meta name="description" content="Cotizadores multi-marca de Ceven: Apple, Poly y HP.">
+
+<!-- PWA (instalable + offline). El service worker se registra en shared/pwa.js. -->
+<meta name="theme-color" content="#f5f5f7">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Ceven">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f7;color:#1d1d1f;font-size:13px;min-height:100vh}
@@ -60,11 +71,10 @@
       <div style="font-size:17px;font-weight:600;margin-top:12px">Apple</div>
       <div style="font-size:12px;color:#6e6e73;margin-top:3px">Mac · iPhone · iPad · CevenCare</div>
     </div>
-    <div class="brand-card soon">
+    <div class="brand-card" onclick="location.href='poly/'" title="Abrir cotizador Poly">
       <div style="font-size:44px;line-height:1">🎧</div>
       <div style="font-size:17px;font-weight:600;margin-top:12px">Poly</div>
       <div style="font-size:12px;color:#6e6e73;margin-top:3px">Audio y video conferencia</div>
-      <div class="brand-badge">Próximamente</div>
     </div>
     <div class="brand-card soon">
       <div style="font-size:44px;line-height:1">💻</div>
@@ -130,6 +140,7 @@
 
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
+<script src="shared/pwa.js"></script>
 
 </body>
 </html>

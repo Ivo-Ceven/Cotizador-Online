@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cotizador Ceven · Poly</title>
+
+<!-- PWA (instalable + offline). El service worker se registra en ../shared/pwa.js. -->
+<meta name="theme-color" content="#f5f5f7">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Ceven Poly">
+
+<script src="../vendor/xlsx.full.min.js"></script>
+<script src="../vendor/html2canvas.min.js"></script>
+<script src="../vendor/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/dark.css">
+</head>
+<body>
+
+<!-- ============================================================
+     El login y la gestión de usuarios viven en el shell (../index.html).
+     Esta página exige sesión válida (guard más abajo, tras cargar auth.js).
+     ============================================================ -->
+<div id="ceven-account-bar" style="display:none;position:fixed;bottom:16px;right:16px;z-index:9000;gap:8px;font-family:-apple-system,BlinkMacSystemFont,sans-serif">
+  <button onclick="location.href='../index.html'" title="Volver al panel de marcas"
+          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">⌂ Panel</button>
+  <button onclick="cevenChangeMyPassword()" title="Cambiar mi contraseña"
+          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">🔑 Cambiar contraseña</button>
+  <button onclick="cevenLogout()" title="Cerrar sesión"
+          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">🚪 <span id="ceven-logout-label">Salir</span></button>
+</div>
+
+<!-- Config de Supabase + auth compartidos con el shell -->
+<script src="../shared/config.js"></script>
+<script src="../shared/auth.js"></script>
+<script>if(!cevenIsValidSession()) location.replace('../index.html');</script>
+
+<!-- QUOTE -->
+<div id="p-quote" class="pg on">
+  <div style="text-align:center;margin-bottom:14px">
+    <img id="logo-img" style="max-height:85px;max-width:380px;object-fit:contain;display:none;cursor:pointer" onclick="document.getElementById('logo-up').click()" title="Cambiar logo">
+    <div id="logo-ph" onclick="document.getElementById('logo-up').click()" style="display:inline-block;border:1.5px dashed #d2d2d7;border-radius:10px;padding:11px 26px;cursor:pointer;color:#6e6e73">+ Subir logo</div>
+    <input type="file" id="logo-up" accept="image/*" style="display:none" onchange="handleLogo(this.files[0])">
+  </div>
+  <div class="tb">
+    <div style="flex:1;min-width:140px">
+      <div id="qnum" style="font-size:11px;color:#6e6e73;font-weight:500">Cotización #—</div>
+      <div style="font-size:16px;font-weight:600;margin-top:2px">Poly · Audio y video conferencia</div>
+    </div>
+    <button class="bi" onclick="nuevaCotizacion()" title="Nueva cotización">＋</button>
+    <button class="bi" onclick="copiarCotizacion()" title="Copiar cotización (crea una nueva con los mismos productos)">⧉</button>
+    <button class="bi" onclick="saveQuote()" title="Guardar cotización">💾</button>
+    <button class="bi" onclick="goTo('history')" title="Historial de cotizaciones">📋</button>
+    <button id="btn-add-pipeline" class="bi" onclick="addToPipeline()" title="Agregar al Pipeline" style="border-color:#34c759;color:#15863a;font-size:14px;font-weight:700;letter-spacing:-1px">+📊</button>
+    <button class="bi" onclick="goTo('pipeline')" title="Ver Pipeline">🎯</button>
+    <button class="bi dark-btn" onclick="toggleDark()" title="Modo oscuro / claro">🌙</button>
+    <button class="bi" onclick="exportFullBackup()" title="Descargar backup completo (cotizaciones, pipeline, catálogo, logo)">⬇️</button>
+    <button class="bi" onclick="document.getElementById('backup-import').click()" title="Restaurar desde un archivo de backup">⬆️</button>
+    <input type="file" id="backup-import" accept=".json" style="display:none" onchange="importFullBackup(this)">
+    <button class="bi" onclick="buildPDF()" title="Exportar PDF">📄</button>
+  </div>
+  <div class="card">
+    <div class="g2">
+      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" style="font-size:14px;font-weight:500"></div>
+      <div><label class="lbl">OPG <span style="color:#6e6e73;font-weight:400">— asignado por la marca</span></label><input id="opg" type="text" placeholder="Ej: OPG-1001" list="opg-datalist"><datalist id="opg-datalist"></datalist></div>
+      <div><label class="lbl">Sala / Ubicación</label><input id="sala" type="text" placeholder="Ej: Sala Hernán Pardo"></div>
+      <div><label class="lbl">Ejecutivo</label>
+        <select id="exec">
+          <option value="">Seleccionar ejecutivo</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Mes estimado de cierre</label>
+        <select id="mes-cierre-mY" style="width:100%">
+          <option value="">— Mes/Año —</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Estado</label>
+        <select id="quote-estado" style="width:100%">
+          <option value="Proyecto">Proyecto</option>
+          <option value="Cotizado" selected>Cotizado</option>
+          <option value="Negociacion">Negociación</option>
+          <option value="Commit">Commit</option>
+          <option value="Con OC">Con OC</option>
+          <option value="Autorizando">Autorizando</option>
+          <option value="Facturado">Facturado</option>
+          <option value="Perdido">Perdido</option>
+        </select>
+      </div>
+      <div><label class="lbl">Observaciones</label><input id="obs" type="text" placeholder="Notas de la cotización..."></div>
+    </div>
+  </div>
+  <div id="qbody-wrap" class="tw" style="margin-bottom:18px">
+    <table style="table-layout:fixed;min-width:680px">
+      <colgroup>
+        <col style="width:14%"><col style="width:38%"><col style="width:8%">
+        <col style="width:14%"><col style="width:12%"><col style="width:14%">
+        <col style="width:44px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="qsrt" onclick="sortQBy('sku')" title="Ordenar por SKU">SKU</th>
+          <th class="qsrt" onclick="sortQBy('desc')" title="Ordenar por nombre">Descripción</th>
+          <th style="text-align:right">Qty</th>
+          <th class="qsrt" onclick="sortQBy('price')" style="text-align:right" title="Ordenar por precio">P. Venta Unit.</th>
+          <th style="text-align:right">Total</th>
+          <th>Nota</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="qbody"></tbody>
+    </table>
+  </div>
+
+  <div style="border-top:0.5px solid #d2d2d7;padding-top:16px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:11px">Condiciones Comerciales</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;font-weight:600">
+      <span>Propuesta efectiva hasta:</span><input id="eff-date" type="date" style="width:auto;font-weight:400">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;font-weight:600">
+      <span>Condición de pago:</span>
+      <select id="pay-mode" style="width:auto;font-weight:400">
+        <option>Contado anticipado</option><option>30 días FF</option><option>45 días FF</option><option>60 días FF</option>
+      </select>
+      <span>– TC Dólar billete BNA del día del pago</span>
+    </div>
+    <div id="cond-cur" style="font-size:13px;font-weight:700;margin-bottom:7px">Precios unitarios expresados en dólares estadounidenses</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:7px">Los precios expresados NO incluyen Impuestos</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:600">
+      <span>Entrega:</span><input id="delivery" type="text" placeholder="Ej: 5 a 7 días hábiles" style="flex:1;min-width:160px;font-weight:400">
+    </div>
+  </div>
+</div>
+
+<!-- CATALOG -->
+<div id="p-catalog" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <h2 style="font-size:16px;font-weight:500;flex:1">Agregar productos</h2>
+    <button class="bo" onclick="clearCatalogFilters()" title="Limpiar búsqueda">✕ Filtros</button>
+    <button class="bo" onclick="goTo('addprod')">+ Nuevo artículo</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:10px">
+    <div class="card" style="margin:0">
+      <div class="lbl">Moneda</div>
+      <select id="cur" onchange="toggleTC()" style="margin-bottom:6px"><option value="USD">USD</option><option value="ARS">ARS</option></select>
+      <input type="number" id="tc" value="1200" style="display:none" placeholder="Tipo de cambio">
+    </div>
+  </div>
+  <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <div id="plbadge" class="bk bkw">Sin catálogo</div>
+    <div style="flex:1;min-width:8px"></div>
+    <button class="bo" onclick="document.getElementById('plup').click()" title="Reemplaza todo el catálogo de SKU/Descripción">📂 Cargar Excel/CSV</button>
+    <input type="file" id="plup" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handlePL(this.files[0])">
+  </div>
+  <div id="errbox" style="display:none;background:#fff2f2;color:#d70015;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px"></div>
+  <div id="nopl" style="text-align:center;padding:36px;background:#fff;border-radius:12px;border:1.5px dashed #d2d2d7;cursor:pointer;margin-bottom:12px" onclick="document.getElementById('plup').click()">
+    <div style="font-size:26px;margin-bottom:6px">📂</div>
+    <strong>Subí tu catálogo (SKU + Descripción)</strong>
+    <p style="color:#6e6e73;font-size:12px;margin-top:4px">Se guarda automáticamente para la próxima vez. No hace falta precio — se carga a mano en cada cotización.</p>
+  </div>
+  <div id="catui" style="display:none">
+    <div class="gf" style="margin-bottom:10px">
+      <div style="grid-column:1/-1">
+        <label class="lbl">Buscar / Pegar SKUs <span style="color:#6e6e73;font-weight:400">— pegá varios SKUs separados por enter, tab o coma</span></label>
+        <textarea id="fsearch" rows="1" placeholder="ej: poly studio x72  /  pegá varios SKUs aquí" oninput="handleSearchInput()" onpaste="handleSearchPaste(event)" style="width:100%;padding:8px 12px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;resize:vertical;min-height:36px;line-height:1.4"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span id="catcount" style="color:#6e6e73"></span>
+      <button class="bd" id="addbtn" onclick="addToQuote()" style="display:none">Agregar</button>
+    </div>
+    <div class="tw">
+      <table style="table-layout:fixed;width:100%">
+        <colgroup><col style="width:32px"><col style="width:16%"><col><col style="width:13%"><col style="width:9%"><col style="width:44px"></colgroup>
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="chkall" onchange="toggleAll(this)"></th>
+            <th>SKU</th><th>Descripción</th>
+            <th style="text-align:right" title="Precio de lista — referencia, no se auto-completa en la cotización">Precio lista</th>
+            <th style="text-align:center">Stock</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="catbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ADD PRODUCT -->
+<div id="p-addprod" class="pg">
+  <div class="tb"><button class="bo" onclick="cancelEditManual()">← Volver</button><h2 id="addprod-title" style="font-size:16px;font-weight:500">Agregar artículo al catálogo</h2></div>
+  <div class="card">
+    <div class="g2">
+      <div><label class="lbl">SKU *</label><input id="np-sku" type="text" placeholder="Ej: A4LZ8AA#ABM"></div>
+      <div><label class="lbl">Descripción *</label><input id="np-desc" type="text" placeholder="Descripción del producto"></div>
+    </div>
+    <div id="nperr" style="display:none;color:#d70015;font-size:13px;margin-top:10px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="bo" onclick="cancelEditManual()">Cancelar</button>
+      <button class="bd" onclick="saveNewProd()">Guardar en catálogo</button>
+    </div>
+  </div>
+</div>
+
+<div id="p-history" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <h2 style="font-size:16px;font-weight:500;flex:1">Historial</h2>
+    <button class="bo" onclick="exportDB()">⬇ Excel</button>
+    <button class="bo red" id="hist-del-btn" onclick="deleteSelected()" style="display:none">✕ Eliminar</button>
+    <button class="bd" id="hist-pdf-btn" onclick="exportSelectedPDF()" style="display:none">PDF seleccionadas</button>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="gf">
+      <div><label class="lbl">Buscar cliente / OPG / Sala</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
+      <div><label class="lbl">Ejecutivo</label><select id="hexec" onchange="renderHistory()"><option value="">Todos</option></select></div>
+      <div><label class="lbl">Desde</label><input id="hfrom" type="date" onchange="renderHistory()"></div>
+      <div><label class="lbl">Hasta</label><input id="hto" type="date" onchange="renderHistory()"></div>
+      <div style="display:flex;align-items:flex-end"><button class="bo" style="width:100%" onclick="clearHF()">Limpiar</button></div>
+    </div>
+  </div>
+  <div id="histwrap"></div>
+</div>
+
+<!-- PIPELINE -->
+<div id="p-pipeline" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <button class="bo" onclick="nuevaCotizacion();goTo('quote')" style="border-color:#34c759;color:#15863a">+ Nueva cotización</button>
+    <h2 style="font-size:16px;font-weight:500;flex:1">🎯 Pipeline</h2>
+    <select id="archive-month-sel" onchange="renderPipeline()" title="Ver meses archivados" style="padding:4px 8px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;max-width:160px">
+      <option value="">Pipeline actual</option>
+    </select>
+    <button class="bo" onclick="clearPipelineFilters()" title="Limpiar todos los filtros">✕ Filtros</button>
+    <button class="bi dark-btn" onclick="toggleDark()" title="Modo oscuro / claro">🌙</button>
+    <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer último cambio de estado o fecha" disabled>↩</button>
+    <button class="bo" id="pipe-backup-btn" onclick="pickBackupFolder()" title="Elegí una carpeta donde guardar backups automáticos">📂 Elegir carpeta backup</button>
+    <button class="bo" onclick="exportPipeline()">⬇ Excel</button>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="gf">
+      <div><label class="lbl">Buscar cliente / OPG / Sala</label><input id="pipe-search" type="text" placeholder="..." oninput="renderPipeline()"></div>
+      <div><label class="lbl">Ejecutivo</label><select id="pipe-exec" onchange="renderPipeline()"><option value="">Todos</option></select></div>
+      <div><label class="lbl">Estado</label>
+        <select id="pipe-status" onchange="window._pipeStatusFilters=this.value?[this.value]:[];renderPipeline()">
+          <option value="">Todos</option>
+          <option value="Proyecto">Proyecto</option>
+          <option value="Cotizado">Cotizado</option>
+          <option value="Negociacion">Negociación</option>
+          <option value="Commit">Commit</option>
+          <option value="Con OC">Con OC</option>
+          <option value="Autorizando">Autorizando</option>
+          <option value="Facturado">Facturado</option>
+          <option value="Perdido">Perdido</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="pipe-dashboard" style="display:none;margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
+      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">OPGs</div>
+        <div id="dash-count" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+      </div>
+      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Salas</div>
+        <div id="dash-salas" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+      </div>
+      <div id="dash-facturado-card" class="kpi" style="background:#17a589;color:#fff;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#a5d6a7;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Facturado</div>
+        <div id="dash-facturado" style="font-size:22px;font-weight:600">USD 0</div>
+      </div>
+      <div id="dash-proy-card" class="kpi" style="background:#0a7d52;color:#fff;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#9ad9bc;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Proyectado</div>
+        <div id="dash-proy" style="font-size:22px;font-weight:600">USD 0</div>
+      </div>
+      <div id="dash-total-card" class="kpi" style="background:#1d1d1f;color:#fff;border-radius:12px;padding:12px 14px">
+        <div style="font-size:11px;color:#aeaeb2;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Total pipeline</div>
+        <div id="dash-total" style="font-size:22px;font-weight:600">USD 0</div>
+      </div>
+    </div>
+    <div id="pipe-pills-row" style="display:flex;flex-wrap:nowrap;gap:8px 20px;align-items:center;margin-bottom:10px;overflow:hidden">
+      <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;flex-shrink:0">
+        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Cierre est.</span>
+        <div id="pipe-month-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
+      </div>
+      <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;min-width:0">
+        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Top clientes</span>
+        <div id="pipe-topclients-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
+      </div>
+    </div>
+    <div id="dash-by-status" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  </div>
+
+  <div class="tw">
+    <table style="min-width:1100px">
+      <thead><tr>
+        <th class="srt" data-sort="fechaISO">Fecha</th>
+        <th class="srt" data-sort="ejecutivo">Ejecutivo</th>
+        <th class="srt" data-sort="cliente">Cliente</th>
+        <th class="srt" data-sort="opg">OPG</th>
+        <th>Salas</th>
+        <th class="srt" data-sort="mesCierre" title="Mes estimado de cierre">Cierre est.</th>
+        <th class="srt" data-sort="estado" style="text-align:center">Estado</th>
+        <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
+        <th class="stk-act" style="width:150px;text-align:center">Acciones</th>
+      </tr></thead>
+      <tbody id="pipe-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Capa de sincronización con Supabase -->
+<script src="js/sync.js"></script>
+
+<!-- Lógica de la app (el orden de carga importa) -->
+<script src="js/state.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/catalog.js"></script>
+<script src="js/quote.js"></script>
+<script src="js/products.js"></script>
+<script src="js/quotes-db.js"></script>
+<script src="js/pipeline-data.js"></script>
+<script src="js/backup.js"></script>
+<script src="js/pipeline-core.js"></script>
+<script src="js/archive-view.js"></script>
+<script src="js/pipeline-view.js"></script>
+<script src="js/pipeline-detail.js"></script>
+<script src="js/backup-folder.js"></script>
+<script src="js/history.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/boot.js"></script>
+<script src="js/undo.js"></script>
+<div id="app-ver-bar"><span>Cotizador Ceven · Poly v<span id="app-ver-num"></span></span></div>
+<script src="js/init.js"></script>
+
+<!-- ── Modal edición de ítem en cotización ── -->
+<div id="qitem-edit-modal" onclick="if(event.target===this)closeQuoteItemEdit()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9100;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#f5f5f7;border-radius:20px;width:100%;max-width:560px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:#fff;border-bottom:0.5px solid #d2d2d7">
+      <div style="font-size:16px;font-weight:600;color:#1d1d1f">Editar artículo <span style="font-size:12px;font-weight:400;color:#6e6e73;margin-left:6px">· solo afecta esta cotización</span></div>
+      <button onclick="closeQuoteItemEdit()" style="background:#f2f2f7;border:none;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:18px;color:#6e6e73;line-height:1;font-family:inherit">×</button>
+    </div>
+    <div style="padding:20px">
+      <div class="g2" style="gap:12px">
+        <div><label class="lbl">SKU</label><input id="qie-sku" type="text" class="si" style="width:100%"></div>
+        <div><label class="lbl">Descripción</label><input id="qie-desc" type="text" class="si" style="width:100%"></div>
+        <div><label class="lbl">Precio unitario (USD)</label><input id="qie-price" type="number" step="0.01" min="0" class="si" style="width:100%"></div>
+        <div><label class="lbl">Nota</label><input id="qie-nota" type="text" class="si" style="width:100%" placeholder="Ej: Comprar, etapa de compra..."></div>
+      </div>
+      <div id="qie-err" style="display:none;color:#d70015;font-size:13px;margin-top:10px"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+        <button class="bo" onclick="closeQuoteItemEdit()">Cancelar</button>
+        <button class="bd" onclick="saveQuoteItemEdit()">Guardar en cotización</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../shared/pwa.js"></script>
+</body>
+</html>
