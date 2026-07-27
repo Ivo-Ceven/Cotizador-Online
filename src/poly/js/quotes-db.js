@@ -35,13 +35,51 @@ function doSave(overwrite){
 }
 
 function saveQuote(){
-  if(!items.length){alert('La cotización está vacía.');return;}
+  if(!items.length){showToast('La cotización está vacía.');return;}
   doSave(true); // siempre sobreescribe al guardar manualmente
-  alert('✓ Cotización #'+String(qNum).padStart(4,'0')+' guardada.');
+  showToast('✓ Cotización #'+String(qNum).padStart(4,'0')+' guardada.');
+}
+
+// Guarda todo lo necesario para volver a poner en pantalla la cotización que
+// se está por reemplazar/descartar — usado por los botones que arrancan otra
+// cotización sin pedir confirmación primero (se puede deshacer desde el cartel).
+function _snapshotQuoteState(){
+  return {
+    qNum: qNum,
+    items: JSON.parse(JSON.stringify(items)),
+    client: document.getElementById('client').value,
+    opg: document.getElementById('opg').value,
+    sala: document.getElementById('sala').value,
+    exec: document.getElementById('exec').value,
+    mesCierre: getMesCierre(),
+    estado: document.getElementById('quote-estado') ? document.getElementById('quote-estado').value : 'Cotizado',
+    obs: document.getElementById('obs').value,
+    effDate: document.getElementById('eff-date').value,
+    payMode: document.getElementById('pay-mode').value,
+    delivery: document.getElementById('delivery').value
+  };
+}
+function _restoreQuoteState(snap){
+  qNum = snap.qNum;
+  document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
+  items = snap.items;
+  document.getElementById('client').value = snap.client;
+  document.getElementById('opg').value    = snap.opg;
+  document.getElementById('sala').value   = snap.sala;
+  document.getElementById('exec').value   = snap.exec;
+  if(document.getElementById('mes-cierre-mY')) setMesCierre(snap.mesCierre);
+  if(document.getElementById('quote-estado')) document.getElementById('quote-estado').value = snap.estado;
+  document.getElementById('obs').value = snap.obs;
+  document.getElementById('eff-date').value = snap.effDate;
+  document.getElementById('pay-mode').value = snap.payMode;
+  document.getElementById('delivery').value = snap.delivery;
+  _qSortKey = null; _qSortDir = 1;
+  renderQ();
 }
 
 function nuevaCotizacion(){
-  if(items.length && !confirm('¿Empezar una cotización nueva? Se perderán los productos actuales si no guardaste.')){return;}
+  var hadItems = items.length > 0;
+  var snap = hadItems ? _snapshotQuoteState() : null;
   // Incrementar número
   try { qNum = parseInt(localStorage.getItem('poly_cqc')||'0') + 1; localStorage.setItem('poly_cqc', qNum); } catch(e){}
   document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
@@ -61,14 +99,17 @@ function nuevaCotizacion(){
   document.getElementById('delivery').value = '';
   cevenApplyVendorAutofill();
   renderQ();
+  if(hadItems){
+    notifyUndo('Empezaste una cotización nueva — se descartó lo que tenías sin guardar.', function(){ _restoreQuoteState(snap); });
+  }
 }
 
 // Crea una cotización NUEVA copiando la que está cargada actualmente (mismos productos,
 // cliente, OPG, ejecutivo, etc.) pero con un número de cotización nuevo. Útil para cargar
 // otra Sala del mismo OPG partiendo de una lista de productos parecida.
 function copiarCotizacion(){
-  if(!items.length){ alert('La cotización está vacía, no hay nada para copiar.'); return; }
-  if(!confirm('¿Crear una nueva cotización copiando la actual?')) return;
+  if(!items.length){ showToast('La cotización está vacía, no hay nada para copiar.'); return; }
+  var snap = _snapshotQuoteState();
   // Nuevo número de cotización
   try { qNum = parseInt(localStorage.getItem('poly_cqc')||'0') + 1; localStorage.setItem('poly_cqc', qNum); } catch(e){}
   document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
@@ -78,7 +119,7 @@ function copiarCotizacion(){
   // efectiva, entrega) se mantienen tal cual están en pantalla → ya forman parte de la copia.
   renderQ();
   doSave(true); // persistir la copia como cotización nueva
-  showToast('✓ Copia creada como Cotización #' + String(qNum).padStart(4,'0'));
+  notifyUndo('✓ Copia creada como Cotización #' + String(qNum).padStart(4,'0') + '.', function(){ _restoreQuoteState(snap); });
 }
 
 // Duplica una cotización del historial como una NUEVA (nuevo número, fecha de hoy)
@@ -86,8 +127,8 @@ function copiarCotizacion(){
 function copiarCotizacionHist(qn){
   var db=getDB();
   var rows=db.filter(function(r){return r['N° Cotización']===qn;});
-  if(!rows.length){ alert('No se encontró la cotización #'+qn+'.'); return; }
-  if(!confirm('¿Crear una copia de la cotización #'+qn+' y abrirla para editar?')) return;
+  if(!rows.length){ showToast('No se encontró la cotización #'+qn+'.'); return; }
+  var snap = _snapshotQuoteState();
   var newNum;
   try { newNum = parseInt(localStorage.getItem('poly_cqc')||'0') + 1; localStorage.setItem('poly_cqc', newNum); } catch(e){ newNum = Date.now(); }
   var newQn = String(newNum).padStart(4,'0');
@@ -105,18 +146,20 @@ function copiarCotizacionHist(qn){
     db.push(c);
   });
   saveDB(db);
-  // Abrir la copia en el cotizador (sin pedir confirmación, ya confirmamos arriba)
+  // Abrir la copia en el cotizador (el propio editQuoteFromHistory no ofrece su
+  // deshacer porque el snapshot de acá ya cubre toda la operación)
   editQuoteFromHistory(newQn, true);
-  showToast('✓ Copia creada como Cotización #'+newQn);
+  notifyUndo('✓ Copia creada como Cotización #'+newQn+'.', function(){ _restoreQuoteState(snap); });
 }
 
-function editQuoteFromHistory(qn, skipConfirm){
+function editQuoteFromHistory(qn, skipUndoToast){
   var db=getDB();
   var rows=db.filter(function(r){return r['N° Cotización']===qn;});
   if(!rows.length) return;
   var first=rows[0];
-  if(!cevenCanEditQuote(first['Ejecutivo'])){ alert('No tenés permiso para editar esta cotización.'); return; }
-  if(!skipConfirm && items.length && !confirm('¿Cargar la cotización #'+qn+'? Se reemplazará la cotización actual.')){return;}
+  if(!cevenCanEditQuote(first['Ejecutivo'])){ showToast('No tenés permiso para editar esta cotización.'); return; }
+  var hadItems = items.length > 0;
+  var snap = hadItems ? _snapshotQuoteState() : null;
   qNum = parseInt(qn);
   document.getElementById('qnum').textContent = 'Cotización #'+qn;
   document.getElementById('client').value = first['Cliente']!=='—'?first['Cliente']:'';
@@ -147,10 +190,13 @@ function editQuoteFromHistory(qn, skipConfirm){
   _qSortKey = null; _qSortDir = 1;
   renderQ();
   goTo('quote');
+  if(hadItems && !skipUndoToast){
+    notifyUndo('Cargaste la cotización #'+qn+' — se reemplazó lo que tenías sin guardar.', function(){ _restoreQuoteState(snap); goTo('quote'); });
+  }
 }
 
 function exportDB(){
-  var db=getDB(); if(!db.length){alert('No hay cotizaciones guardadas.');return;}
+  var db=getDB(); if(!db.length){showToast('No hay cotizaciones guardadas.');return;}
   var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++)o[COLS[i]]=r[COLS[i]]!==undefined?r[COLS[i]]:'';return o;});
   var ws=XLSX.utils.json_to_sheet(data,{header:COLS});
   ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:14},{wch:20},{wch:18},{wch:28},{wch:12},{wch:16},{wch:36},{wch:10},{wch:16},{wch:14},{wch:14}];

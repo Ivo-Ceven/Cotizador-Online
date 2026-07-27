@@ -14,18 +14,19 @@ function refreshOpgDatalist(){
   dl.innerHTML = opgs.map(function(o){ return '<option value="'+o.replace(/"/g,'&quot;')+'">'; }).join('');
 }
 
-// Agrega la cotización actual (una Sala) al pipeline. A diferencia de Apple (1 cotización =
-// 1 fila), acá la fila de pipeline es por OPG: varias Salas del mismo OPG se mergean en una
-// sola fila (decisión explícita del usuario — un OPG es un único deal con precio especial).
+// Agrega la cotización actual (una Sala) al pipeline. Si tiene OPG, la fila de
+// pipeline es por OPG: varias Salas del mismo OPG se mergean en una sola fila
+// (decisión explícita del usuario — un OPG es un único deal con precio especial).
+// El OPG es OPCIONAL (no todas las cotizaciones tienen uno asignado por la marca):
+// sin OPG, cada cotización es su propia fila, igual que en Apple.
 function addToPipeline(){
-  if(!cevenCanUsePipeline()){ alert('Tu rol no permite agregar al pipeline.'); return; }
-  if(!items.length){ alert('La cotización está vacía.'); return; }
+  if(!cevenCanUsePipeline()){ showToast('Tu rol no permite agregar al pipeline.'); return; }
+  if(!items.length){ showToast('La cotización está vacía.'); return; }
   var client = (document.getElementById('client').value||'').trim();
   var opg    = (document.getElementById('opg').value||'').trim();
   var sala   = (document.getElementById('sala').value||'').trim();
-  if(!client){ alert('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
-  if(!opg){ alert('Cargá el número de OPG antes de agregar al pipeline.'); return; }
-  if(!sala){ alert('Cargá la Sala/ubicación antes de agregar al pipeline.'); return; }
+  if(!client){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
+  if(!sala){ showToast('Cargá la Sala/ubicación antes de agregar al pipeline.'); return; }
 
   var exec      = document.getElementById('exec').value || '';
   var mesCierre = getMesCierre();
@@ -41,37 +42,56 @@ function addToPipeline(){
   var salaEntry = {qNum: qn, sala: sala, monto: monto, fecha: fecha};
 
   var pipe = getPipeline();
-  var key = _normOpg(opg);
+  var key = opg ? _normOpg(opg) : null;
   var idx = -1;
-  for(var p=0;p<pipe.length;p++){ if(_normOpg(pipe[p].opg) === key){ idx = p; break; } }
+  if(key){
+    for(var p=0;p<pipe.length;p++){ if(_normOpg(pipe[p].opg) === key){ idx = p; break; } }
+  } else {
+    // Sin OPG: no hay merge — buscar si ESTA MISMA cotización (mismo qNum) ya
+    // está cargada como fila propia, para actualizarla en vez de duplicarla.
+    for(var p2=0;p2<pipe.length;p2++){
+      if(!pipe[p2].opg && (pipe[p2].salas||[]).some(function(s){ return s.qNum===qn; })){ idx = p2; break; }
+    }
+  }
+
+  // Nunca se bloquea con un confirm(): la acción se aplica siempre, y para los
+  // casos ambiguos (¿renombraste la Sala o te olvidaste de "Nueva cotización"?)
+  // se avisa con un cartel que permite deshacer, en vez de preguntar antes.
+  var newRowId = null, warnMsg = null;
 
   if(idx < 0){
+    newRowId = Date.now();
     pipe.push({
-      id: Date.now(), fecha: fecha, fechaISO: now.toISOString(),
-      opg: opg, cliente: client, ejecutivo: exec || '—', mesCierre: mesCierre || '',
+      id: newRowId, fecha: fecha, fechaISO: now.toISOString(),
+      opg: opg || null, cliente: client, ejecutivo: exec || '—', mesCierre: mesCierre || '',
       estado: estadoQ, monto: monto, moneda: 'USD',
       salas: [salaEntry], factura: null
     });
   } else {
     var row = pipe[idx];
     if(!row.salas) row.salas = [];
+    if(typeof pushPipeUndo === 'function') pushPipeUndo(row.id); // snapshot antes de mutar
     var salaIdxByQn = -1, salaIdxByName = -1;
     for(var s=0;s<row.salas.length;s++){
       if(row.salas[s].qNum === qn) salaIdxByQn = s;
       if(_normOpg(row.salas[s].sala) === _normOpg(sala)) salaIdxByName = s;
     }
     if(salaIdxByQn >= 0){
-      // Misma cotización que ya estaba: actualizar in-place (no duplica).
+      var prevSala = row.salas[salaIdxByQn];
+      if(_normOpg(prevSala.sala) !== _normOpg(sala)){
+        // Misma cotización (#qn) pero el nombre de Sala cambió desde la última vez
+        // que se agregó — lo más probable es que se haya empezado una Sala nueva
+        // SIN tocar "➕ Nueva cotización" primero. Se actualiza igual (nunca se
+        // pierde el clic), pero se avisa con opción de deshacer.
+        warnMsg = 'Actualizaste la cotización #'+qn+': la Sala pasó de "'+prevSala.sala+'" a "'+sala+'". Si en realidad es una Sala nueva, deshacé y usá "➕ Nueva cotización" antes de cargarla.';
+      }
       row.salas[salaIdxByQn] = salaEntry;
     } else if(salaIdxByName >= 0){
-      // Nombre de Sala repetido pero cotización distinta: probablemente se
-      // duplicó en vez de editar — confirmar para no sumar el monto dos veces.
+      // Nombre de Sala repetido pero cotización distinta: se agrega igual como
+      // entrada aparte (nunca se descarta un clic) — solo se avisa por las dudas.
       var otherQn = row.salas[salaIdxByName].qNum;
-      if(confirm('Ya existe una Sala llamada "'+sala+'" en el OPG "'+row.opg+'" (cotización #'+otherQn+').\n\n¿Reemplazarla por esta cotización #'+qn+'?\n\nAceptar = reemplazar · Cancelar = agregar como entrada nueva (si son Salas distintas con el mismo nombre)')){
-        row.salas[salaIdxByName] = salaEntry;
-      } else {
-        row.salas.push(salaEntry);
-      }
+      warnMsg = 'Ojo: ya había una Sala llamada "'+sala+'" en este OPG (cotización #'+otherQn+') — se agregó como entrada aparte.';
+      row.salas.push(salaEntry);
     } else {
       row.salas.push(salaEntry);
     }
@@ -85,7 +105,10 @@ function addToPipeline(){
   savePipeline(pipe);
   doSave(true);
   refreshOpgDatalist();
-  showToast('✓ Agregada al pipeline: OPG ' + opg + ' / ' + sala);
+  if(newRowId !== null && typeof pushPipeUndoInsert === 'function') pushPipeUndoInsert(newRowId);
+
+  var msg = warnMsg || ('✓ Agregada al pipeline: ' + (opg ? ('OPG '+opg+' / ') : '') + sala);
+  notifyUndo(msg, function(){ if(typeof undoPipelineChange === 'function') undoPipelineChange(); });
 }
 
 function clearPipelineFilters(){

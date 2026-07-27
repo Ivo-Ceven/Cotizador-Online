@@ -81,7 +81,7 @@ function exportSelectedPDF(){
 
 // ── PDF INDIVIDUAL ──
 function buildPDF(){
-  if(!items.length){alert('La cotización está vacía.');return;}
+  if(!items.length){showToast('La cotización está vacía.');return;}
   doSave();
   var client=document.getElementById('client').value;
   var opg=document.getElementById('opg').value;

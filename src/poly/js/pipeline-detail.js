@@ -10,23 +10,24 @@ function editFactura(id){
   var idx = -1;
   for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ idx = i; break; } }
   if(idx < 0) return;
-  if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
   var current = pipe[idx].factura || '';
-  var msg = current
-    ? 'Número de factura actual:\n' + current + '\n\nDejá vacío para quitarlo, o escribí uno nuevo:'
-    : 'Número de factura para este OPG:';
-  var val = prompt(msg, current);
-  if(val === null) return; // cancelado
-  val = val.trim();
-  pipe[idx].factura = val === '' ? null : val;
-  savePipeline(pipe);
-  renderPipeline();
+  promptModal(current ? 'Editar número de factura' : 'Número de factura para este OPG', current, function(val){
+    val = (val||'').trim();
+    if(val === current) return;
+    if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
+    var pipe2 = getPipeline();
+    for(var i=0;i<pipe2.length;i++){ if(pipe2[i].id === id){ pipe2[i].factura = val === '' ? null : val; break; } }
+    savePipeline(pipe2);
+    renderPipeline();
+    notifyUndo(val ? ('✓ Factura actualizada: '+val) : '✓ Factura quitada', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
+  }, {okLabel:'Guardar'});
 }
 
 function updatePipelineStatus(id, newStatus){
   var pipe = getPipeline();
   var row = pipe.find(function(r){ return r.id === id; });
-  if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
   if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
   for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ pipe[i].estado = newStatus; break; } }
   savePipeline(pipe);
@@ -36,7 +37,7 @@ function updatePipelineStatus(id, newStatus){
 function updatePipelineMesCierreValue(id, fullValue){
   var pipe = getPipeline();
   var row = pipe.find(function(r){ return r.id === id; });
-  if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
   if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
   for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ pipe[i].mesCierre = fullValue || ''; break; } }
   savePipeline(pipe);
@@ -46,11 +47,13 @@ function updatePipelineMesCierreValue(id, fullValue){
 function removePipeline(id){
   var pipe = getPipeline();
   var row = pipe.find(function(r){ return r.id === id; });
-  if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ alert('No tenés permiso para eliminar esta línea del pipeline.'); return; }
-  if(!confirm('¿Eliminar este OPG completo del pipeline (todas sus Salas)?')) return;
+  if(!row) return;
+  if(!cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para eliminar esta línea del pipeline.'); return; }
+  if(typeof pushPipeUndoRemove === 'function') pushPipeUndoRemove(row);
   pipe = pipe.filter(function(r){ return r.id !== id; });
   savePipeline(pipe);
   renderPipeline();
+  notifyUndo('OPG eliminado del pipeline ('+((row.salas||[]).length)+' Sala(s)).', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
 }
 
 // Quita una Sala puntual de un OPG. Si era la última, se borra el OPG entero.
@@ -58,24 +61,27 @@ function removeSalaFromPipeline(pipeId, qn){
   var pipe = getPipeline();
   var row = pipe.find(function(r){ return r.id === pipeId; });
   if(!row) return;
-  if(!cevenCanEditPipelineRow(row.ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(!cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
   var sala = (row.salas||[]).find(function(s){ return s.qNum === qn; });
-  if(!confirm('¿Quitar la Sala "'+(sala?sala.sala:qn)+'" (cotización #'+qn+') de este OPG?')) return;
-  row.salas = (row.salas||[]).filter(function(s){ return s.qNum !== qn; });
-  if(!row.salas.length){
+  var salaName = sala ? sala.sala : qn;
+  var willRemoveRow = (row.salas||[]).length <= 1;
+  if(willRemoveRow){
+    if(typeof pushPipeUndoRemove === 'function') pushPipeUndoRemove(row);
     pipe = pipe.filter(function(r){ return r.id !== pipeId; });
-    showToast('OPG eliminado (sin Salas restantes).');
   } else {
+    if(typeof pushPipeUndo === 'function') pushPipeUndo(pipeId);
+    row.salas = row.salas.filter(function(s){ return s.qNum !== qn; });
     row.monto = Math.round(row.salas.reduce(function(acc,x){ return acc + (x.monto||0); }, 0));
   }
   savePipeline(pipe);
   renderPipeline();
+  notifyUndo('Quitaste la Sala "'+salaName+'" (cotización #'+qn+')'+(willRemoveRow?' — el OPG se eliminó por quedar sin Salas.':'.'), function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
 }
 
 function openPipelineQuote(qn){
   var db = getDB();
   var rows = db.filter(function(r){ return r['N° Cotización'] === qn; });
-  if(!rows.length){ alert('No se encontró la cotización #'+qn+' en el historial.'); return; }
+  if(!rows.length){ showToast('No se encontró la cotización #'+qn+' en el historial.'); return; }
   editQuoteFromHistory(qn);
 }
 
@@ -140,6 +146,6 @@ function buildPipelineWorkbook(){
 
 function exportPipeline(){
   var wb = buildPipelineWorkbook();
-  if(!wb){ alert('Pipeline vacío.'); return; }
+  if(!wb){ showToast('Pipeline vacío.'); return; }
   XLSX.writeFile(wb, 'Ceven_Poly_Pipeline.xlsx');
 }

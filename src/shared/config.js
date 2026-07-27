@@ -20,5 +20,7 @@ var CEVEN_DOMAIN = 'ceven.com';
 var CEVEN_ADMIN = 'admin@ceven.com';
 var CEVEN_SESSION_KEY = 'ceven_auth_session';
 
-/* Versión mostrada en el zócalo inferior de la app. */
-var APP_VERSION = '4.0';
+/* Versión mostrada en el zócalo inferior de la app. Subirla reinstala el
+   service worker (ver sw.js) — necesario cada vez que cambia la lista de
+   archivos a precachear (ASSETS/DOCS), o el shell cacheado queda pegado. */
+var APP_VERSION = '4.1';

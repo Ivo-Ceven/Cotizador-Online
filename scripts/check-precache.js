@@ -40,7 +40,7 @@ for (const u of ASSETS) {
 }
 
 // 2. Todo js/css que cargan los HTML está precacheado
-const paginas = { 'index.html': '', 'apple/index.html': 'apple/', 'apple/cevencare.html': 'apple/' };
+const paginas = { 'index.html': '', 'apple/index.html': 'apple/', 'apple/cevencare.html': 'apple/', 'poly/index.html': 'poly/' };
 for (const [pagina, base] of Object.entries(paginas)) {
   const html = fs.readFileSync(path.join(SRC, pagina), 'utf8');
   const refs = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map(x => x[1]);

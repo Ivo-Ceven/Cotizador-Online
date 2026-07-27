@@ -20,29 +20,35 @@ function editManualProduct(pid){
 }
 
 function deleteManualProduct(pid){
-  var p = null;
-  for(var i=0;i<products.length;i++){ if(products[i].id===pid){ p=products[i]; break; } }
+  var p = null, pIdx = -1;
+  for(var i=0;i<products.length;i++){ if(products[i].id===pid){ p=products[i]; pIdx=i; break; } }
   if(!p) return;
-  if(!confirm('¿Eliminar el producto "'+p.sku+'" del catálogo?')) return;
   products = products.filter(function(x){ return x.id!==pid; });
   delete selIds[pid];
   try{localStorage.setItem('poly_cpl',JSON.stringify(products));}catch(e){}
   var b=document.getElementById('plbadge');b.className='bk bkok';b.textContent='✓ '+products.length+' productos';
   renderCat();
+  notifyUndo('Eliminaste "'+p.sku+'" del catálogo.', function(){
+    products.splice(Math.min(pIdx, products.length), 0, p);
+    try{localStorage.setItem('poly_cpl',JSON.stringify(products));}catch(e){}
+    var b2=document.getElementById('plbadge'); if(b2){ b2.className='bk bkok'; b2.textContent='✓ '+products.length+' productos'; }
+    renderCat();
+  });
 }
 
 function cancelEditManual(){
   editingManualId = null;
   document.getElementById('addprod-title').textContent = 'Agregar artículo al catálogo';
-  // Si hay SKUs pendientes, preguntar si descartar
+  // Si hay SKUs pendientes, se descartan directamente (con opción de deshacer)
   if(_pendingNewSKUs.length){
-    var remaining = _pendingNewSKUs.length;
-    if(confirm('Hay '+remaining+' SKU(s) pendiente(s) por crear. ¿Descartar el resto?')){
-      _pendingNewSKUs = [];
-    } else {
+    var discarded = _pendingNewSKUs.slice();
+    _pendingNewSKUs = [];
+    goTo('catalog');
+    notifyUndo('Descartaste '+discarded.length+' SKU(s) pendiente(s) por crear.', function(){
+      _pendingNewSKUs = discarded;
       promptForNextPendingSKU();
-      return;
-    }
+    });
+    return;
   }
   goTo('catalog');
 }

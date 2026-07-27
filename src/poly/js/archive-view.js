@@ -64,7 +64,6 @@ function renderArchiveMonth(monthKey, entries){
 }
 
 function restoreFromArchive(monthKey, id){
-  if(!confirm('¿Restaurar este OPG al pipeline activo?')) return;
   var archive = getArchive();
   var entries = archive[monthKey] || [];
   var toRestore = null;
@@ -77,5 +76,15 @@ function restoreFromArchive(monthKey, id){
   }
   saveArchive(archive);
   renderPipeline();
-  showToast('↩ OPG restaurado al pipeline');
+  notifyUndo('↩ OPG restaurado al pipeline.', function(){
+    var archive2 = getArchive();
+    var pipe2 = getPipeline().filter(function(r){ return r.id !== id; });
+    savePipeline(pipe2);
+    if(toRestore){
+      if(!archive2[monthKey]) archive2[monthKey] = [];
+      archive2[monthKey].push(toRestore);
+      saveArchive(archive2);
+    }
+    renderPipeline();
+  });
 }

@@ -42,7 +42,7 @@ function _idbPut(key, val){
 
 async function pickBackupFolder(){
   if(!('showDirectoryPicker' in window)){
-    alert('Tu navegador no soporta backup automático en carpeta. Usá Chrome o Edge en escritorio.\nMientras tanto, podés tocar "⬇ Excel" para descargar manualmente.');
+    showToast('Tu navegador no soporta backup automático en carpeta. Usá Chrome o Edge en escritorio — mientras tanto, tocá "⬇ Excel" para descargar manualmente.');
     return;
   }
   try {
@@ -53,17 +53,21 @@ async function pickBackupFolder(){
     updateBackupButtonLabel();
     autoBackupPipeline(true);
     // Forzar un backup completo inicial al configurar la carpeta
-    localStorage.removeItem('cbackup_full_last');
+    localStorage.removeItem('poly_cbackup_full_last');
     maybeAutoFullBackup();
   } catch(e){ /* user cancelled */ }
 }
 
 async function clearBackupFolder(){
-  if(!confirm('¿Dejar de guardar backups automáticos?')) return;
+  var prevHandle = _pipeBackupHandle;
   _pipeBackupHandle = null;
   try { await _idbPut(_POLY_IDB_KEY, null); } catch(e){}
   updateBackupButtonLabel();
-  showToast('Backup automático desactivado');
+  notifyUndo('Backup automático desactivado.', function(){
+    _pipeBackupHandle = prevHandle;
+    _idbPut(_POLY_IDB_KEY, prevHandle).catch(function(){});
+    updateBackupButtonLabel();
+  });
 }
 
 function updateBackupButtonLabel(){

@@ -78,7 +78,30 @@ var ASSETS = [
   './apple/js/undo.js',
   './apple/js/target.js',
   './apple/js/init.js',
-  './apple/js/cevencare.js'
+  './apple/js/cevencare.js',
+
+  './poly/css/base.css',
+  './poly/css/dark.css',
+
+  './poly/js/sync.js',
+  './poly/js/state.js',
+  './poly/js/utils.js',
+  './poly/js/catalog.js',
+  './poly/js/quote.js',
+  './poly/js/products.js',
+  './poly/js/quotes-db.js',
+  './poly/js/pipeline-data.js',
+  './poly/js/backup.js',
+  './poly/js/pipeline-core.js',
+  './poly/js/archive-view.js',
+  './poly/js/pipeline-view.js',
+  './poly/js/pipeline-detail.js',
+  './poly/js/backup-folder.js',
+  './poly/js/history.js',
+  './poly/js/pdf.js',
+  './poly/js/boot.js',
+  './poly/js/undo.js',
+  './poly/js/init.js'
 ];
 
 /* Documentos: se piden las DOS variantes de cada uno porque `cleanUrls` de
@@ -91,7 +114,9 @@ var DOCS = [
   './apple/',
   './apple/index.html',
   './apple/cevencare.html',
-  './apple/cevencare'
+  './apple/cevencare',
+  './poly/',
+  './poly/index.html'
 ];
 
 /* Una respuesta redirigida (308 de cleanUrls) no puede devolverse tal cual a
@@ -196,7 +221,10 @@ async function respond(e){
 
   /* Offline y sin copia: para una navegación, devolver el shell de la marca. */
   if(req.mode === 'navigate'){
-    var fb = await cache.match(url.pathname.indexOf('/apple/') === 0 ? './apple/' : './');
+    var brandFallback = url.pathname.indexOf('/apple/') === 0 ? './apple/'
+                       : url.pathname.indexOf('/poly/') === 0  ? './poly/'
+                       : './';
+    var fb = await cache.match(brandFallback);
     if(fb) return fb;
   }
   return new Response('Sin conexión y sin copia guardada de este archivo.', {

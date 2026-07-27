@@ -45,7 +45,13 @@ function exportFullBackup(){
   showToast('✓ Backup descargado — guardalo en un lugar seguro');
 }
 
-// Importar backup: restaura TODO el estado desde un archivo JSON
+// Importar backup: restaura TODO el estado desde un archivo JSON.
+// Excepción deliberada al patrón "cartel + deshacer": esto pisa TODOS los datos
+// locales y recarga la página al toque — un cartel que se cierra solo a los 5s
+// sería peligroso acá (si no llegás a reaccionar, se ejecuta igual sin que hayas
+// confirmado nada, y después de recargar no hay forma de deshacer). Por eso usa
+// confirmModal(), que no tiene temporizador — pero sigue sin ser un popup nativo
+// del navegador, es HTML propio.
 function importFullBackup(input){
   var file = input.files[0];
   if(!file) return;
@@ -54,7 +60,7 @@ function importFullBackup(input){
     try {
       var snap = JSON.parse(e.target.result);
       if(snap._app !== 'CevenCotizadorPoly'){
-        alert('El archivo no parece ser un backup válido del cotizador Poly.');
+        showToast('El archivo no parece ser un backup válido del cotizador Poly.');
         input.value = '';
         return;
       }
@@ -62,46 +68,47 @@ function importFullBackup(input){
       var pipeCount = (snap.cpipeline || []).length;
       var plCount = (snap.cpl || []).length;
       var ts = snap._timestamp ? new Date(snap._timestamp).toLocaleString('es-AR') : 'desconocida';
-      if(!confirm(
+      confirmModal(
         'Restaurar backup del ' + ts + '?\n\n' +
         '• ' + cotCount + ' filas de cotizaciones\n' +
         '• ' + pipeCount + ' entradas de pipeline\n' +
         '• ' + plCount + ' productos en catálogo\n\n' +
-        '⚠ Esto REEMPLAZA todos los datos actuales del cotizador Poly en el navegador.'
-      )){
-        input.value = '';
-        return;
-      }
-      // ── Pausar sync con Supabase durante la restauración ──
-      if(typeof window._syncPause === 'function') window._syncPause();
-      if(snap._all && typeof snap._all === 'object'){
-        Object.keys(snap._all).forEach(function(k){
-          try{ localStorage.setItem(k, snap._all[k]); }catch(e){}
-        });
-      } else {
-        // Compatibilidad con backups viejos (campos con nombre)
-        if(snap.cquotes !== undefined)   localStorage.setItem('poly_cquotes',   JSON.stringify(snap.cquotes));
-        if(snap.cpipeline !== undefined) localStorage.setItem('poly_cpipeline', JSON.stringify(snap.cpipeline));
-        if(snap.carchive !== undefined)  localStorage.setItem('poly_carchive',  JSON.stringify(snap.carchive));
-        if(snap.cpl !== undefined)       localStorage.setItem('poly_cpl',       JSON.stringify(snap.cpl));
-        if(snap.cqc !== undefined)       localStorage.setItem('poly_cqc',       String(snap.cqc));
-        if(snap.cdark !== undefined)     localStorage.setItem('cdark',          String(snap.cdark));
-        if(snap.clogo)                   localStorage.setItem('poly_clogo',      snap.clogo);
-        if(snap.clogo_dark)              localStorage.setItem('poly_clogo_dark', snap.clogo_dark);
-      }
-      // Marcar que este reload viene de un import: el bootstrap debe
-      // empujar el localStorage a Supabase, no al revés.
-      try{ sessionStorage.setItem('_ceven_import_reload','1'); }catch(e){}
-      try{ localStorage.setItem('_ceven_import_reload','1'); }catch(e){} // fallback para file://
-      showToast('✓ Backup restaurado — recargando...');
-      setTimeout(function(){ location.reload(); }, 1000);
+        '⚠ Esto REEMPLAZA todos los datos actuales del cotizador Poly en el navegador.',
+        function(){ _applyBackupRestore(snap); input.value = ''; },
+        {okLabel: 'Restaurar', danger: true}
+      );
     } catch(err) {
-      alert('Error al leer el archivo: ' + err.message);
-    } finally {
+      showToast('Error al leer el archivo: ' + err.message);
       input.value = '';
     }
   };
   reader.readAsText(file);
+}
+
+function _applyBackupRestore(snap){
+  // ── Pausar sync con Supabase durante la restauración ──
+  if(typeof window._syncPause === 'function') window._syncPause();
+  if(snap._all && typeof snap._all === 'object'){
+    Object.keys(snap._all).forEach(function(k){
+      try{ localStorage.setItem(k, snap._all[k]); }catch(e){}
+    });
+  } else {
+    // Compatibilidad con backups viejos (campos con nombre)
+    if(snap.cquotes !== undefined)   localStorage.setItem('poly_cquotes',   JSON.stringify(snap.cquotes));
+    if(snap.cpipeline !== undefined) localStorage.setItem('poly_cpipeline', JSON.stringify(snap.cpipeline));
+    if(snap.carchive !== undefined)  localStorage.setItem('poly_carchive',  JSON.stringify(snap.carchive));
+    if(snap.cpl !== undefined)       localStorage.setItem('poly_cpl',       JSON.stringify(snap.cpl));
+    if(snap.cqc !== undefined)       localStorage.setItem('poly_cqc',       String(snap.cqc));
+    if(snap.cdark !== undefined)     localStorage.setItem('cdark',          String(snap.cdark));
+    if(snap.clogo)                   localStorage.setItem('poly_clogo',      snap.clogo);
+    if(snap.clogo_dark)              localStorage.setItem('poly_clogo_dark', snap.clogo_dark);
+  }
+  // Marcar que este reload viene de un import: el bootstrap debe
+  // empujar el localStorage a Supabase, no al revés.
+  try{ sessionStorage.setItem('_ceven_import_reload','1'); }catch(e){}
+  try{ localStorage.setItem('_ceven_import_reload','1'); }catch(e){} // fallback para file://
+  showToast('✓ Backup restaurado — recargando...');
+  setTimeout(function(){ location.reload(); }, 1000);
 }
 
 // Auto-backup: cada vez que se guarda una cotización o se modifica el pipeline,
