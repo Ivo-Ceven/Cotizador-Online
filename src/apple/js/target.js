@@ -1,6 +1,7 @@
 // ── TARGET ANUAL ──
 function openTargetAnual(){
   var modal = document.getElementById('target-modal');
+  var _wasOpen = modal.style.display === 'block';
   var yearInput  = document.getElementById('target-year');
   var amountInput = document.getElementById('target-amount');
   var now = new Date();
@@ -15,12 +16,14 @@ function openTargetAnual(){
   if(cw) cw.style.display = 'none';
   if(cb) cb.textContent = '⚙ Configurar';
   modal.style.display = 'block';
+  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(closeTargetAnual);
   renderTargetAnual();
 }
 
 // Abre Target Anual directo en el mes para editar el ajuste manual
 function openTargetAnualEditMonth(mk){
   var modal = document.getElementById('target-modal');
+  var _wasOpen = modal.style.display === 'block';
   var yearInput  = document.getElementById('target-year');
   var amountInput = document.getElementById('target-amount');
   var now = new Date();
@@ -36,6 +39,7 @@ function openTargetAnualEditMonth(mk){
   if(cw) cw.style.display = 'block';
   if(cb) cb.textContent = '▲ Ocultar';
   modal.style.display = 'block';
+  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(closeTargetAnual);
   renderTargetAnual();
   // Scroll al mes correspondiente
   setTimeout(function(){
@@ -52,16 +56,20 @@ function openTargetAnualEditMonth(mk){
 
 function closeTargetAnual(){
   document.getElementById('target-modal').style.display = 'none';
+  if(window.cevenNav) cevenNav.notifyClosed(closeTargetAnual);
 }
 
 // ── ANÁLISIS POR SKU ──
 function openSkuDashboard(){
   window._skuExpanded = window._skuExpanded || {};
+  var _wasOpen = document.getElementById('sku-modal').style.display === 'block';
   document.getElementById('sku-modal').style.display = 'block';
+  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(closeSkuDashboard);
   renderSkuDashboard();
 }
 function closeSkuDashboard(){
   document.getElementById('sku-modal').style.display = 'none';
+  if(window.cevenNav) cevenNav.notifyClosed(closeSkuDashboard);
 }
 function toggleSkuRow(sku){
   window._skuExpanded = window._skuExpanded || {};

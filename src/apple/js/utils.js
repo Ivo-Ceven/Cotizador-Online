@@ -36,10 +36,14 @@ function handleLogo(f) {
 }
 
 // ── SCREENS ──
-function goTo(n) {
+// Aplica una vista SIN tocar el historial. Lo usa cevenNav (en popstate y en el
+// arranque). goTo() es la entrada pública, que además integra el botón Atrás.
+function _navApply(n) {
+  var el = document.getElementById('p-'+n);
+  if(!el) return;                          // vista desconocida: no hacemos nada
   var pgs = document.querySelectorAll('.pg');
   for(var i=0;i<pgs.length;i++) pgs[i].classList.remove('on');
-  document.getElementById('p-'+n).classList.add('on');
+  el.classList.add('on');
   if(n === 'nac') renderNac();
   if(n === 'qnac') renderQuoteNac();
   if(n === 'history') renderHistory();
@@ -47,6 +51,22 @@ function goTo(n) {
   if(n === 'pipeline'){ archiveOldEntries(); renderPipeline(); if(typeof autoBackupPipeline === 'function') autoBackupPipeline(false); if(typeof maybeAutoFullBackup === 'function') maybeAutoFullBackup(); }
   if(typeof cevenUpdateAccountBar === 'function') cevenUpdateAccountBar();
 }
+
+function goTo(n) {
+  if(window.cevenNav) cevenNav.goToView(n);
+  else _navApply(n);
+}
+
+// Registro de la vista inicial + restauración desde el hash (deep-link/recarga).
+// El registro es sincrónico; el re-render de un deep-link distinto de 'quote' se
+// difiere hasta que carguen el resto de scripts (renderPipeline, etc.).
+(function(){
+  var v = (location.hash || '').replace(/^#/, '');
+  if(!v || !document.getElementById('p-'+v)) v = 'quote';
+  if(window.cevenNav) cevenNav.registerView(_navApply, v);
+  if(v === 'quote') _navApply('quote');
+  else window.addEventListener('DOMContentLoaded', function(){ _navApply(v); });
+})();
 
 // ── UTILS ──
 function fI(n) { return Math.round(n).toLocaleString('es-AR'); }

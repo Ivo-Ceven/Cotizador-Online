@@ -50,6 +50,23 @@ create table public.pipeline (
 -- Nota: qMac/qIph/qIpad/qServ/qAcc/montoMac.../qNum/margenPond/skuStatus/skuMesCierre/skuPartial*/ovLink
 -- son 100% de brand='apple' — para brand='poly' quedan siempre NULL (agregados 2026-07-24, migración aditiva).
 
+-- Tareas del equipo: organizador colaborativo del SHELL (src/index.html), NO es
+-- de una marca — sin columna brand, un solo checklist compartido entre Apple y
+-- Poly. Sincroniza por REST directo (shared/todos.js), no por el intercept de
+-- localStorage de los cotizadores. Agregada 2026-07-27.
+create table public.todos (
+  id        bigint primary key,   -- Date.now() generado por el cliente
+  texto     text not null,
+  hecho     boolean not null default false,
+  "creadoPor" text,               -- nombre o email de quien la creó
+  fecha     text,                 -- dd/mm/aaaa (para mostrar)
+  "fechaISO" text                 -- ISO 8601 (para ordenar)
+);
+alter table public.todos enable row level security;
+create policy "authenticated full access" on public.todos
+  for all to authenticated using (true) with check (true);
+revoke all on table public.todos from anon;
+
 -- Settings compartidos: espeja claves de localStorage como key/value, por marca
 create table public.app_settings (
   brand text not null default 'apple',

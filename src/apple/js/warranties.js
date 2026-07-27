@@ -69,6 +69,7 @@ function rmWarranty(idx) {
 function openCevenCare() {
   // Try iframe modal first (works when served from same origin / local folder)
   var modal = document.getElementById('cc-modal');
+  var _wasOpen = !!(modal && modal.style.display === 'flex');
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'cc-modal';
@@ -85,6 +86,7 @@ function openCevenCare() {
   } else {
     modal.style.display = 'flex';
   }
+  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(closeCevenCare);
 }
 
 function iframeLoaded(iframe) {
@@ -103,6 +105,7 @@ function iframeLoaded(iframe) {
 function closeCevenCare() {
   var modal = document.getElementById('cc-modal');
   if (modal) modal.style.display = 'none';
+  if(window.cevenNav) cevenNav.notifyClosed(closeCevenCare);
 }
 
 // Called from CevenCare iframe via postMessage

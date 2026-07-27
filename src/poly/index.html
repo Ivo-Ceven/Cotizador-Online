@@ -39,6 +39,7 @@
 <!-- Config de Supabase + auth compartidos con el shell -->
 <script src="../shared/config.js"></script>
 <script src="../shared/auth.js"></script>
+<script src="../shared/notify.js"></script>
 <script>if(!cevenIsValidSession()) location.replace('../index.html');</script>
 
 <!-- QUOTE -->
@@ -320,6 +321,9 @@
     </table>
   </div>
 </div>
+
+<!-- Navegación (botón Atrás del navegador + Escape) -->
+<script src="../shared/nav.js"></script>
 
 <!-- Capa de sincronización con Supabase -->
 <script src="js/sync.js"></script>

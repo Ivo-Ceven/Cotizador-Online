@@ -46,6 +46,8 @@ var ASSETS = [
 
   './shared/config.js',
   './shared/auth.js',
+  './shared/notify.js',
+  './shared/todos.js',
   './shared/pwa.js',
 
   './vendor/xlsx.full.min.js',
