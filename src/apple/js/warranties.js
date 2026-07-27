@@ -113,6 +113,8 @@ window.addEventListener('message', function(e) {
   // Solo aceptar mensajes del propio origin (CevenCare es same-origin);
   // 'null' cubre el modo file:// donde origin no existe.
   if (e.origin !== location.origin && e.origin !== 'null') return;
+  // Escape/Atrás desde el iframe en el landing → cerrar el modal de CevenCare.
+  if (e.data && e.data.type === 'cevencare-close'){ closeCevenCare(); return; }
   if (!e.data || e.data.type !== 'cevencare-add-warranty') return;
   var items_to_add = e.data.items;
   if (!Array.isArray(items_to_add) || !items_to_add.length) return;

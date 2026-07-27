@@ -488,6 +488,22 @@ function goBackFromBudget() {
   budgetAudienceEl.style.display = 'flex';
 }
 
+// ── Escape / botón Atrás: salir de la sub-pantalla actual ────────────────────
+// Fase de captura: si hay una lista de sugerencias abierta, cedemos el Escape al
+// input para que la cierre primero. Si no, volvemos de la pantalla más profunda;
+// ya en el landing avisamos al contenedor (iframe padre) para cerrar CevenCare.
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Escape') return;
+  try{
+    if(suggestionsEl && suggestionsEl.style.display && suggestionsEl.style.display !== 'none') return;
+    if(budgetSuggEl   && budgetSuggEl.style.display   && budgetSuggEl.style.display   !== 'none') return;
+  }catch(_e){}
+  if(budgetScreenEl && budgetScreenEl.style.display === 'flex'){ goBackFromBudget(); }
+  else if(budgetAudienceEl && budgetAudienceEl.style.display === 'flex'){ goBackFromAudience(); }
+  else if(searchScreenEl && searchScreenEl.style.display === 'flex'){ goBack(); }
+  else { try{ window.parent.postMessage({ type:'cevencare-close' }, '*'); }catch(_p){} }
+}, true);
+
 /* ── Tabs ── */
 function setBudgetTab(tab) {
   budgetTab = tab;

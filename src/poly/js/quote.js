@@ -104,12 +104,16 @@ function openQuoteItemEdit(id){
   document.getElementById('qie-price').value = (it.salePrice===''||it.salePrice==null) ? '' : it.salePrice;
   document.getElementById('qie-nota').value  = it.stock || '';
   document.getElementById('qie-err').style.display = 'none';
-  document.getElementById('qitem-edit-modal').style.display = 'flex';
+  var _m = document.getElementById('qitem-edit-modal');
+  var _wasOpen = _m.style.display === 'flex';
+  _m.style.display = 'flex';
+  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(closeQuoteItemEdit);
 }
 
 function closeQuoteItemEdit(){
   _qieEditId = null;
   document.getElementById('qitem-edit-modal').style.display = 'none';
+  if(window.cevenNav) cevenNav.notifyClosed(closeQuoteItemEdit);
 }
 
 function saveQuoteItemEdit(){

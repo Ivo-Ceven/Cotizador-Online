@@ -250,12 +250,16 @@ document.addEventListener('visibilitychange', function(){
 /* ---- Gestión de usuarios (solo admin@ceven.com, vía Edge Function) ---- */
 function cevenOpenUsers(){
   if(!cevenIsAdmin()){ alert('Solo el administrador puede gestionar usuarios.'); return; }
-  document.getElementById('ceven-users-modal').style.display = 'flex';
+  var _m = document.getElementById('ceven-users-modal');
+  var _wasOpen = _m.style.display === 'flex';
+  _m.style.display = 'flex';
   var e = document.getElementById('ceven-users-err'); if(e) e.style.display = 'none';
+  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(cevenCloseUsers);
   cevenRenderUsers();
 }
 function cevenCloseUsers(){
   document.getElementById('ceven-users-modal').style.display = 'none';
+  if(window.cevenNav) cevenNav.notifyClosed(cevenCloseUsers);
 }
 /* Helper genérico: fetch autenticado con el access_token del usuario, con un
    retry automático (refresh + reintento) si el token venció justo a tiempo. */
@@ -400,10 +404,14 @@ function cevenOpenEditProfile(u, currentNombre, currentRole){
   document.getElementById('ceven-edit-profile-nombre').value = currentNombre || '';
   document.getElementById('ceven-edit-profile-role').value = CEVEN_ROLES.indexOf(currentRole) >= 0 ? currentRole : 'ventas';
   var err = document.getElementById('ceven-edit-profile-err'); if(err) err.style.display = 'none';
-  document.getElementById('ceven-edit-profile-modal').style.display = 'flex';
+  var _m = document.getElementById('ceven-edit-profile-modal');
+  var _wasOpen = _m.style.display === 'flex';
+  _m.style.display = 'flex';
+  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(cevenCloseEditProfile);
 }
 function cevenCloseEditProfile(){
   document.getElementById('ceven-edit-profile-modal').style.display = 'none';
+  if(window.cevenNav) cevenNav.notifyClosed(cevenCloseEditProfile);
 }
 function cevenSubmitEditProfile(ev){
   if(ev) ev.preventDefault();

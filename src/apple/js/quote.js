@@ -238,12 +238,15 @@ function openQuoteItemEdit(id){
   document.getElementById('qie-price-lbl').textContent = isNacIncluded ? 'Precio nacionalizado (USD)' : 'Precio de costo (USD)';
   document.getElementById('qie-err').style.display = 'none';
   var m = document.getElementById('qitem-edit-modal');
+  var _wasOpen = m.style.display === 'flex';
   m.style.display = 'flex';
+  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(closeQuoteItemEdit);
 }
 
 function closeQuoteItemEdit(){
   _qieEditId = null;
   document.getElementById('qitem-edit-modal').style.display = 'none';
+  if(window.cevenNav) cevenNav.notifyClosed(closeQuoteItemEdit);
 }
 
 function saveQuoteItemEdit(){
