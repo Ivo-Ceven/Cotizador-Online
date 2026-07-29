@@ -44,21 +44,25 @@ var ASSETS = [
   './icons/apple-touch-icon.png',
   './icons/favicon-32.png',
 
+  './shared/safe.js',
   './shared/config.js',
+  './shared/nav.js',
   './shared/auth.js',
   './shared/notify.js',
   './shared/todos.js',
   './shared/pwa.js',
+  './shared/init.js',
+  './shared/css/base.css',
+  './shared/css/dark.css',
 
   './vendor/xlsx.full.min.js',
   './vendor/html2canvas.min.js',
   './vendor/jspdf.umd.min.js',
   './vendor/jspdf.plugin.autotable.min.js',
 
-  './apple/css/base.css',
-  './apple/css/dark.css',
   './apple/css/cevencare.css',
 
+  './apple/brand.js',
   './apple/js/sync.js',
   './apple/js/state.js',
   './apple/js/utils.js',
@@ -79,12 +83,9 @@ var ASSETS = [
   './apple/js/warranties.js',
   './apple/js/undo.js',
   './apple/js/target.js',
-  './apple/js/init.js',
   './apple/js/cevencare.js',
 
-  './poly/css/base.css',
-  './poly/css/dark.css',
-
+  './poly/brand.js',
   './poly/js/sync.js',
   './poly/js/state.js',
   './poly/js/utils.js',
@@ -102,8 +103,7 @@ var ASSETS = [
   './poly/js/history.js',
   './poly/js/pdf.js',
   './poly/js/boot.js',
-  './poly/js/undo.js',
-  './poly/js/init.js'
+  './poly/js/undo.js'
 ];
 
 /* Documentos: se piden las DOS variantes de cada uno porque `cleanUrls` de

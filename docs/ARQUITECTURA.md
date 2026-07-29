@@ -2,7 +2,22 @@
 
 ## Visión general
 
-La plataforma es multi-marca: un **shell** (`src/index.html`) con el login y el panel selector de marcas, y un cotizador independiente por marca (`src/apple/`; Poly y HP se agregarán igual). `src/shared/` tiene la configuración y la capa de auth comunes; `src/vendor/` las librerías auto-hospedadas (xlsx, html2canvas, jsPDF + autotable).
+La plataforma es multi-marca: un **shell** (`src/index.html`) con el login, el panel selector de marcas y el organizador de tareas del equipo, más un cotizador independiente por marca (`src/apple/` y `src/poly/` completos; HP se agregará igual). `src/shared/` tiene lo común a todas las páginas; `src/vendor/` las librerías auto-hospedadas (xlsx, html2canvas, jsPDF + autotable).
+
+Está desplegada como **PWA instalable y offline-first** en https://cotizadores-ceven.vercel.app (`src/sw.js` en la raíz, scope `/`).
+
+Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ misma sesión):
+
+| Archivo | Responsabilidad |
+|---|---|
+| `config.js` | URL/key de Supabase, dominio, admin, `APP_VERSION` |
+| `auth.js` | Login GoTrue por REST, sesión con refresh, roles y permisos, gestión de usuarios |
+| `nav.js` | `window.cevenNav`: integra el botón Atrás del navegador/celular y la tecla Escape (una sola pila de overlays, un solo listener `popstate`) |
+| `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos |
+| `todos.js` | Organizador de tareas del equipo (tabla `todos`, poll cada 15 s). Solo lo usa el shell |
+| `pwa.js` | Registro del service worker, aviso de versión nueva, botón instalar, pastilla de cambios pendientes |
+
+El historial de decisiones y de por qué cada cosa está como está vive en [`HISTORIAL.md`](HISTORIAL.md).
 
 Cada cotizador es una **SPA sin framework y sin build**: JavaScript "vanilla" con funciones y variables globales (`var`), manipulación directa del DOM y `onclick` inline en el HTML. No usa ES modules — los archivos de `js/` se cargan con `<script src>` clásicos y comparten el scope global.
 
@@ -70,15 +85,28 @@ Reglas del bootstrap de sync: si el servidor tiene datos, **el servidor manda** 
 
 `goTo(nombre)` alterna divs `.pg`: `quote` (cotización), `catalog`, `addprod`, `nac`, `qnac` (NAC por cotización), `history`, `pipeline`. Modales: Target Anual, Análisis por SKU, edición de ítem, usuarios, CevenCare.
 
-## Multi-marca: cómo enchufar Poly (o HP)
+Desde 2026-07-27 la navegación pasa por `shared/nav.js`:
+
+- `goTo(n)` delega en `cevenNav.goToView(n)`, que aplica la vista **y** empuja una entrada al historial (`#nombre` en la URL). La función que solo pinta la vista, sin tocar el historial, es `_navApply(n)` — la usa el `popstate` y el arranque.
+- Cada modal llama a `cevenNav.openOverlay(closeXxx)` al abrirse (guardado con un flag `_wasOpen` para no apilar dos veces) y a `cevenNav.notifyClosed(closeXxx)` al cerrarse.
+- **Atrás/Escape cierra primero el modal de más arriba**, después retrocede entre vistas, y recién desde `quote` sale de la app. Al recargar, la vista se restaura desde el `#hash`.
+- Todas las llamadas están guardadas con `if(window.cevenNav)`, así que si `nav.js` no cargó la app sigue funcionando con la navegación vieja.
+
+**Al agregar un modal nuevo**: enganchar `openOverlay`/`notifyClosed` y —si es un archivo nuevo— **agregarlo a `ASSETS` en `src/sw.js`** y correr `node scripts/check-precache.js`.
+
+## Multi-marca: cómo enchufar HP (la receta que se usó para Poly)
+
+> Poly ya está hecho (24/07/2026) siguiendo exactamente estos pasos. Queda como
+> receta para HP. Además de esto, hoy hay que sumar el paso 6.
 
 1. Copiar `src/apple/` → `src/poly/` como plantilla.
 2. En `src/poly/js/sync.js` cambiar `var BRAND = 'apple'` → `'poly'`.
 3. Prefijar las claves de localStorage del cotizador nuevo (`poly_cpl`, `poly_cpipeline`, `poly_cquotes`, …) en TODOS los módulos — las marcas comparten origin, sin prefijo se pisan entre sí. Apple conserva sus claves históricas sin prefijo. Claves neutrales compartidas: `ceven_auth_session`, `cdark`.
 4. Adaptar catálogo/categorías: las tablas `NAC_DEF`, `MODEL_CATEGORY`, `IVA_MAP` (`state.js`) y `categorize()` (`pipeline-core.js`) son 100% Apple; definir las equivalentes de la marca (o simplificar si no aplica nacionalización/familias).
 5. Activar la tarjeta de la marca en el shell (`src/index.html`): quitar la clase `soon` y agregar `onclick="location.href='poly/'"`.
+6. **Registrar todos los archivos nuevos en `ASSETS` de `src/sw.js`** (CSS, JS y el `index.html` de la marca en `DOCS`) y verificar con `node scripts/check-precache.js`. Si falta uno, el precache queda incompleto y la marca no abre sin conexión.
 
-En Supabase no hay que tocar nada: las tablas ya separan por `brand` (PK compuestas `(brand,id)` / `(brand,key)`).
+En Supabase no hay que tocar nada: las tablas ya separan por `brand` (PK compuestas `(brand,id)` / `(brand,key)`). Si la marca necesita campos propios, se agregan a `pipeline` como columnas aditivas que quedan NULL para las demás (así se hizo con `opg`/`salas`/`factura` de Poly).
 
 ## Roles y permisos (definidos en shared/auth.js)
 
