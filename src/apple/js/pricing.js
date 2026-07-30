@@ -120,6 +120,18 @@ function getIVA(lob) {
 }
 
 // ── MISC ──
+// Construye una lista de <option> escapando los valores. Model / Country / LOB
+// salen del Excel importado y del price list sincronizado desde la base: son
+// datos no confiables y no pueden concatenarse crudos en innerHTML.
+function optionsHTML(values, selected) {
+  var out = '';
+  for(var i=0;i<values.length;i++) {
+    var v = cevenEsc(values[i]);
+    out += '<option value="'+v+'"'+(values[i]===selected?' selected':'')+'>'+v+'</option>';
+  }
+  return out;
+}
+
 function uniq(arr) {
   var seen = {}, out = ['Todos'];
   for(var i=0;i<arr.length;i++) { if(arr[i] && !seen[arr[i]]) { seen[arr[i]]=1; out.push(arr[i]); } }

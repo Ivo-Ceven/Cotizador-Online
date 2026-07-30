@@ -7,22 +7,37 @@ function saveDB(db){
   autoSnapshot();
 }
 
+// Guardar con el ejecutivo vacío deja la fila como Ejecutivo '—', y a partir de
+// ahí cevenCanEditQuote('—') es false para todo el mundo menos un admin: ni el
+// autor puede volver a tocar su cotización. Se rechaza antes de escribir.
+function cevenExecActual(){
+  var el = document.getElementById('exec');
+  return el ? (el.value||'').trim() : '';
+}
+function cevenRequireExec(){
+  if(cevenExecActual()) return true;
+  showToast('Elegí el Ejecutivo antes de guardar.');
+  return false;
+}
+
+// Devuelve true si escribió, false si se rechazó (ejecutivo vacío / sin ítems).
 function doSave(overwrite){
-  if(!items.length) return;
+  if(!items.length) return false;
+  if(!cevenRequireExec()) return false;
   var now=new Date();
   var date=now.toLocaleDateString('es-AR');
   var time=now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
   var client=document.getElementById('client').value||'—';
   var opg=document.getElementById('opg').value||'—';
   var sala=document.getElementById('sala').value||'—';
-  var exec=document.getElementById('exec').value||'—';
+  var exec=cevenExecActual();
   var ob=document.getElementById('obs').value||'—';
   var mesC = getMesCierre();
   var estadoQ = (document.getElementById('quote-estado') && document.getElementById('quote-estado').value) || 'Cotizado';
   var qn=String(qNum).padStart(4,'0');
   var db=getDB();
   var already=false; for(var i=0;i<db.length;i++){if(db[i]['N° Cotización']===qn){already=true;break;}}
-  if(already && !overwrite) return;
+  if(already && !overwrite) return false;
   if(already && overwrite){
     db=db.filter(function(r){return r['N° Cotización']!==qn;});
   }
@@ -32,11 +47,12 @@ function doSave(overwrite){
     db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'OPG':opg,'Sala':sala,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ});
   }
   saveDB(db);
+  return true;
 }
 
 function saveQuote(){
   if(!items.length){showToast('La cotización está vacía.');return;}
-  doSave(true); // siempre sobreescribe al guardar manualmente
+  if(!doSave(true)) return; // siempre sobreescribe al guardar manualmente
   showToast('✓ Cotización #'+String(qNum).padStart(4,'0')+' guardada.');
 }
 
@@ -59,6 +75,16 @@ function _snapshotQuoteState(){
     delivery: document.getElementById('delivery').value
   };
 }
+// Asigna un ejecutivo al <select>, agregando la opción si no está: sin esto,
+// asignar un nombre que no figura en la lista deja el select en '' y el dato se
+// pierde en silencio (cotización vieja de alguien que ya no aparece en la base).
+function _setExecValue(nombre){
+  var sel = document.getElementById('exec');
+  if(!sel) return;
+  if(nombre && typeof cevenEnsureExecOption === 'function') cevenEnsureExecOption(sel, nombre);
+  sel.value = nombre || '';
+}
+
 function _restoreQuoteState(snap){
   qNum = snap.qNum;
   document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
@@ -66,7 +92,7 @@ function _restoreQuoteState(snap){
   document.getElementById('client').value = snap.client;
   document.getElementById('opg').value    = snap.opg;
   document.getElementById('sala').value   = snap.sala;
-  document.getElementById('exec').value   = snap.exec;
+  _setExecValue(snap.exec);
   if(document.getElementById('mes-cierre-mY')) setMesCierre(snap.mesCierre);
   if(document.getElementById('quote-estado')) document.getElementById('quote-estado').value = snap.estado;
   document.getElementById('obs').value = snap.obs;
@@ -90,7 +116,10 @@ function nuevaCotizacion(){
   document.getElementById('sala').value = '';
   if(document.getElementById('mes-cierre-mY')) setMesCierre('');
   if(document.getElementById('quote-estado')) document.getElementById('quote-estado').value = 'Cotizado';
-  document.getElementById('exec').value = '';
+  // Refrescar la lista antes de limpiar: puede haber aparecido un ejecutivo
+  // nuevo desde el último arranque (sync trae cotizaciones de otros vendedores).
+  if(typeof refreshExecOptions === 'function') refreshExecOptions();
+  _setExecValue('');
   document.getElementById('obs').value = '';
   // Resetear fecha efectiva a +15 días
   var d2 = new Date(); d2.setDate(d2.getDate()+15);
@@ -109,6 +138,7 @@ function nuevaCotizacion(){
 // otra Sala del mismo OPG partiendo de una lista de productos parecida.
 function copiarCotizacion(){
   if(!items.length){ showToast('La cotización está vacía, no hay nada para copiar.'); return; }
+  if(!cevenRequireExec()) return;
   var snap = _snapshotQuoteState();
   // Nuevo número de cotización
   try { qNum = parseInt(localStorage.getItem('poly_cqc')||'0') + 1; localStorage.setItem('poly_cqc', qNum); } catch(e){}
@@ -119,7 +149,14 @@ function copiarCotizacion(){
   // efectiva, entrega) se mantienen tal cual están en pantalla → ya forman parte de la copia.
   renderQ();
   doSave(true); // persistir la copia como cotización nueva
-  notifyUndo('✓ Copia creada como Cotización #' + String(qNum).padStart(4,'0') + '.', function(){ _restoreQuoteState(snap); });
+  var copiaQn = String(qNum).padStart(4,'0');
+  notifyUndo('✓ Copia creada como Cotización #' + copiaQn + '.', function(){
+    // _restoreQuoteState() sólo repone la PANTALLA: sin este filtro la copia
+    // quedaba guardada en poly_cquotes (y sincronizada al resto del equipo)
+    // aunque el usuario tocara "Deshacer".
+    saveDB(getDB().filter(function(r){ return r['N° Cotización'] !== copiaQn; }));
+    _restoreQuoteState(snap);
+  });
 }
 
 // Duplica una cotización del historial como una NUEVA (nuevo número, fecha de hoy)
@@ -149,7 +186,13 @@ function copiarCotizacionHist(qn){
   // Abrir la copia en el cotizador (el propio editQuoteFromHistory no ofrece su
   // deshacer porque el snapshot de acá ya cubre toda la operación)
   editQuoteFromHistory(newQn, true);
-  notifyUndo('✓ Copia creada como Cotización #'+newQn+'.', function(){ _restoreQuoteState(snap); });
+  notifyUndo('✓ Copia creada como Cotización #'+newQn+'.', function(){
+    // Mismo caso que copiarCotizacion(): hay que borrar la copia, no sólo
+    // devolver la pantalla al estado anterior.
+    saveDB(getDB().filter(function(r){ return r['N° Cotización'] !== newQn; }));
+    _restoreQuoteState(snap);
+    if(typeof renderHistory === 'function') renderHistory();
+  });
 }
 
 function editQuoteFromHistory(qn, skipUndoToast){
@@ -166,7 +209,7 @@ function editQuoteFromHistory(qn, skipUndoToast){
   document.getElementById('opg').value    = first['OPG']!=='—'?(first['OPG']||''):'';
   document.getElementById('sala').value   = first['Sala']!=='—'?(first['Sala']||''):'';
   if(document.getElementById('mes-cierre-mY')) setMesCierre(first['Mes Cierre']||'');
-  document.getElementById('exec').value   = first['Ejecutivo']!=='—'?first['Ejecutivo']:'';
+  _setExecValue(first['Ejecutivo']!=='—'?first['Ejecutivo']:'');
   document.getElementById('obs').value    = first['Observaciones']!=='—'?first['Observaciones']:'';
   if(document.getElementById('quote-estado')){
     var _estLoad='Cotizado';

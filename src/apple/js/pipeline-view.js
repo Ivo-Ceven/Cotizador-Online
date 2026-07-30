@@ -155,7 +155,7 @@ function renderPipeline(){
     archiveMonths.forEach(function(m){
       var p = m.split('-');
       var lbl = p.length===2 ? (meses[parseInt(p[1])-1]+' '+p[0]) : m;
-      newHtml += '<option value="'+m+'">📦 '+lbl+'</option>';
+      newHtml += '<option value="'+cevenEsc(m)+'">📦 '+cevenEsc(lbl)+'</option>';
     });
     if(archiveSel.innerHTML !== newHtml) archiveSel.innerHTML = newHtml;
     if(curArchiveVal && archiveMonths.indexOf(curArchiveVal) !== -1) archiveSel.value = curArchiveVal;
@@ -170,6 +170,12 @@ function renderPipeline(){
   }
 
   var pipe = getPipeline();
+  // getDB() hace JSON.parse de cquotes (varios MB). Se llamaba dentro del loop de
+  // expansión virtual, dentro de _pipeSkuOVState() y dentro de
+  // renderPipelineDetailRow(): con 200 entradas eran ~200 parses de 2 MB por
+  // render, y el poll de sync dispara renderPipeline() cada 15 s. Se parsea una
+  // sola vez por pasada y se pasa hacia abajo.
+  var pipeDB = getDB();
   var q = (document.getElementById('pipe-search').value||'').toLowerCase().trim();
   var ex = document.getElementById('pipe-exec').value || '';
   var fam = (document.getElementById('pipe-family')||{}).value || '';
@@ -201,7 +207,7 @@ function renderPipeline(){
       var bg = active ? '#1d1d1f' : '#fff';
       var fg = active ? '#fff' : '#1d1d1f';
       var bd = active ? '#1d1d1f' : '#d2d2d7';
-      return '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" onclick="setPipeMonth(\''+val+'\')" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap;transition:transform .1s" onmouseover="this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.transform=\'\'">'+label+'</div>';
+      return '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-pill="month" data-val="'+cevenEsc(val)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap;transition:transform .1s">'+cevenEsc(label)+'</div>';
     }
     var pillsH = _mPill('', 'Todos') + _mPill('sin-fecha', 'Sin fecha');
     sortedMonths.forEach(function(m){
@@ -232,9 +238,12 @@ function renderPipeline(){
       var bg = active ? '#1d1d1f' : '#fff';
       var fg = active ? '#fff' : '#1d1d1f';
       var bd = active ? '#1d1d1f' : '#d2d2d7';
-      var cEsc = t.cli.replace(/'/g,"\\'").replace(/"/g,'&quot;');
-      tcH += '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" onclick="setPipeClientFilter(\''+cEsc+'\')" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap;transition:transform .1s" onmouseover="this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.transform=\'\'">'
-        +medals[i]+' '+t.cli+' <span style="opacity:.7;font-weight:400">· '+t.n+' cot.</span></div>';
+      // El nombre del cliente iba dentro de un string JS de un onclick, escapado
+      // sólo con replace(/'/g,"\\'"). Ese escape no cubre la barra invertida: un
+      // cliente llamado  \');alert(1);//  cerraba el string y ejecutaba lo que
+      // siguiera. Ahora viaja en data-cli y lo lee el listener delegado.
+      tcH += '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-pill="client" data-cli="'+cevenEsc(t.cli)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap;transition:transform .1s">'
+        +medals[i]+' '+cevenEsc(t.cli)+' <span style="opacity:.7;font-weight:400">· '+cevenEsc(t.n)+' cot.</span></div>';
     });
     topClientsBox.innerHTML = tcH || '<span style="font-size:12px;color:#aeaeb2">Sin cotizaciones</span>';
     // Ajustar a UNA sola fila: quitar clientes sobrantes si no entran (mínimo 3)
@@ -318,7 +327,7 @@ function renderPipeline(){
       return;
     }
     // Buscar todas las líneas de la cotización
-    var lines = getDB().filter(function(x){
+    var lines = pipeDB.filter(function(x){
       return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia');
     });
     if(!lines.length){ virtualRows.push(r); return; }
@@ -618,7 +627,7 @@ function renderPipeline(){
     // ── BLOQUE POR ESTADO + APERTURA POR MES ──
     var pillsHtml = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;width:100%">'
       +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px">Por estado</div>'
-      +'<button class="bs" onclick="togglePipeMonthlyView()" id="pipe-toggle-months" style="font-size:11px;padding:3px 10px">'+(window._pipeShowMonths?'Ocultar meses':'Ver por mes')+'</button>'
+      +'<button class="bs" data-pill="months" id="pipe-toggle-months" style="font-size:11px;padding:3px 10px">'+(window._pipeShowMonths?'Ocultar meses':'Ver por mes')+'</button>'
     +'</div>';
 
     if(!window._pipeShowMonths){
@@ -635,8 +644,8 @@ function renderPipeline(){
           var pond = data.marW / data.marM;
           pondTxt = ' · MgPd ' + pond.toFixed(2) + '%';
         }
-        pillsHtml += '<div class="spill spill-'+s.replace(/ /g,'')+'" onclick="togglePillFilter(\''+s+'\')" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;transition:transform .1s'+activeBorder+dim+'" onmouseover="this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.transform=\'\'">'
-          +'<strong>'+s+'</strong>'
+        pillsHtml += '<div class="spill spill-'+s.replace(/ /g,'')+'" data-pill="status" data-st="'+cevenEsc(s)+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;transition:transform .1s'+activeBorder+dim+'">'
+          +'<strong>'+cevenEsc(s)+'</strong>'
           +'<span style="opacity:.85">· '+data.count+' cot. · USD '+fI(data.monto)+pondTxt+'</span>'
           +'</div>';
       });
@@ -662,7 +671,7 @@ function renderPipeline(){
       pillsHtml += '<table style="width:100%;font-size:12px;border-collapse:collapse;min-width:'+(140+monthList.length*120)+'px">';
       pillsHtml += '<thead><tr><th style="text-align:left;padding:8px 12px;background:#fafafa;border-bottom:0.5px solid #e5e5e7;position:sticky;left:0;z-index:2">Estado</th>';
       monthList.forEach(function(m){
-        pillsHtml += '<th style="text-align:right;padding:8px 12px;background:#fafafa;border-bottom:0.5px solid #e5e5e7;font-weight:600;white-space:nowrap;min-width:110px">'+fmtMonth(m)+'</th>';
+        pillsHtml += '<th style="text-align:right;padding:8px 12px;background:#fafafa;border-bottom:0.5px solid #e5e5e7;font-weight:600;white-space:nowrap;min-width:110px">'+cevenEsc(fmtMonth(m))+'</th>';
       });
       pillsHtml += '<th style="text-align:right;padding:8px 12px;background:#fafafa;border-bottom:0.5px solid #e5e5e7;font-weight:700;white-space:nowrap">Total</th>';
       pillsHtml += '</tr></thead><tbody>';
@@ -673,7 +682,7 @@ function renderPipeline(){
         var c = statusColors[s] || {bg:'#f2f2f7', fg:'#1d1d1f'};
         pillsHtml += '<tr>'
           +'<td style="padding:8px 12px;border-bottom:0.5px solid #f0f0f0;position:sticky;left:0;background:#fff;z-index:1">'
-            +'<span class="spill spill-'+s.replace(/ /g,'')+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700">'+s+'</span>'
+            +'<span class="spill spill-'+s.replace(/ /g,'')+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700">'+cevenEsc(s)+'</span>'
           +'</td>';
         monthList.forEach(function(m){
           var d = (byStatusMonth[s]||{})[m] || {count:0, monto:0, marW:0, marM:0};
@@ -742,7 +751,7 @@ function renderPipeline(){
   // ── TABLA ──
   function cell(val, isFiltered){
     var bold = isFiltered ? ';background:#fff8e1;font-weight:700' : '';
-    return '<td style="text-align:center'+bold+'">'+(val||'—')+'</td>';
+    return '<td style="text-align:center'+bold+'">'+cevenEsc(val||'—')+'</td>';
   }
 
   var html = '';
@@ -761,21 +770,26 @@ function renderPipeline(){
       window._pipeLineKeysMap[expandKey] = r._lineKeys;
     }
     var isVirtual = !!r._virtual;
-    // En filas virtuales, los selects de mes/estado actúan sobre los SKUs del grupo
-    var mesChangeFn = isVirtual ? ('updateVirtualGroupMesValue('+realId+',window._pipeLineKeysMap[\''+expandKey+'\'],this.value)') : ('updatePipelineMesCierreValue('+realId+',this.value)');
-    var statusChangeFn = isVirtual ? ('updateVirtualGroupStatus('+realId+',window._pipeLineKeysMap[\''+expandKey+'\'],') : ('updatePipelineStatus('+realId+',');
+    // expandKey incluye el estado y el mes por SKU (r._groupKey), que salen de la
+    // base: concatenarlo dentro de un onclick entre comillas simples permitía
+    // cerrar el string y ejecutar código. Ahora todo viaja por data-* y lo
+    // resuelve el listener delegado de #pipe-body.
+    var rowA = ' data-pid="'+cevenEsc(realId)+'" data-pkey="'+cevenEsc(expandKey)+'"'+(isVirtual?' data-pvirtual="1"':'');
 
     // Cierre estimado: select combinado Mes/Año
     var curMC = r.mesCierre || '';
-    var mesSel = '<select onchange="'+mesChangeFn+'" style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:11px;font-family:inherit;background:#fff;min-width:110px">'
+    var mesSel = '<select data-pact="mes"'+rowA+' style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:11px;font-family:inherit;background:#fff;min-width:110px">'
       + generateMesYearOptions(curMC)
       + '</select>';
 
     var estado = r.estado || 'Cotizado';
     var statusOpts = ['Proyecto','Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
-    var statusSel = '<select onchange="'+statusChangeFn+'this.value)" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">';
+    var statusSel = '<select data-pact="status"'+rowA+' style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">';
+    // El estado guardado puede no estar en la lista (dato viejo o corrupto): se
+    // agrega como opción propia para no cambiarlo en silencio al re-renderizar.
+    if(statusOpts.indexOf(estado) === -1) statusOpts = statusOpts.concat([estado]);
     statusOpts.forEach(function(s){
-      statusSel += '<option value="'+s+'"'+(s===estado?' selected':'')+'>'+s+'</option>';
+      statusSel += '<option value="'+cevenEsc(s)+'"'+(s===estado?' selected':'')+'>'+cevenEsc(s)+'</option>';
     });
     statusSel += '</select>';
 
@@ -804,12 +818,12 @@ function renderPipeline(){
     var _trCls = 'row-st-'+(estado||'').replace(/ /g,'_')+(isVirtual?' row-virtual':'');
     html += '<tr class="'+_trCls+'"'+(rowStyle?' style="'+rowStyle+'"':'')+'>'
       +'<td style="font-size:12px;white-space:nowrap">'
-        +'<button class="bs" onclick="togglePipelineRow(\''+expandKey+'\')" title="Ver SKUs" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
-        +r.fecha
+        +'<button class="bs" data-pact="expand"'+rowA+' title="Ver SKUs" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
+        +cevenEsc(r.fecha)
       +'</td>'
-      +'<td style="font-size:12px">'+(r.ejecutivo||'—')+'</td>'
-      +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+(r.cliente||'').replace(/"/g,'&quot;')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.cliente+'</div>'+virtualBadge+'</div></td>'
-      +'<td><div title="'+(r.proyecto||'').replace(/"/g,'&quot;')+'" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r.proyecto||'—')+'</div></td>'
+      +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
+      +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+virtualBadge+'</div></td>'
+      +'<td><div title="'+cevenEsc(r.proyecto||'')+'" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
       +'<td style="font-size:12px;white-space:nowrap">'+mesSel+'</td>'
       +'<td style="text-align:center">'+statusSel+'</td>'
       +cell(r.qMac,  fam==='mac')
@@ -817,42 +831,123 @@ function renderPipeline(){
       +cell(r.qIpad, fam==='ipad')
       +cell(r.qServ, fam==='serv')
       +cell(r.qAcc,  fam==='acc')
-      +'<td style="text-align:right;font-size:12px;color:#6e6e73;white-space:nowrap">'+(r.margenPond!=null?r.margenPond.toFixed(2)+'%':'—')+'</td>'
+      +'<td style="text-align:right;font-size:12px;color:#6e6e73;white-space:nowrap">'+(typeof r.margenPond==='number'?r.margenPond.toFixed(2)+'%':'—')+'</td>'
       +'<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px'+(rowTint?';background:'+rowTint:'')+(rowFg?';color:'+rowFg:'')+'">USD '+fI(r.monto||0)+'</td>'
       +'<td class="stk-act" style="text-align:center;white-space:nowrap'+(rowTint?';background:'+rowTint:'')+'">'
         +(function(){
-          var _ovSt = _pipeSkuOVState(r);
+          var _ovSt = _pipeSkuOVState(r, pipeDB);
           if(_ovSt === 'full'){
             // Completo: verde. Si tiene ovLink legacy, click abre; si es por SKU, expande el detalle
-            var _act = r.ovLink
-              ? 'openOVLink('+realId+');event.stopPropagation()'
-              : 'togglePipelineRow(\''+expandKey+'\');event.stopPropagation()';
-            var _rc = r.ovLink
-              ? 'oncontextmenu="editOVLink('+realId+');event.preventDefault();return false"'
-              : '';
-            return '<button class="bs" onclick="'+_act+'" '+_rc+' title="OV cargada en todas las líneas · clic para ver detalle" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">OV</button> ';
+            var _act = r.ovLink ? 'ov-open' : 'expand';
+            var _rc  = r.ovLink ? ' data-pctx="ov-edit"' : '';
+            return '<button class="bs" data-pact="'+_act+'"'+_rc+rowA+' title="OV cargada en todas las líneas · clic para ver detalle" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">OV</button> ';
           } else if(_ovSt === 'partial'){
             // Parcial: mitad verde / mitad rojo → expande para ver cuál falta
-            return '<button class="bs" onclick="togglePipelineRow(\''+expandKey+'\');event.stopPropagation()" title="OV parcial: algunas líneas tienen OV y otras no · clic para ver detalle" style="background:linear-gradient(90deg,#34c759 50%,#ff3b30 50%);color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">OV</button> ';
+            return '<button class="bs" data-pact="expand"'+rowA+' title="OV parcial: algunas líneas tienen OV y otras no · clic para ver detalle" style="background:linear-gradient(90deg,#34c759 50%,#ff3b30 50%);color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">OV</button> ';
           } else {
             // Sin OV
-            return '<button class="bs" onclick="editOVLink('+realId+');event.stopPropagation()" title="Cargar link a Orden de Venta" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">OV</button> ';
+            return '<button class="bs" data-pact="ov-edit"'+rowA+' title="Cargar link a Orden de Venta" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">OV</button> ';
           }
         })()
-        +(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bs" onclick="openPipelineQuote(\''+r.qNum+'\')" title="Editar cotización" style="padding:2px 8px;font-size:12px">✎</button> ' : '')
+        +(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bs" data-pact="quote" data-pqnum="'+cevenEsc(r.qNum)+'"'+rowA+' title="Editar cotización" style="padding:2px 8px;font-size:12px">✎</button> ' : '')
         +(cevenCanEditPipelineRow(r.ejecutivo) ? (isVirtual && r._hasOverrides
-          ? '<button class="bsr" onclick="mergeBackVirtualRow('+realId+',\''+expandKey+'\')" title="Volver a unir esta línea con el resto (quita el split)">×</button>'
-          : '<button class="bsr" onclick="removePipeline('+realId+');event.stopPropagation()" title="Eliminar cotización del pipeline">×</button>'
+          ? '<button class="bsr" data-pact="merge"'+rowA+' title="Volver a unir esta línea con el resto (quita el split)">×</button>'
+          : '<button class="bsr" data-pact="del"'+rowA+' title="Eliminar cotización del pipeline">×</button>'
         ) : '')
       +'</td>'
       +'</tr>';
     // Sub-fila con detalle de SKUs
     if(expanded){
-      html += renderPipelineDetailRow(r);
+      html += renderPipelineDetailRow(r, pipeDB, pipe);
     }
   }
 
   document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="14" style="text-align:center;color:#aeaeb2;padding:24px">Sin entradas en pipeline. Cargá una cotización y tocá "Agregar a Pipeline".</td></tr>';
   attachPipeSortHandlers();
 }
+
+// ── DELEGACIÓN DE EVENTOS DEL PIPELINE ──────────────────────────────────────
+// Todos los handlers de las filas y de las pastillas eran onclick/onchange inline
+// con el cliente, el estado por SKU y el mes de cierre concatenados dentro de
+// strings JS. Ahora esos datos van en atributos data-* y se leen desde acá.
+(function(){
+  function ctx(el){
+    var virtual = el.getAttribute('data-pvirtual') === '1';
+    var key = el.getAttribute('data-pkey');
+    return {
+      id: parseInt(el.getAttribute('data-pid'), 10),
+      key: key,
+      virtual: virtual,
+      lineKeys: virtual ? (window._pipeLineKeysMap[key] || []) : null
+    };
+  }
+
+  var body = document.getElementById('pipe-body');
+  if(body){
+    var pickRow = function(e){
+      var el = e.target.closest ? e.target.closest('[data-pact],[data-pctx]') : null;
+      return (el && body.contains(el)) ? el : null;
+    };
+    body.addEventListener('change', function(e){
+      var el = pickRow(e); if(!el) return;
+      var c = ctx(el);
+      if(isNaN(c.id)) return;
+      if(el.getAttribute('data-pact') === 'mes'){
+        if(c.virtual) updateVirtualGroupMesValue(c.id, c.lineKeys, el.value);
+        else          updatePipelineMesCierreValue(c.id, el.value);
+      } else if(el.getAttribute('data-pact') === 'status'){
+        if(c.virtual) updateVirtualGroupStatus(c.id, c.lineKeys, el.value);
+        else          updatePipelineStatus(c.id, el.value);
+      }
+    });
+    body.addEventListener('click', function(e){
+      var el = pickRow(e); if(!el) return;
+      var act = el.getAttribute('data-pact');
+      if(!act) return;
+      var c = ctx(el);
+      switch(act){
+        case 'expand':  e.stopPropagation(); togglePipelineRow(c.key); break;
+        case 'ov-open': e.stopPropagation(); openOVLink(c.id); break;
+        case 'ov-edit': e.stopPropagation(); editOVLink(c.id); break;
+        case 'quote':   openPipelineQuote(el.getAttribute('data-pqnum')); break;
+        case 'merge':   mergeBackVirtualRow(c.id, c.key); break;
+        case 'del':     e.stopPropagation(); removePipeline(c.id); break;
+      }
+    });
+    body.addEventListener('contextmenu', function(e){
+      var el = pickRow(e); if(!el) return;
+      if(el.getAttribute('data-pctx') !== 'ov-edit') return;
+      e.preventDefault();
+      editOVLink(ctx(el).id);
+    });
+  }
+
+  // Pastillas: mes de cierre, top clientes y estados. El efecto hover que antes
+  // vivía en onmouseover/onmouseout inline se resuelve acá.
+  ['pipe-month-pills','pipe-topclients-pills','dash-by-status'].forEach(function(boxId){
+    var box = document.getElementById(boxId);
+    if(!box) return;
+    var pickPill = function(e){
+      var el = e.target.closest ? e.target.closest('[data-pill]') : null;
+      return (el && box.contains(el)) ? el : null;
+    };
+    box.addEventListener('click', function(e){
+      var el = pickPill(e); if(!el) return;
+      switch(el.getAttribute('data-pill')){
+        case 'month':  setPipeMonth(el.getAttribute('data-val')); break;
+        case 'client': setPipeClientFilter(el.getAttribute('data-cli')); break;
+        case 'status': togglePillFilter(el.getAttribute('data-st')); break;
+        case 'months': togglePipeMonthlyView(); break;
+      }
+    });
+    box.addEventListener('mouseover', function(e){
+      var el = pickPill(e);
+      if(el && el.getAttribute('data-pill') !== 'months') el.style.transform = 'translateY(-1px)';
+    });
+    box.addEventListener('mouseout', function(e){
+      var el = pickPill(e);
+      if(el && el.getAttribute('data-pill') !== 'months') el.style.transform = '';
+    });
+  });
+})();
 

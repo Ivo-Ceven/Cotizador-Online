@@ -42,6 +42,13 @@ function doSave(overwrite){
   var ob=document.getElementById('obs').value||'—';
   var mesC = getMesCierre();
   var estadoQ = (document.getElementById('quote-estado') && document.getElementById('quote-estado').value) || 'Cotizado';
+  // Condiciones comerciales: no se guardaban, así que el PDF regenerado desde el
+  // historial (exportSelectedPDF) las leía como vacías y omitía el bloque entero
+  // de "Condiciones Comerciales". Los nombres de clave son los que ese PDF espera.
+  var _el = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
+  var payMode  = _el('pay-mode');
+  var effDate  = _el('eff-date');
+  var delivery = _el('delivery');
   // Proyecto = observaciones (campo unificado)
   var proyecto = ob;
   var qn=String(qNum).padStart(4,'0');
@@ -53,12 +60,12 @@ function doSave(overwrite){
   }
   for(var j=0;j<items.length;j++){
     var it=items[j];
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin});
+    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin});
   }
   for(var k=0;k<warrantyItems.length;k++){
     var w=warrantyItems[k];
     var wp=Math.round((w.precio||0)*100)/100;
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'SKU':w.sku,'Descripción':w.equipo+' — '+(w.canal==='CC'?'Complete Care':'Gta. Limitada Ext.')+' ('+w.años+(w.años===1?' año':' años')+')','Cantidad':w.cantidad,'Disponibilidad':'—','Margen %':'—','P. Venta Unitario':wp,'Total':wp*w.cantidad,'Tipo':'garantia','_wdata':JSON.stringify(w),'_estado':estadoQ});
+    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':w.sku,'Descripción':w.equipo+' — '+(w.canal==='CC'?'Complete Care':'Gta. Limitada Ext.')+' ('+w.años+(w.años===1?' año':' años')+')','Cantidad':w.cantidad,'Disponibilidad':'—','Margen %':'—','P. Venta Unitario':wp,'Total':wp*w.cantidad,'Tipo':'garantia','_wdata':JSON.stringify(w),'_estado':estadoQ});
   }
   // Guardar overrides de Nac de la cotización si existen
   if(Object.keys(quoteNacOverrides).length){
@@ -167,6 +174,16 @@ function editQuoteFromHistory(qn, skipConfirm){
   if(document.getElementById('mes-cierre-mY')) setMesCierre(first['Mes Cierre']||'');
   document.getElementById('exec').value   = first['Ejecutivo']!=='—'?first['Ejecutivo']:'';
   document.getElementById('obs').value    = first['Observaciones']!=='—'?first['Observaciones']:'';
+  // Condiciones comerciales guardadas con la cotización. Sin esto, reabrir una
+  // cotización y volver a guardarla las pisaba con lo que hubiera en pantalla.
+  (function(){
+    var pm = document.getElementById('pay-mode');
+    if(pm && first['Condición de pago']) pm.value = first['Condición de pago'];
+    var ed = document.getElementById('eff-date');
+    if(ed && first['Propuesta efectiva hasta'] && first['Propuesta efectiva hasta'] !== '—') ed.value = first['Propuesta efectiva hasta'];
+    var dv = document.getElementById('delivery');
+    if(dv) dv.value = (first['Entrega'] && first['Entrega'] !== '—') ? first['Entrega'] : '';
+  })();
   if(document.getElementById('quote-estado')){
     var _estLoad='Cotizado';
     for(var _ri=0;_ri<rows.length;_ri++){ if(rows[_ri]['_estado']){ _estLoad=rows[_ri]['_estado']; break; } }
@@ -242,7 +259,9 @@ function exportDB(){
   if(!db.length){alert('No hay cotizaciones guardadas.');return;}
   var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++)o[COLS[i]]=r[COLS[i]]!==undefined?r[COLS[i]]:'';return o;});
   var ws=XLSX.utils.json_to_sheet(data,{header:COLS});
-  ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:18},{wch:28},{wch:16},{wch:40},{wch:10},{wch:14},{wch:10},{wch:20},{wch:14}];
+  // Un ancho por columna de COLS (antes eran 13 para 15 columnas).
+  ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:18},{wch:28},{wch:40},{wch:12},
+               {wch:18},{wch:20},{wch:18},{wch:16},{wch:40},{wch:10},{wch:14},{wch:10},{wch:20},{wch:14}];
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cotizaciones');
   XLSX.writeFile(wb,'Ceven_Base_Cotizaciones.xlsx');
 }

@@ -70,36 +70,74 @@ function renderQ() {
     var mgNum = (typeof it.itemMargin==='number' && !isNaN(it.itemMargin)) ? it.itemMargin : null;
     var mgNeg = mgNum !== null && mgNum < 0;
     var mgStyle = mgNeg ? ';color:#d70015;font-weight:600;border-color:#d70015' : '';
+    // SKU y Descripción vienen del price list importado / sincronizado, y taxes y
+    // stock los tipea el usuario: todo va escapado, también dentro de value="".
+    var idA = ' data-qid="'+cevenEsc(it.id)+'"';
     html+='<tr>'
-      +'<td style="font-weight:500">'+it.sku+'</td>'
-      +'<td class="wrap">'+it.description+'</td>'
-      +'<td style="text-align:right"><input class="si" type="number" min="1" value="'+it.qty+'" style="width:48px" onchange="upQty(\''+it.id+'\',this.value)"></td>'
-      +'<td style="text-align:center"><input class="si" type="number" min="0" max="80" step="0.25" value="'+(mgNum!==null?mgNum.toFixed(2):(it.itemMargin||''))+'" title="'+(mgNeg?'Venta por debajo del costo nacionalizado':'')+'" style="width:64px'+mgStyle+'" onchange="upMargin(\''+it.id+'\',this.value)"></td>'
+      +'<td style="font-weight:500">'+cevenEsc(it.sku)+'</td>'
+      +'<td class="wrap">'+cevenEsc(it.description)+'</td>'
+      +'<td style="text-align:right"><input class="si" type="number" min="1" value="'+cevenEsc(it.qty)+'" style="width:48px" data-qact="qty"'+idA+'></td>'
+      +'<td style="text-align:center"><input class="si" type="number" min="0" max="80" step="0.25" value="'+cevenEsc(mgNum!==null?mgNum.toFixed(2):(it.itemMargin||''))+'" title="'+(mgNeg?'Venta por debajo del costo nacionalizado':'')+'" style="width:64px'+mgStyle+'" data-qact="margin"'+idA+'></td>'
       +'<td style="text-align:right;white-space:nowrap;overflow:visible">'
         +'<div style="display:inline-flex;align-items:center;gap:4px">'
           +'<span style="font-size:11px;color:#6e6e73">'+pricePfx+'</span>'
-          +'<input class="si no-spin" type="text" inputmode="decimal" value="'+priceRaw+'" style="width:96px;text-align:right;font-size:13px'+mgStyle+'" onchange="upSalePriceDirect(\''+it.id+'\',this.value)" onblur="renderQ()">'
+          +'<input class="si no-spin" type="text" inputmode="decimal" value="'+cevenEsc(priceRaw)+'" style="width:96px;text-align:right;font-size:13px'+mgStyle+'" data-qact="price"'+idA+'>'
         +'</div>'
       +'</td>'
       +'<td style="text-align:right;font-weight:500'+(mgNeg?';color:#d70015':'')+'">'+dp(it.salePrice*it.qty)+'</td>'
-      +'<td style="text-align:center"><input class="si" type="text" value="'+((it.taxes||'').replace(/(\d),(\d)/g,"$1.$2"))+'" placeholder="—" style="width:70px" onchange="upField(\''+it.id+'\',\'taxes\',this.value)"></td>'
-      +'<td style="text-align:center"><input class="si" type="text" value="'+(it.stock||'')+'" placeholder="—" style="width:60px" onchange="upField(\''+it.id+'\',\'stock\',this.value)"></td>'
+      +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc((it.taxes||'').replace(/(\d),(\d)/g,"$1.$2"))+'" placeholder="—" style="width:70px" data-qact="taxes"'+idA+'></td>'
+      +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc(it.stock||'')+'" placeholder="—" style="width:60px" data-qact="stock"'+idA+'></td>'
       +'<td style="text-align:center;white-space:nowrap">'
-      +'<button class="bs" onclick="openQuoteItemEdit(\''+it.id+'\')" title="Editar SKU/descripción/precio (solo esta cotización)" style="padding:2px 6px;font-size:12px;margin-right:3px">✎</button>'
-      +'<button class="bsr" onclick="rmItem(\''+it.id+'\')" title="Eliminar">×</button>'
+      +'<button class="bs" data-qact="edit"'+idA+' title="Editar SKU/descripción/precio (solo esta cotización)" style="padding:2px 6px;font-size:12px;margin-right:3px">✎</button>'
+      +'<button class="bsr" data-qact="rm"'+idA+' title="Eliminar">×</button>'
       +'</td>'
       +'</tr>';
   }
   html+='<tr><td colspan="9" style="padding:9px 10px"><button class="al" onclick="openCat()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
   if(items.length){
+    // La tabla tiene 9 columnas y el Total va bajo la 6ª ("Total"), no bajo la 5ª
+    // ("P. Venta"): 5 + 1 + 3 = 9. Con colspan=4 el importe caía una columna antes.
     html+='<tr>'
-      +'<td colspan="4" style="text-align:right;color:#6e6e73;font-size:13px;font-weight:500;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">Total</td>'
+      +'<td colspan="5" style="text-align:right;color:#6e6e73;font-size:13px;font-weight:500;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">Total</td>'
       +'<td style="text-align:right;font-size:15px;font-weight:600;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">'+dp(gt)+'</td>'
-      +'<td colspan="4" style="background:#f5f5f7;border-top:1px solid #d2d2d7"></td>'
+      +'<td colspan="3" style="background:#f5f5f7;border-top:1px solid #d2d2d7"></td>'
       +'</tr>';
   }
   document.getElementById('qbody').innerHTML=html;
 }
+
+// Delegación de eventos de la grilla de cotización: ningún handler inline lleva
+// datos concatenados, el id del ítem viaja en data-qid.
+(function(){
+  var body = document.getElementById('qbody');
+  if(!body) return;
+  function target(e){
+    var el = e.target.closest ? e.target.closest('[data-qact]') : null;
+    return (el && body.contains(el)) ? el : null;
+  }
+  body.addEventListener('change', function(e){
+    var el = target(e); if(!el) return;
+    var id = el.getAttribute('data-qid');
+    switch(el.getAttribute('data-qact')){
+      case 'qty':    upQty(id, el.value); break;
+      case 'margin': upMargin(id, el.value); break;
+      case 'price':  upSalePriceDirect(id, el.value); break;
+      case 'taxes':  upField(id, 'taxes', el.value); break;
+      case 'stock':  upField(id, 'stock', el.value); break;
+    }
+  });
+  body.addEventListener('blur', function(e){
+    var el = target(e); if(!el) return;
+    if(el.getAttribute('data-qact') === 'price') renderQ();
+  }, true); // blur no burbujea: se escucha en captura
+  body.addEventListener('click', function(e){
+    var el = target(e); if(!el) return;
+    var id = el.getAttribute('data-qid');
+    var act = el.getAttribute('data-qact');
+    if(act === 'edit')    openQuoteItemEdit(id);
+    else if(act === 'rm') rmItem(id);
+  });
+})();
 
 // Familia Mac de una descripción/equipo (para vincular garantías ↔ productos)
 function _macFamilyOf(s){
@@ -249,7 +287,7 @@ function openQuoteItemEdit(id){
   // Opción vacía al inicio: si it.lob está vacío o no calza con nada, el select
   // debe mostrar "Sin modelo" en vez de caer en la primera opción real del catálogo.
   var modelOptions = '<option value=""'+(!it.lob?' selected':'')+'>— Sin modelo —</option>'
-    + models.map(function(v){ return '<option'+(v===it.lob?' selected':'')+'>'+v+'</option>'; }).join('');
+    + optionsHTML(models, it.lob);
   document.getElementById('qie-model').innerHTML = modelOptions;
   // "El precio YA incluye nacionalización" es un flag propio del ítem. NO se
   // deduce de itemNac===0: con FOB todos los ítems tienen 0% y antes abrir este

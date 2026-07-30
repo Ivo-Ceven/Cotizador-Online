@@ -1,10 +1,12 @@
 // ── NAC ──
+// Las claves de nacRates ('cnac') vienen sincronizadas desde la base: se escapan
+// igual que cualquier otro dato remoto antes de interpolarlas en HTML.
 function renderNac(){
   var keys=Object.keys(nacRates), html='';
   for(var i=0;i<keys.length;i++){
-    var m=keys[i];
-    html+='<tr><td style="padding:9px 12px">'+m+'</td>'
-      +'<td style="padding:9px 12px;text-align:right"><input type="number" min="0" max="100" value="'+nacRates[m]+'" data-model="'+m+'" onchange="nacRates[this.dataset.model]=parseFloat(this.value)||0;saveNac()" style="width:56px;text-align:right;padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:13px;font-family:inherit;background:#fff"></td></tr>';
+    var m=keys[i], mE=cevenEsc(m);
+    html+='<tr><td style="padding:9px 12px">'+mE+'</td>'
+      +'<td style="padding:9px 12px;text-align:right"><input type="number" min="0" max="100" value="'+cevenEsc(nacRates[m])+'" data-model="'+mE+'" onchange="nacRates[this.dataset.model]=parseFloat(this.value)||0;saveNac()" style="width:56px;text-align:right;padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:13px;font-family:inherit;background:#fff"></td></tr>';
   }
   document.getElementById('nacbody').innerHTML=html;
 }
@@ -35,10 +37,10 @@ function renderQuoteNac(){
       var overrideVal = quoteNacOverrides[m] !== undefined ? quoteNacOverrides[m] : '';
       var hasOverride = overrideVal !== '';
       html += '<tr'+(hasOverride?' style="background:#fff8f3"':'')+'>'
-        +'<td style="padding:9px 12px">'+m+(hasOverride?' <span style="background:#fff0e8;color:#c84e00;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:4px">override</span>':'')+'</td>'
-        +'<td style="padding:9px 12px;text-align:right;color:#6e6e73;font-size:13px">'+globalApplied+'%</td>'
+        +'<td style="padding:9px 12px">'+cevenEsc(m)+(hasOverride?' <span style="background:#fff0e8;color:#c84e00;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:4px">override</span>':'')+'</td>'
+        +'<td style="padding:9px 12px;text-align:right;color:#6e6e73;font-size:13px">'+cevenEsc(globalApplied)+'%</td>'
         +'<td style="padding:9px 12px;text-align:right">'
-          +'<input type="number" min="0" max="100" step="0.5" value="'+overrideVal+'" data-model="'+m.replace(/"/g,'&quot;')+'" placeholder="—" onchange="setQuoteNacOverride(this.dataset.model,this.value)" style="width:64px;text-align:right;padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:13px;font-family:inherit;background:#fff">'
+          +'<input type="number" min="0" max="100" step="0.5" value="'+cevenEsc(overrideVal)+'" data-model="'+cevenEsc(m)+'" placeholder="—" onchange="setQuoteNacOverride(this.dataset.model,this.value)" style="width:64px;text-align:right;padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:13px;font-family:inherit;background:#fff">'
         +'</td>'
       +'</tr>';
     }
@@ -143,14 +145,15 @@ function renderNacDiag(){
     seen[key] = true;
     var matchKey = getNacMatchKey(p);
     var nac = matchKey !== null ? nacRates[matchKey] : 20;
-    var matchDisplay = matchKey !== null ? matchKey : '<span style="color:#d70015">⚠ default</span>';
+    // matchKey sale del price list: se escapa. El "⚠ default" es markup propio.
+    var matchDisplay = matchKey !== null ? cevenEsc(matchKey) : '<span style="color:#d70015">⚠ default</span>';
     var rowStyle = matchKey === null ? ' style="background:#fff8e1"' : '';
     html += '<tr'+rowStyle+'>'
-      +'<td style="font-size:11px;font-family:monospace">'+(p.sku||'—')+'</td>'
-      +'<td>'+(p.lob||'—')+'</td>'
-      +'<td>'+(p.modelCol||'—')+'</td>'
+      +'<td style="font-size:11px;font-family:monospace">'+cevenEsc(p.sku||'—')+'</td>'
+      +'<td>'+cevenEsc(p.lob||'—')+'</td>'
+      +'<td>'+cevenEsc(p.modelCol||'—')+'</td>'
       +'<td style="text-align:center;font-size:11px;color:#0071e3">'+matchDisplay+'</td>'
-      +'<td style="text-align:right;font-weight:500">'+nac+'%</td>'
+      +'<td style="text-align:right;font-weight:500">'+cevenEsc(nac)+'%</td>'
       +'</tr>';
   }
   document.getElementById('diag-body').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#aeaeb2;padding:20px">Sin resultados</td></tr>';

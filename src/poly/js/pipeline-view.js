@@ -77,6 +77,28 @@ var statusColorsPill = {
 };
 var statusOrderPipe = ['Proyecto','Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
 
+// El CSS de dark mode matchea por CLASE, no por el style inline: las reglas
+// `body.dark tr.row-st-*` y `body.dark .spill-*` de shared/css/dark.css no
+// tocaban nada porque Poly emitía sólo el color inline y un `.spill` pelado —
+// en oscuro quedaba texto casi blanco sobre pasteles claros. Apple ya emitía
+// estas clases; ojo que NO usan la misma normalización:
+//   fila:     'Con OC' -> row-st-Con_OC   (espacio -> _)
+//   pastilla: 'Con OC' -> spill-ConOC     (espacio -> nada)
+function _rowStClass(estado){ return 'row-st-' + String(estado||'').replace(/ /g,'_'); }
+function _spillClass(estado){ return 'spill spill-' + String(estado||'').replace(/ /g,''); }
+
+// Filas realmente pintadas en la última pasada (pipeline activo o mes archivado).
+// Los handlers referencian la fila por ÍNDICE: el id viene sincronizado desde
+// Supabase, así que interpolarlo en un onclick era inyección directa, y pasarlo
+// por un data-* lo convertiría en string (updatePipelineStatus y compañía
+// comparan con === contra el id original).
+window._pipeRows = window._pipeRows || [];
+function _pipeRowAt(i){
+  var n = parseInt(i, 10);
+  var a = window._pipeRows || [];
+  return (isNaN(n) || !a[n]) ? null : a[n];
+}
+
 function renderPipeline(){
   // El archivado automático NO va acá: lo hace _navApply('pipeline') en
   // shared/ui-core.js. Ver el comentario largo en apple/js/pipeline-view.js.
@@ -92,7 +114,7 @@ function renderPipeline(){
     archiveMonths.forEach(function(m){
       var p = m.split('-');
       var lbl = p.length===2 ? (meses[parseInt(p[1])-1]+' '+p[0]) : m;
-      newHtml += '<option value="'+m+'">📦 '+lbl+'</option>';
+      newHtml += '<option value="'+cevenEsc(m)+'">📦 '+cevenEsc(lbl)+'</option>';
     });
     if(archiveSel.innerHTML !== newHtml) archiveSel.innerHTML = newHtml;
     if(curArchiveVal && archiveMonths.indexOf(curArchiveVal) !== -1) archiveSel.value = curArchiveVal;
@@ -110,7 +132,7 @@ function renderPipeline(){
   if(execSel){
     var curExec = execSel.value;
     var execList = _pipeExecList(pipe);
-    execSel.innerHTML = '<option value="">Todos</option>' + execList.map(function(e){ return '<option'+(e===curExec?' selected':'')+'>'+e+'</option>'; }).join('');
+    execSel.innerHTML = '<option value="">Todos</option>' + execList.map(function(e){ return '<option value="'+cevenEsc(e)+'"'+(e===curExec?' selected':'')+'>'+cevenEsc(e)+'</option>'; }).join('');
   }
 
   var q = (document.getElementById('pipe-search').value||'').toLowerCase().trim();
@@ -133,7 +155,7 @@ function renderPipeline(){
       var bg = active ? '#1d1d1f' : '#fff';
       var fg = active ? '#fff' : '#1d1d1f';
       var bd = active ? '#1d1d1f' : '#d2d2d7';
-      return '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" onclick="setPipeMonth(\''+val+'\')" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap">'+label+'</div>';
+      return '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-act="month" data-val="'+cevenEsc(val)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap">'+cevenEsc(label)+'</div>';
     }
     var pillsH = _mPill('', 'Todos') + _mPill('sin-fecha', 'Sin fecha');
     sortedMonths.forEach(function(m){
@@ -160,9 +182,11 @@ function renderPipeline(){
       var bg = active ? '#1d1d1f' : '#fff';
       var fg = active ? '#fff' : '#1d1d1f';
       var bd = active ? '#1d1d1f' : '#d2d2d7';
-      var cEsc = t.cli.replace(/'/g,"\\'").replace(/"/g,'&quot;');
-      tcH += '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" onclick="setPipeClientFilter(\''+cEsc+'\')" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap">'
-        +medals[i]+' '+t.cli+' <span style="opacity:.7;font-weight:400">· '+t.n+' OPG</span></div>';
+      // El escapado viejo (`\'` + &quot;) no cubría la barra invertida: un cliente
+      // llamado  \');alert(1);//  cerraba el string del onclick y ejecutaba código
+      // en la pantalla de todo el que abriera el pipeline.
+      tcH += '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-act="client" data-cli="'+cevenEsc(t.cli)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap">'
+        +medals[i]+' '+cevenEsc(t.cli)+' <span style="opacity:.7;font-weight:400">· '+cevenEsc(t.n)+' OPG</span></div>';
     });
     topClientsBox.innerHTML = tcH || '<span style="font-size:12px;color:#aeaeb2">Sin cotizaciones</span>';
   }
@@ -229,8 +253,8 @@ function renderPipeline(){
       var dim = data.count === 0 ? ';opacity:.45' : '';
       var isActive = window._pipeStatusFilters && window._pipeStatusFilters.indexOf(s) !== -1;
       var activeBorder = isActive ? ';outline:2px solid '+c.fg+';outline-offset:1px' : '';
-      pillsHtml += '<div class="spill" onclick="togglePillFilter(\''+s+'\')" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer'+activeBorder+dim+'">'
-        +'<strong>'+s+'</strong><span style="opacity:.85">· '+data.count+' · USD '+fI(data.monto)+'</span></div>';
+      pillsHtml += '<div class="'+_spillClass(s)+'" data-act="status" data-st="'+cevenEsc(s)+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer'+activeBorder+dim+'">'
+        +'<strong>'+cevenEsc(s)+'</strong><span style="opacity:.85">· '+data.count+' · USD '+fI(data.monto)+'</span></div>';
     });
     pillsHtml += '</div>';
     document.getElementById('dash-by-status').innerHTML = pillsHtml;
@@ -239,42 +263,96 @@ function renderPipeline(){
   }
 
   // ── TABLA ──
+  window._pipeRows = filtered;
   var html = '';
   for(var i=0;i<filtered.length;i++){
     var r = filtered[i];
     var expanded = window._pipeExpanded && window._pipeExpanded[r.id];
     var salasCount = (r.salas||[]).length;
-    var mesSel = '<select onchange="updatePipelineMesCierreValue('+r.id+',this.value)" style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:11px;font-family:inherit;background:#fff;min-width:110px">'
+    var mesSel = '<select data-act="mes" data-i="'+i+'" style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:11px;font-family:inherit;background:#fff;min-width:110px">'
       + generateMesYearOptions(r.mesCierre||'') + '</select>';
     var estado = r.estado || 'Cotizado';
-    var statusSel = '<select onchange="updatePipelineStatus('+r.id+',this.value)" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">';
+    var statusSel = '<select data-act="est" data-i="'+i+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">';
     statusOrderPipe.forEach(function(s){ statusSel += '<option value="'+s+'"'+(s===estado?' selected':'')+'>'+s+'</option>'; });
     statusSel += '</select>';
     var rowTintInfo = rowStatusColors[estado] || {bg:'', fg:''};
-    var rowStyle = rowTintInfo.bg ? ' style="background:'+rowTintInfo.bg+'"' : '';
+    var rowTint = rowTintInfo.bg, rowFg = rowTintInfo.fg;
+    var rowStyle = '';
+    if(rowTint) rowStyle += 'background:'+rowTint;
+    if(rowFg)   rowStyle += (rowStyle?';':'') + 'color:'+rowFg;
 
-    html += '<tr'+rowStyle+'>'
+    // .stk-monto / .stk-act traen su propio background:#fff (lo necesitan para
+    // quedar pegadas al hacer scroll horizontal) y tapaban el tinte del <tr>:
+    // se re-aplica el color en cada celda, igual que hace Apple.
+    html += '<tr class="'+cevenEsc(_rowStClass(estado))+'"'+(rowStyle?' style="'+rowStyle+'"':'')+'>'
       +'<td style="font-size:12px;white-space:nowrap">'
-        +'<button class="bs" onclick="togglePipelineRow('+r.id+')" title="Ver Salas" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
-        +r.fecha
+        +'<button class="bs" data-act="exp" data-i="'+i+'" title="Ver Salas" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
+        +cevenEsc(r.fecha)
       +'</td>'
-      +'<td style="font-size:12px">'+(r.ejecutivo||'—')+'</td>'
-      +'<td style="font-weight:500"><div title="'+(r.cliente||'').replace(/"/g,'&quot;')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.cliente+'</div></td>'
-      +'<td><div title="'+(r.opg||'').replace(/"/g,'&quot;')+'" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r.opg||'—')+'</div></td>'
-      +'<td style="text-align:center;cursor:pointer" onclick="togglePipelineRow('+r.id+')" title="Ver Salas">'+salasCount+' sala'+(salasCount===1?'':'s')+'</td>'
+      +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
+      +'<td style="font-weight:500"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div></td>'
+      +'<td><div title="'+cevenEsc(r.opg||'')+'" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.opg||'—')+'</div></td>'
+      +'<td style="text-align:center;cursor:pointer" data-act="exp" data-i="'+i+'" title="Ver Salas">'+salasCount+' sala'+(salasCount===1?'':'s')+'</td>'
       +'<td style="font-size:12px;white-space:nowrap">'+mesSel+'</td>'
       +'<td style="text-align:center">'+statusSel+'</td>'
-      +'<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px">USD '+fI(r.monto||0)+'</td>'
-      +'<td class="stk-act" style="text-align:center;white-space:nowrap">'
+      +'<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px'+(rowTint?';background:'+rowTint:'')+(rowFg?';color:'+rowFg:'')+'">USD '+fI(r.monto||0)+'</td>'
+      +'<td class="stk-act" style="text-align:center;white-space:nowrap'+(rowTint?';background:'+rowTint:'')+'">'
         +(r.factura
-          ? '<button class="bs" onclick="editFactura('+r.id+');event.stopPropagation()" title="Factura: '+String(r.factura).replace(/"/g,'&quot;')+' · clic para editar" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">Fact.</button> '
-          : '<button class="bs" onclick="editFactura('+r.id+');event.stopPropagation()" title="Cargar número de factura" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">Fact.</button> ')
-        +(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" onclick="removePipeline('+r.id+');event.stopPropagation()" title="Eliminar OPG del pipeline">×</button>' : '')
+          ? '<button class="bs" data-act="fact" data-i="'+i+'" title="Factura: '+cevenEsc(r.factura)+' · clic para editar" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">Fact.</button> '
+          : '<button class="bs" data-act="fact" data-i="'+i+'" title="Cargar número de factura" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">Fact.</button> ')
+        +(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rm" data-i="'+i+'" title="Eliminar OPG del pipeline">×</button>' : '')
       +'</td>'
       +'</tr>';
-    if(expanded) html += renderPipelineDetailRow(r);
+    if(expanded) html += renderPipelineDetailRow(r, i);
   }
 
   document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">Sin entradas en pipeline. Cargá una cotización y tocá "Agregar a Pipeline".</td></tr>';
   attachPipeSortHandlers();
+  pipeBindDelegation();
+}
+
+/* Un solo listener por contenedor, atado una vez (cevenDelegate se encarga).
+   Lo llaman renderPipeline() y renderArchiveMonth(): las dos vistas escriben en
+   #pipe-body y en #dash-by-status. */
+function pipeBindDelegation(){
+  cevenDelegate('pipe-body', 'click', function(ev){
+    var el = cevenActEl(ev, this);
+    if(!el) return;
+    var act = el.getAttribute('data-act');
+    // El archivo expande por clave compuesta ('arch__<mes>__<id>'), el pipeline
+    // activo por el id de la fila.
+    if(act === 'exp'){
+      var key = el.getAttribute('data-key');
+      if(key !== null){ togglePipelineRow(key); return; }
+    }
+    var r = _pipeRowAt(el.getAttribute('data-i'));
+    if(!r) return;
+    if(act === 'exp')          togglePipelineRow(r.id);
+    else if(act === 'fact')    editFactura(r.id);
+    else if(act === 'rm')      removePipeline(r.id);
+    else if(act === 'restore') restoreFromArchive(el.getAttribute('data-mk'), r.id);
+    else if(act === 'openq')   openPipelineQuote(el.getAttribute('data-qn'));
+    else if(act === 'rmsala')  removeSalaFromPipeline(r.id, el.getAttribute('data-qn'));
+  });
+  cevenDelegate('pipe-body', 'change', function(ev){
+    var el = cevenActEl(ev, this);
+    if(!el) return;
+    var r = _pipeRowAt(el.getAttribute('data-i'));
+    if(!r) return;
+    var act = el.getAttribute('data-act');
+    if(act === 'mes')      updatePipelineMesCierreValue(r.id, el.value);
+    else if(act === 'est') updatePipelineStatus(r.id, el.value);
+  });
+  cevenDelegate('pipe-month-pills', 'click', function(ev){
+    var el = cevenActEl(ev, this);
+    if(el && el.getAttribute('data-act') === 'month') setPipeMonth(el.getAttribute('data-val'));
+  });
+  cevenDelegate('pipe-topclients-pills', 'click', function(ev){
+    var el = cevenActEl(ev, this);
+    if(el && el.getAttribute('data-act') === 'client') setPipeClientFilter(el.getAttribute('data-cli'));
+  });
+  cevenDelegate('dash-by-status', 'click', function(ev){
+    var el = cevenActEl(ev, this);
+    if(el && el.getAttribute('data-act') === 'status') togglePillFilter(el.getAttribute('data-st'));
+  });
 }

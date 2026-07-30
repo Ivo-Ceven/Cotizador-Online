@@ -10,6 +10,39 @@
 </head>
 <body>
 
+<!-- ============================================================
+     GUARD DE SESIÓN
+     ------------------------------------------------------------
+     Esta página muestra precios de canal GL/CC y costos de reparación, o sea
+     los mismos datos que el cotizador — y hasta ahora no cargaba config.js ni
+     auth.js, así que /apple/cevencare era una app entera SIN login.
+     Mismo guard que apple/index.html y poly/index.html.
+
+     Sobre el iframe: apple/js/warranties.js abre esta página en un <iframe>
+     same-origin desde el cotizador, que a su vez ya exige sesión válida en su
+     propio guard. O sea que cuando el iframe carga, la sesión SIEMPRE es
+     válida y este guard no hace nada (tampoco toca el chequeo de
+     iframeLoaded(), que solo mira document.title). Si igual no la hubiera,
+     redirigir solo el iframe dejaría un login embebido adentro del modal: por
+     eso se redirige la ventana de arriba cuando es accesible.
+     ============================================================ -->
+<script src="../shared/safe.js"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/auth.js"></script>
+<script>
+(function(){
+  if(cevenIsValidSession()) return;
+  var dest = '../index.html';
+  try{
+    if(window.top && window.top !== window.self && window.top.location.origin === location.origin){
+      window.top.location.replace(new URL(dest, location.href).href);
+      return;
+    }
+  }catch(e){}   /* top cross-origin: no se puede tocar, se redirige este documento */
+  location.replace(dest);
+})();
+</script>
+
 <!-- ── LANDING ── -->
 <div id="landing">
   <header>

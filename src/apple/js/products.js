@@ -13,23 +13,25 @@ function prepAddProd(){
   var models=uniq(products.map(function(p){return p.modelCol;}).filter(function(v){return v;}));
   var countries=uniq(products.map(function(p){return p.country;}).filter(function(v){return v;}));
   if(countries.indexOf('Uruguay')<0) countries.push('Uruguay');
-  document.getElementById('np-model').innerHTML=models.filter(function(v){return v!=='Todos';}).map(function(v){return '<option>'+v+'</option>';}).join('');
-  document.getElementById('np-country').innerHTML=countries.filter(function(v){return v!=='Todos';}).map(function(v){return '<option>'+v+'</option>';}).join('');
+  document.getElementById('np-model').innerHTML=optionsHTML(models.filter(function(v){return v!=='Todos';}));
+  document.getElementById('np-country').innerHTML=optionsHTML(countries.filter(function(v){return v!=='Todos';}));
 }
 
 var editingManualId = null;
 
 function editManualProduct(pid){
   var p = null;
-  for(var i=0;i<products.length;i++){ if(products[i].id===pid){ p=products[i]; break; } }
+  // Los ids conviven como número (índice de fila del Excel) y como string
+  // ('pm_<ts>_<n>' para los manuales): la comparación va siempre por String.
+  for(var i=0;i<products.length;i++){ if(String(products[i].id)===String(pid)){ p=products[i]; break; } }
   if(!p) return;
-  editingManualId = pid;
+  editingManualId = p.id;
   // Poblar los selects con todas las opciones disponibles
   var models = uniq(products.map(function(x){return x.modelCol;}).filter(function(v){return v && v!=='Todos';}));
   var countries = uniq(products.map(function(x){return x.country;}).filter(function(v){return v && v!=='Todos';}));
   if(countries.indexOf('Uruguay')<0) countries.push('Uruguay');
-  document.getElementById('np-model').innerHTML = models.map(function(v){return '<option>'+v+'</option>';}).join('');
-  document.getElementById('np-country').innerHTML = countries.map(function(v){return '<option>'+v+'</option>';}).join('');
+  document.getElementById('np-model').innerHTML = optionsHTML(models);
+  document.getElementById('np-country').innerHTML = optionsHTML(countries);
   // Seleccionar los valores actuales
   document.getElementById('np-model').value   = p.modelCol || '';
   document.getElementById('np-country').value = p.country  || '';
@@ -45,10 +47,18 @@ function editManualProduct(pid){
 
 function deleteManualProduct(pid){
   var p = null;
-  for(var i=0;i<products.length;i++){ if(products[i].id===pid){ p=products[i]; break; } }
+  for(var i=0;i<products.length;i++){ if(String(products[i].id)===String(pid)){ p=products[i]; break; } }
   if(!p) return;
+  // Se llama "deleteManualProduct" pero borraba cualquier fila del catálogo: un
+  // producto importado del Excel desaparecía hasta la próxima importación, sin
+  // forma de recuperarlo desde la UI. Los importados se limpian con las acciones
+  // de mantenimiento del catálogo (LL/A, E/A) o reimportando el price list.
+  if(!p.manual){
+    alert('Solo se pueden eliminar los artículos cargados a mano.\n\n"'+p.sku+'" viene del price list importado: se actualiza reimportando el Excel.');
+    return;
+  }
   if(!confirm('¿Eliminar el producto "'+p.sku+'" del price list?')) return;
-  products = products.filter(function(x){ return x.id!==pid; });
+  products = products.filter(function(x){ return String(x.id)!==String(pid); });
   delete selIds[pid];
   if(!cevenLsSet(cevenK('cpl'), JSON.stringify(products))) return;
   var b=document.getElementById('plbadge');b.className='bk bkok';b.textContent='✓ '+products.length+' productos';
@@ -102,8 +112,8 @@ function saveNewProd(){
   var models=uniq(products.map(function(p){return p.modelCol;}));
   var countries=uniq(products.map(function(p){return p.country;}));
   if(countries.indexOf('Uruguay')<0) countries.push('Uruguay');
-  document.getElementById('fmodel').innerHTML=models.map(function(v){return '<option>'+v+'</option>';}).join('');
-  document.getElementById('fcountry').innerHTML=countries.map(function(v){return '<option>'+v+'</option>';}).join('');
+  document.getElementById('fmodel').innerHTML=optionsHTML(models);
+  document.getElementById('fcountry').innerHTML=optionsHTML(countries);
   var b=document.getElementById('plbadge');b.className='bk bkok';b.textContent='✓ '+products.length+' productos';
 
   // Si veníamos de la cola de SKUs faltantes:

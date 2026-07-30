@@ -17,9 +17,20 @@ var _itemSeq = 0;
 function _nextItemId(){ return 'it_' + Date.now() + '_' + (++_itemSeq); }
 
 // ── PRICE LIST ──
+// cevenLsJSON() devuelve el fallback cuando el JSON guardado está corrupto. Antes
+// eso pasaba en silencio: la app arrancaba con el catálogo vacío y el usuario
+// creía que nunca había importado nada, así que perdía tiempo buscando el Excel.
 (function(){
+  var raw = null;
+  try{ raw = localStorage.getItem('cpl'); }catch(e){}
   var s = cevenLsJSON('cpl', null);
-  if(s && s.length){ products = s; initCat(); }
+  if(s && s.length){ products = s; initCat(); return; }
+  if(raw){
+    // Había algo guardado y no se pudo usar (JSON inválido o forma inesperada).
+    var aviso = '⚠ El price list guardado está corrupto y no se pudo leer. Volvé a importar el Excel.';
+    showErr(aviso);
+    if(typeof showToast === 'function') setTimeout(function(){ showToast(aviso); }, 400);
+  }
 })();
 
 function handlePL(f) {
@@ -287,8 +298,8 @@ function initCat() {
   var models=uniq(products.map(function(p){return p.modelCol;}));
   var countries=uniq(products.map(function(p){return p.country;}));
   if(countries.indexOf('Uruguay')<0) countries.push('Uruguay');
-  document.getElementById('fmodel').innerHTML=models.map(function(v){return '<option>'+v+'</option>';}).join('');
-  document.getElementById('fcountry').innerHTML=countries.map(function(v){return '<option>'+v+'</option>';}).join('');
+  document.getElementById('fmodel').innerHTML=optionsHTML(models);
+  document.getElementById('fcountry').innerHTML=optionsHTML(countries);
   renderCat();
 }
 
@@ -406,16 +417,20 @@ function renderCat() {
   var fobCat = isCotizacionFOB();
   for(var i=0;i<filtered.length;i++){
     var p=filtered[i], nac=(fobCat||p.nacIncluded)?0:getNac(p), nt=p.sellingPrice*(1+nac/100), sp=calcP(p.sellingPrice,nac,mg), sel=!!selIds[p.id];
-    html+='<tr class="crow'+(sel?' sel':'')+'" onclick="toggleRow('+p.id+')">'
-      +'<td style="overflow:visible"><input type="checkbox"'+(sel?' checked':'')+' onclick="event.stopPropagation();toggleRow('+p.id+')"></td>'
-      +'<td style="font-weight:500">'+p.sku+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+(p.nacIncluded?' <span style="font-size:10px;color:#6e36c8;font-weight:600;background:#f0e8ff;padding:1px 5px;border-radius:8px;margin-left:2px" title="Precio ya nacionalizado">NAC✓</span>':'')+(p.needsReview?' <span style="font-size:10px;color:#c84e00;font-weight:600;background:#fff3e0;padding:1px 5px;border-radius:8px;margin-left:2px" title="No apareció en la última actualización de precios — verificar costo">⚠ Revisar costo</span>':'')+'</td>'
-      +'<td class="wrap">'+p.description+'</td>'
+    // El id se pasa por data-* y lo resuelve el listener delegado: interpolarlo
+    // crudo en onclick rompía con los productos manuales, cuyo id es un string
+    // ('pm_1730…_3') y quedaba como identificador JS suelto → ReferenceError.
+    var pidA = ' data-pid="'+cevenEsc(p.id)+'"';
+    html+='<tr class="crow'+(sel?' sel':'')+'" data-act="row"'+pidA+'>'
+      +'<td style="overflow:visible"><input type="checkbox"'+(sel?' checked':'')+' data-act="chk"'+pidA+'></td>'
+      +'<td style="font-weight:500">'+cevenEsc(p.sku)+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+(p.nacIncluded?' <span style="font-size:10px;color:#6e36c8;font-weight:600;background:#f0e8ff;padding:1px 5px;border-radius:8px;margin-left:2px" title="Precio ya nacionalizado">NAC✓</span>':'')+(p.needsReview?' <span style="font-size:10px;color:#c84e00;font-weight:600;background:#fff3e0;padding:1px 5px;border-radius:8px;margin-left:2px" title="No apareció en la última actualización de precios — verificar costo">⚠ Revisar costo</span>':'')+'</td>'
+      +'<td class="wrap">'+cevenEsc(p.description)+'</td>'
       +'<td style="text-align:right;color:#6e6e73">USD '+fD(p.sellingPrice)+'</td>'
       +'<td style="text-align:right;color:#6e6e73">USD '+fD(nt)+'</td>'
       +'<td style="text-align:right;font-weight:500">'+dp(sp)+'</td>'
       +'<td style="text-align:center;white-space:nowrap;overflow:visible">'
-        +'<button class="bs" onclick="event.stopPropagation();editManualProduct('+p.id+')" title="Editar" style="padding:2px 6px;font-size:12px">✎</button> '
-        +'<button class="bsr" onclick="event.stopPropagation();deleteManualProduct('+p.id+')" title="Eliminar">×</button>'
+        +'<button class="bs" data-act="edit"'+pidA+' title="Editar" style="padding:2px 6px;font-size:12px">✎</button> '
+        +'<button class="bsr" data-act="del"'+pidA+' title="Eliminar">×</button>'
       +'</td>'
       +'</tr>';
   }
@@ -430,6 +445,27 @@ function renderCat() {
 }
 
 function toggleRow(pid) { if(selIds[pid]) delete selIds[pid]; else selIds[pid]=_nextSel(); renderCat(); }
+
+// Delegación de eventos del catálogo. Reemplaza los onclick inline que llevaban
+// el id del producto concatenado: además del riesgo de inyección, ese formato no
+// soportaba ids no numéricos (productos manuales).
+(function(){
+  var body = document.getElementById('catbody');
+  if(!body) return;
+  body.addEventListener('click', function(e){
+    var el = e.target.closest ? e.target.closest('[data-act]') : null;
+    if(!el || !body.contains(el)) return;
+    var act = el.getAttribute('data-act');
+    var pid = el.getAttribute('data-pid');
+    if(pid === null) return;
+    // closest() ya elige el elemento más interno: el click en un botón NO
+    // dispara además el de la fila, así que no hace falta stopPropagation
+    // (y propagar deja que siga cerrándose el menú de mantenimiento).
+    if(act === 'row' || act === 'chk') toggleRow(pid);
+    else if(act === 'edit') editManualProduct(pid);
+    else if(act === 'del')  deleteManualProduct(pid);
+  });
+})();
 function toggleAll(cb) { var f=getFiltered(); if(cb.checked){for(var i=0;i<f.length;i++){if(!selIds[f[i].id])selIds[f[i].id]=_nextSel();}}else{for(var i=0;i<f.length;i++)delete selIds[f[i].id];} renderCat(); }
 
 // ── QUOTE ──

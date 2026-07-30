@@ -35,21 +35,25 @@ function renderQ() {
     var priceRaw = (getCur()==='ARS' && sp!=='') ? Math.round(sp*getTC()) : sp;
     var pricePfx = getCur()==='ARS' ? 'ARS' : 'USD';
     var lineTotal = (sp===''?0:sp) * it.qty;
+    // SKU y descripción salen del catálogo, que se sincroniza desde Supabase:
+    // van escapados sí o sí (una descripción de Excel con <img onerror=...> se
+    // ejecutaba en la pantalla de todo el equipo).
+    var idA = cevenEsc(it.id);
     html+='<tr>'
-      +'<td style="font-weight:500">'+it.sku+'</td>'
-      +'<td class="wrap">'+it.description+'</td>'
-      +'<td style="text-align:right"><input class="si" type="number" min="1" value="'+it.qty+'" style="width:48px" onchange="upQty(\''+it.id+'\',this.value)"></td>'
+      +'<td style="font-weight:500">'+cevenEsc(it.sku)+'</td>'
+      +'<td class="wrap">'+cevenEsc(it.description)+'</td>'
+      +'<td style="text-align:right"><input class="si" type="number" min="1" value="'+cevenEsc(it.qty)+'" style="width:48px" data-act="qty" data-id="'+idA+'"></td>'
       +'<td style="text-align:right;white-space:nowrap;overflow:visible">'
         +'<div style="display:inline-flex;align-items:center;gap:4px">'
           +'<span style="font-size:11px;color:#6e6e73">'+pricePfx+'</span>'
-          +'<input class="si no-spin" type="text" inputmode="decimal" value="'+priceRaw+'" placeholder="0.00" style="width:96px;text-align:right;font-size:13px" onchange="upUnitPrice(\''+it.id+'\',this.value)">'
+          +'<input class="si no-spin" type="text" inputmode="decimal" value="'+cevenEsc(priceRaw)+'" placeholder="0.00" style="width:96px;text-align:right;font-size:13px" data-act="price" data-id="'+idA+'">'
         +'</div>'
       +'</td>'
-      +'<td style="text-align:right;font-weight:500">'+dp(lineTotal)+'</td>'
-      +'<td style="text-align:center"><input class="si" type="text" value="'+(it.stock||'')+'" placeholder="—" style="width:100%" onchange="upField(\''+it.id+'\',\'stock\',this.value)"></td>'
+      +'<td style="text-align:right;font-weight:500">'+cevenEsc(dp(lineTotal))+'</td>'
+      +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc(it.stock||'')+'" placeholder="—" style="width:100%" data-act="nota" data-id="'+idA+'"></td>'
       +'<td style="text-align:center;white-space:nowrap">'
-      +'<button class="bs" onclick="openQuoteItemEdit(\''+it.id+'\')" title="Editar SKU/descripción/precio (solo esta cotización)" style="padding:2px 6px;font-size:12px;margin-right:3px">✎</button>'
-      +'<button class="bsr" onclick="rmItem(\''+it.id+'\')" title="Eliminar">×</button>'
+      +'<button class="bs" data-act="edit" data-id="'+idA+'" title="Editar SKU/descripción/precio (solo esta cotización)" style="padding:2px 6px;font-size:12px;margin-right:3px">✎</button>'
+      +'<button class="bsr" data-act="rm" data-id="'+idA+'" title="Eliminar">×</button>'
       +'</td>'
       +'</tr>';
   }
@@ -62,6 +66,27 @@ function renderQ() {
       +'</tr>';
   }
   document.getElementById('qbody').innerHTML=html;
+  _qBindDelegation();
+}
+
+// Los ids de ítem viajan en data-id y vuelven como string; upQty/rmItem/… ya
+// comparan con String(...) === String(id), así que no hace falta convertirlos.
+function _qBindDelegation(){
+  cevenDelegate('qbody', 'click', function(ev){
+    var el = cevenActEl(ev, this);
+    if(!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    if(act === 'edit')     openQuoteItemEdit(id);
+    else if(act === 'rm')  rmItem(id);
+  });
+  cevenDelegate('qbody', 'change', function(ev){
+    var el = cevenActEl(ev, this);
+    if(!el) return;
+    var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
+    if(act === 'qty')        upQty(id, el.value);
+    else if(act === 'price') upUnitPrice(id, el.value);
+    else if(act === 'nota')  upField(id, 'stock', el.value);
+  });
 }
 
 function upQty(id,v){

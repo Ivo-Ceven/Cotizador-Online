@@ -86,13 +86,18 @@ function openPipelineQuote(qn){
 }
 
 // Fila expandible: lista las Salas agrupadas bajo este OPG.
-function renderPipelineDetailRow(r){
+// `idx` es la posición de `r` dentro de window._pipeRows (el array que se está
+// renderizando: pipeline activo o mes archivado). Los botones lo emiten en data-i
+// y el delegado de pipeline-view.js lo resuelve al objeto original — así el id de
+// la fila nunca se interpola dentro de un onclick.
+function renderPipelineDetailRow(r, idx){
   var salas = r.salas || [];
   if(!salas.length){
     return '<tr class="pipe-detail"><td colspan="9" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">Sin Salas cargadas.</td></tr>';
   }
+  var iA = cevenEsc(idx);
   var inner = '<div style="padding:10px 14px 14px;background:#fafafa">'
-    +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Salas · OPG '+(r.opg||'—')+'</div>'
+    +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Salas · OPG '+cevenEsc(r.opg||'—')+'</div>'
     +'<table style="width:100%;font-size:12px;border-collapse:collapse;background:#fff;border:0.5px solid #e5e5e7;border-radius:8px;overflow:hidden">'
     +'<thead><tr style="background:#f5f5f7">'
       +'<th style="text-align:left;padding:6px 10px;font-size:11px;color:#6e6e73">Sala</th>'
@@ -101,11 +106,12 @@ function renderPipelineDetailRow(r){
       +'<th style="text-align:center;padding:6px 10px;font-size:11px;color:#6e6e73"></th>'
     +'</tr></thead><tbody>';
   salas.forEach(function(s){
+    var qnA = cevenEsc(s.qNum);
     inner += '<tr style="border-top:0.5px solid #f0f0f0">'
-      +'<td style="padding:6px 10px">'+(s.sala||'—')+'</td>'
-      +'<td style="padding:6px 10px;text-align:center"><a href="javascript:void(0)" onclick="openPipelineQuote(\''+s.qNum+'\')" style="color:#0071e3;text-decoration:none;font-weight:600">#'+s.qNum+'</a></td>'
+      +'<td style="padding:6px 10px">'+cevenEsc(s.sala||'—')+'</td>'
+      +'<td style="padding:6px 10px;text-align:center"><span data-act="openq" data-qn="'+qnA+'" style="color:#0071e3;text-decoration:none;font-weight:600;cursor:pointer">#'+qnA+'</span></td>'
       +'<td style="padding:6px 10px;text-align:right;font-weight:500">USD '+fI(s.monto||0)+'</td>'
-      +'<td style="padding:6px 10px;text-align:center">'+(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" onclick="removeSalaFromPipeline('+r.id+',\''+s.qNum+'\')" title="Quitar esta Sala">×</button>' : '')+'</td>'
+      +'<td style="padding:6px 10px;text-align:center">'+(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rmsala" data-i="'+iA+'" data-qn="'+qnA+'" title="Quitar esta Sala">×</button>' : '')+'</td>'
       +'</tr>';
   });
   inner += '</tbody></table></div>';

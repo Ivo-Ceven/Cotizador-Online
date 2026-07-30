@@ -35,11 +35,13 @@ function editOVLink(id){
 
 // ── Estado OV por entrada del pipeline ──
 // Retorna 'none' | 'partial' | 'full' comparando skuOvLinks vs total de líneas en DB
-function _pipeSkuOVState(r){
+// db opcional: renderPipeline() ya tiene cquotes parseado y lo pasa, para no
+// hacer un JSON.parse de varios MB por cada fila de la tabla.
+function _pipeSkuOVState(r, db){
   var skuLinks = r.skuOvLinks || {};
   var linkCount = Object.keys(skuLinks).length;
   if(linkCount === 0) return r.ovLink ? 'full' : 'none';
-  var db = getDB();
+  if(!db) db = getDB();
   var total = db.filter(function(x){
     return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia');
   }).length;
@@ -287,18 +289,20 @@ function updateVirtualGroupMes(pipeId, lineKeys, kind, value){
   renderPipeline();
 }
 
-function renderPipelineDetailRow(r){
+// db y pipe llegan ya parseados desde renderPipeline(): esta función se llama una
+// vez por fila expandida y cada getDB()/getPipeline() era un JSON.parse completo.
+function renderPipelineDetailRow(r, db, pipe){
   // Para filas virtuales: usar el id real del pipeline y filtrar a los lineKeys del grupo
   var realId = r._parentId || r.id;
   var lineKeysFilter = r._virtual ? (r._lineKeys || []) : null;
   // Resolver pipeEntry antes del filtrado (necesario para acceder a skuPartialQty en REM|)
   var pipeEntry = r;
   if(r._virtual){
-    var allPipe0 = getPipeline();
+    var allPipe0 = pipe || getPipeline();
     for(var pi0=0; pi0<allPipe0.length; pi0++){ if(allPipe0[pi0].id === realId){ pipeEntry = allPipe0[pi0]; break; } }
   }
   // Buscar las líneas de la cotización en cquotes
-  var db = getDB();
+  if(!db) db = getDB();
   var allLines = db.filter(function(x){ return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia'); });
   // Si es virtual, filtrar por lineKeys (índice + SKU). Soporta prefijo REM| para restos parciales.
   var rows;
@@ -350,7 +354,7 @@ function renderPipelineDetailRow(r){
   var ovLinks = pipeEntry.skuOvLinks || {}; // links de OC parcial por línea
   var skuMesCierre = pipeEntry.skuMesCierre || {}; // mes/año de cierre por línea (YYYY-MM)
   var inner = '<div style="padding:10px 14px 14px;background:#fafafa">'
-    +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Detalle por SKU · #'+r.qNum+'</div>'
+    +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Detalle por SKU · #'+cevenEsc(r.qNum)+'</div>'
     +'<table style="width:100%;font-size:12px;border-collapse:collapse;background:#fff;border:0.5px solid #e5e5e7;border-radius:8px;overflow:hidden;table-layout:fixed">'
     +'<colgroup>'
       +'<col style="width:8%">'   /* SKU */
@@ -393,36 +397,44 @@ function renderPipelineDetailRow(r){
     var lnQty = parseInt(ln['Cantidad']) || 1;
     var lnTotal = lnPrice * lnQty;
     var isWarranty = ln['Tipo'] === 'garantia';
-    var keyEsc = lineKey.replace(/'/g,"\\'");
+    // lineKey es (SKU del Excel) + '|' + índice. Antes se metía dentro de un
+    // string JS de onclick escapando sólo las comillas simples
+    // (lineKey.replace(/'/g,"\\'")), escape que NO cubre la barra invertida: un
+    // SKU  \');alert(1);//  cerraba el string y ejecutaba código. Ahora viaja en
+    // data-lk y lo lee el listener delegado.
+    var lineA = ' data-did="'+cevenEsc(realId)+'" data-lk="'+cevenEsc(lineKey)+'"';
 
     // Selector de estado: para fila de resto parcial, no modificar (es de solo lectura visual)
     var statusSel;
     if(ln._isPartialRem){
-      statusSel = '<span class="spill spill-'+lnStatus.replace(/ /g,'')+'" style="font-size:10px;padding:2px 8px;border-radius:980px;background:'+(statusColorsMini[lnStatus]||'#e5e5e7')+';color:#fff;font-weight:600">'+lnStatus+'</span>';
+      statusSel = '<span class="spill spill-'+String(lnStatus).replace(/ /g,'')+'" style="font-size:10px;padding:2px 8px;border-radius:980px;background:'+(statusColorsMini[lnStatus]||'#e5e5e7')+';color:#fff;font-weight:600">'+cevenEsc(lnStatus)+'</span>';
     } else {
-      statusSel = '<select onchange="updateSkuStatus('+realId+',\''+keyEsc+'\',this.value)" style="padding:2px 6px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:10px;font-family:inherit;background:#fff;color:'+(statusColorsMini[lnStatus]||'#1d1d1f')+';font-weight:600">';
-      statusOpts.forEach(function(s){ statusSel += '<option value="'+s+'"'+(s===lnStatus?' selected':'')+'>'+s+'</option>'; });
+      statusSel = '<select data-dact="status"'+lineA+' style="padding:2px 6px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:10px;font-family:inherit;background:#fff;color:'+(statusColorsMini[lnStatus]||'#1d1d1f')+';font-weight:600">';
+      // El estado guardado puede no estar en la lista (dato viejo/corrupto): se
+      // agrega para no pisarlo en silencio al re-renderizar.
+      var stOptsLn = statusOpts.indexOf(lnStatus) === -1 ? statusOpts.concat([lnStatus]) : statusOpts;
+      stOptsLn.forEach(function(s){ statusSel += '<option value="'+cevenEsc(s)+'"'+(s===lnStatus?' selected':'')+'>'+cevenEsc(s)+'</option>'; });
       statusSel += '</select>';
     }
 
     var lnLink = ovLinks[lineKey];
     // Botón OV por línea
     var ovBtn = lnLink
-      ? '<button class="bs" onclick="openSkuOvLink('+realId+',\''+keyEsc+'\');event.stopPropagation()" oncontextmenu="editSkuOvLink('+realId+',\''+keyEsc+'\');event.preventDefault();return false" title="Abrir OV · clic derecho para editar/quitar" style="background:#34c759;color:#fff;border-color:#34c759;padding:1px 6px;font-size:10px;font-weight:600">OV</button>'
-      : '<button class="bs" onclick="editSkuOvLink('+realId+',\''+keyEsc+'\');event.stopPropagation()" title="Cargar link a Orden de Venta de esta línea" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:1px 6px;font-size:10px;font-weight:600">OV</button>';
+      ? '<button class="bs" data-dact="ov-open" data-dctx="ov-edit"'+lineA+' title="Abrir OV · clic derecho para editar/quitar" style="background:#34c759;color:#fff;border-color:#34c759;padding:1px 6px;font-size:10px;font-weight:600">OV</button>'
+      : '<button class="bs" data-dact="ov-edit"'+lineA+' title="Cargar link a Orden de Venta de esta línea" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:1px 6px;font-size:10px;font-weight:600">OV</button>';
     var hasOverrides = (pipeEntry.skuStatus && pipeEntry.skuStatus[lineKey] !== undefined)
                    || (pipeEntry.skuMesCierre && pipeEntry.skuMesCierre[lineKey] !== undefined)
                    || (pipeEntry.skuPartialQty && pipeEntry.skuPartialQty[lineKey] !== undefined);
     var elimBtn = hasOverrides && !ln._isPartialRem
-      ? '<button class="bsr" onclick="clearSkuOverrides('+realId+',\''+keyEsc+'\')" title="Quitar estado/fecha/parcial específicos de este SKU" style="padding:1px 7px;font-size:10px">×</button>'
+      ? '<button class="bsr" data-dact="clear"'+lineA+' title="Quitar estado/fecha/parcial específicos de este SKU" style="padding:1px 7px;font-size:10px">×</button>'
       : '<button class="bs" disabled style="padding:1px 7px;font-size:10px;color:#d2d2d7;cursor:not-allowed;background:#fafafa">×</button>';
 
     // Cierre estimado por SKU (default = el de la cotización si no tiene propio)
     var lnMC = skuMesCierre[lineKey] || r.mesCierre || '';
     var hasOwn = skuMesCierre[lineKey] !== undefined;
     var mesCSel = ln._isPartialRem
-      ? '<span style="font-size:10px;color:#6e6e73">'+(lnMC ? lnMC : '—')+'</span>'
-      : '<select onchange="updateSkuMesCierreValue('+realId+',\''+keyEsc+'\',this.value)" title="'+(hasOwn?'Override propio':'Heredado de la cotización')+'" style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:10px;font-family:inherit;background:'+(hasOwn?'#fff':'#fafafa')+';color:'+(hasOwn?'#1d1d1f':'#6e6e73')+';min-width:100px">'
+      ? '<span style="font-size:10px;color:#6e6e73">'+cevenEsc(lnMC ? lnMC : '—')+'</span>'
+      : '<select data-dact="mes"'+lineA+' title="'+(hasOwn?'Override propio':'Heredado de la cotización')+'" style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:10px;font-family:inherit;background:'+(hasOwn?'#fff':'#fafafa')+';color:'+(hasOwn?'#1d1d1f':'#6e6e73')+';min-width:100px">'
         + generateMesYearOptions(lnMC) + '</select>';
 
     // Celda de cantidad: cuando estado=Facturado y qty>1, permitir facturación parcial (opt-in)
@@ -433,22 +445,22 @@ function renderPipelineDetailRow(r){
         // Modo parcial ACTIVO: input editable + selector de estado del resto
         var curRemSt = (pipeEntry.skuPartialRemSt && pipeEntry.skuPartialRemSt[lineKey]) || 'Con OC';
         var pInput = '<input type="number" class="no-spin" min="1" max="'+(lnQty-1)+'" value="'+curPartQty+'" '
-          + 'onchange="updateSkuPartialQty('+realId+',\''+keyEsc+'\',this.value,'+lnQty+')" '
+          + 'data-dact="partial-qty"'+lineA+' data-dqty="'+lnQty+'" '
           + 'title="Unidades facturadas (el resto queda en otro estado)" '
           + 'style="width:38px;text-align:center;font-size:10px;padding:2px 3px;border:0.5px solid #17a589;border-radius:4px;color:#0a5c30;background:#f0faf5">'
           + '<span style="font-size:9px;color:#aeaeb2">/'+lnQty+'</span>';
-        var remStSel = '<select onchange="updateSkuPartialRemSt('+realId+',\''+keyEsc+'\',this.value)" '
+        var remStSel = '<select data-dact="partial-rem"'+lineA+' '
           + 'title="Estado de las unidades restantes" '
           + 'style="padding:2px 3px;border:0.5px solid #d2d2d7;border-radius:4px;font-size:10px;margin-top:2px;width:100%;color:'+(statusColorsMini[curRemSt]||'#1d1d1f')+';font-weight:600">';
         statusOpts.filter(function(s){ return s !== 'Facturado'; }).forEach(function(s){
-          remStSel += '<option value="'+s+'"'+(s===curRemSt?' selected':'')+'>'+s+'</option>';
+          remStSel += '<option value="'+cevenEsc(s)+'"'+(s===curRemSt?' selected':'')+'>'+cevenEsc(s)+'</option>';
         });
         remStSel += '</select>';
         qtyCell = '<div style="display:flex;flex-direction:column;gap:2px;align-items:center">'+pInput+remStSel+'</div>';
       } else {
         // Facturado COMPLETO: mostrar cantidad normal + botón opcional para facturar parcial
         qtyCell = '<span style="font-size:11px;font-weight:500">'+lnQty+'</span>'
-          + '<button class="bs" onclick="promptPartialQty('+realId+',\''+keyEsc+'\','+lnQty+')" title="Facturar solo una parte — el resto se abre en una línea aparte" style="display:block;margin:3px auto 0;font-size:9px;padding:1px 6px;color:#17a589;border-color:#a5d6c0;background:#f0faf5">parcial</button>';
+          + '<button class="bs" data-dact="partial-start"'+lineA+' data-dqty="'+lnQty+'" title="Facturar solo una parte — el resto se abre en una línea aparte" style="display:block;margin:3px auto 0;font-size:9px;padding:1px 6px;color:#17a589;border-color:#a5d6c0;background:#f0faf5">parcial</button>';
       }
     } else if(ln._isPartialRem){
       qtyCell = '<span style="font-size:11px">'+lnQty+'</span><span style="font-size:9px;color:#aeaeb2;margin-left:2px">rest.</span>';
@@ -457,8 +469,8 @@ function renderPipelineDetailRow(r){
     }
 
     inner += '<tr style="border-top:0.5px solid #f0f0f0'+(isWarranty?';background:#fffbf5':'')+(ln._isPartialRem?';background:#f5fdf8':'')+'">'
-      +'<td style="padding:6px 10px;font-family:monospace;font-size:11px">'+(ln['SKU']||'—')+'</td>'
-      +'<td style="padding:6px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+(ln['Descripción']||'').replace(/"/g,'&quot;')+'">'+(ln['Descripción']||'')+(isWarranty?' <span style="background:#fff3e0;color:#c84e00;font-size:9px;font-weight:700;padding:1px 5px;border-radius:6px;margin-left:4px">GARANTÍA</span>':'')+(ln._isPartialRem?' <span style="background:#e8f8ef;color:#1a7f4b;font-size:9px;font-weight:700;padding:1px 5px;border-radius:6px;margin-left:4px">RESTANTE</span>':'')+'</td>'
+      +'<td style="padding:6px 10px;font-family:monospace;font-size:11px">'+cevenEsc(ln['SKU']||'—')+'</td>'
+      +'<td style="padding:6px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+cevenEsc(ln['Descripción']||'')+'">'+cevenEsc(ln['Descripción']||'')+(isWarranty?' <span style="background:#fff3e0;color:#c84e00;font-size:9px;font-weight:700;padding:1px 5px;border-radius:6px;margin-left:4px">GARANTÍA</span>':'')+(ln._isPartialRem?' <span style="background:#e8f8ef;color:#1a7f4b;font-size:9px;font-weight:700;padding:1px 5px;border-radius:6px;margin-left:4px">RESTANTE</span>':'')+'</td>'
       +'<td style="padding:6px 10px;text-align:center">'+mesCSel+'</td>'
       +'<td style="padding:6px 10px;text-align:center">'+statusSel+'</td>'
       +'<td style="padding:6px 10px;text-align:center">'+qtyCell+'</td>'
@@ -472,6 +484,55 @@ function renderPipelineDetailRow(r){
   inner += '</tbody></table></div>';
   return '<tr class="pipe-detail"><td colspan="14" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
 }
+
+// Delegación de eventos del detalle por SKU. Vive en #pipe-body (junto con las
+// filas del pipeline y las del archivo), por eso usa su propio namespace: data-dact.
+(function(){
+  var body = document.getElementById('pipe-body');
+  if(!body) return;
+  var pick = function(e){
+    var el = e.target.closest ? e.target.closest('[data-dact],[data-dctx]') : null;
+    return (el && body.contains(el)) ? el : null;
+  };
+  var ids = function(el){
+    return {
+      id: parseInt(el.getAttribute('data-did'), 10),
+      lk: el.getAttribute('data-lk'),
+      qty: parseInt(el.getAttribute('data-dqty'), 10)
+    };
+  };
+  body.addEventListener('change', function(e){
+    var el = pick(e); if(!el) return;
+    var c = ids(el);
+    if(isNaN(c.id)) return;
+    switch(el.getAttribute('data-dact')){
+      case 'status':       updateSkuStatus(c.id, c.lk, el.value); break;
+      case 'mes':          updateSkuMesCierreValue(c.id, c.lk, el.value); break;
+      case 'partial-qty':  updateSkuPartialQty(c.id, c.lk, el.value, c.qty); break;
+      case 'partial-rem':  updateSkuPartialRemSt(c.id, c.lk, el.value); break;
+    }
+  });
+  body.addEventListener('click', function(e){
+    var el = pick(e); if(!el) return;
+    var act = el.getAttribute('data-dact');
+    if(!act) return;
+    var c = ids(el);
+    if(isNaN(c.id)) return;
+    switch(act){
+      case 'ov-open':       e.stopPropagation(); openSkuOvLink(c.id, c.lk); break;
+      case 'ov-edit':       e.stopPropagation(); editSkuOvLink(c.id, c.lk); break;
+      case 'clear':         clearSkuOverrides(c.id, c.lk); break;
+      case 'partial-start': promptPartialQty(c.id, c.lk, c.qty); break;
+    }
+  });
+  body.addEventListener('contextmenu', function(e){
+    var el = pick(e); if(!el) return;
+    if(el.getAttribute('data-dctx') !== 'ov-edit') return;
+    e.preventDefault();
+    var c = ids(el);
+    if(!isNaN(c.id)) editSkuOvLink(c.id, c.lk);
+  });
+})();
 
 // Inicia una facturación parcial preguntando cuántas unidades se facturaron
 function promptPartialQty(pipeId, lineKey, totalQty){

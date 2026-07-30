@@ -84,7 +84,10 @@ try {
 
 var IVA_MAP = {"Accessories":"21%","TV & Home":"21%","Mac":"10.5%","Mac English":"10.5%","Mac Spanish":"10.5%","iPad":"10.5%","iPhone":"10.5% + 21%","Watch":"21%"};
 
-var COLS = ['N° Cotización','Fecha','Hora','Cliente','Proyecto','Ejecutivo','Observaciones','Mes Cierre','SKU','Descripción','Cantidad','Disponibilidad','Margen %','P. Venta Unitario','Total'];
+// Columnas del Excel de cotizaciones. 'Condición de pago', 'Propuesta efectiva
+// hasta' y 'Entrega' se agregaron cuando doSave() empezó a persistirlas (sin eso,
+// el PDF regenerado desde el historial perdía el bloque de Condiciones Comerciales).
+var COLS = ['N° Cotización','Fecha','Hora','Cliente','Proyecto','Ejecutivo','Observaciones','Mes Cierre','Condición de pago','Propuesta efectiva hasta','Entrega','SKU','Descripción','Cantidad','Disponibilidad','Margen %','P. Venta Unitario','Total'];
 
 // ── RECOVERY CHECK ──
 // Si el localStorage parece vacío (pérdida de datos) pero hay un backup automático,

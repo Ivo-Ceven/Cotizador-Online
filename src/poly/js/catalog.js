@@ -192,25 +192,41 @@ function getFiltered() {
   });
 }
 
+// Filas realmente pintadas en la última pasada de renderCat(). Los handlers
+// referencian la fila por ÍNDICE (data-i) en vez de interpolar p.id: el catálogo
+// se sincroniza desde Supabase, así que ni el id es necesariamente un número
+// (interpolarlo en un onclick era inyección de JS directa) ni sobrevive al
+// round-trip por atributo con su tipo original — y editManualProduct() compara
+// con === contra products[i].id.
+var _catRendered = [];
+function _catRowAt(i){
+  var n = parseInt(i, 10);
+  return (isNaN(n) || !_catRendered[n]) ? null : _catRendered[n];
+}
+
 function renderCat() {
   var filtered=getFiltered(), html='';
+  _catRendered = filtered;
   for(var i=0;i<filtered.length;i++){
     var p=filtered[i], sel=!!selIds[p.id];
     var hasStock = p.stock!==null && p.stock!==undefined;
     var stockColor = hasStock ? (p.stock<=0 ? '#d70015' : (p.stock<5 ? '#c84e00' : '#15863a')) : '#aeaeb2';
-    html+='<tr class="crow'+(sel?' sel':'')+'" onclick="toggleRow('+p.id+')">'
-      +'<td style="overflow:visible"><input type="checkbox"'+(sel?' checked':'')+' onclick="event.stopPropagation();toggleRow('+p.id+')"></td>'
-      +'<td style="font-weight:500">'+p.sku+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+'</td>'
-      +'<td class="wrap">'+p.description+'</td>'
-      +'<td style="text-align:right;color:#6e6e73" title="Precio de lista — referencia, no se auto-completa en la cotización">'+(p.listPrice?('USD '+fD(p.listPrice)):'—')+'</td>'
-      +'<td style="text-align:center;font-weight:600;color:'+stockColor+'">'+(hasStock?p.stock:'—')+'</td>'
+    html+='<tr class="crow'+(sel?' sel':'')+'" data-act="row" data-i="'+i+'">'
+      +'<td style="overflow:visible"><input type="checkbox"'+(sel?' checked':'')+' data-act="chk" data-i="'+i+'"></td>'
+      +'<td style="font-weight:500">'+cevenEsc(p.sku)+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+'</td>'
+      +'<td class="wrap">'+cevenEsc(p.description)+'</td>'
+      // fD() sobre un listPrice que llegó como string lo devuelve tal cual
+      // (String.prototype.toLocaleString ignora los argumentos) → también escapa.
+      +'<td style="text-align:right;color:#6e6e73" title="Precio de lista — referencia, no se auto-completa en la cotización">'+(p.listPrice?cevenEsc('USD '+fD(p.listPrice)):'—')+'</td>'
+      +'<td style="text-align:center;font-weight:600;color:'+stockColor+'">'+(hasStock?cevenEsc(p.stock):'—')+'</td>'
       +'<td style="text-align:center;white-space:nowrap;overflow:visible">'
-        +'<button class="bs" onclick="event.stopPropagation();editManualProduct('+p.id+')" title="Editar" style="padding:2px 6px;font-size:12px">✎</button> '
-        +'<button class="bsr" onclick="event.stopPropagation();deleteManualProduct('+p.id+')" title="Eliminar">×</button>'
+        +'<button class="bs" data-act="edit" data-i="'+i+'" title="Editar" style="padding:2px 6px;font-size:12px">✎</button> '
+        +'<button class="bsr" data-act="del" data-i="'+i+'" title="Eliminar">×</button>'
       +'</td>'
       +'</tr>';
   }
   document.getElementById('catbody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
+  _catBindDelegation();
   var cnt=Object.keys(selIds).length;
   document.getElementById('catcount').textContent = filtered.length+' productos · '+cnt+' seleccionados';
   var btn=document.getElementById('addbtn');
@@ -218,6 +234,22 @@ function renderCat() {
   btn.textContent = editId!==null ? 'Confirmar cambio' : 'Agregar ('+cnt+')';
   var allSel=filtered.length>0; for(var j=0;j<filtered.length;j++){if(!selIds[filtered[j].id]){allSel=false;break;}}
   document.getElementById('chkall').checked=allSel;
+}
+
+// Un solo listener en #catbody: cevenActEl() devuelve el elemento accionable más
+// cercano, así que el clic sobre el checkbox o sobre un botón NO cae además en el
+// handler de la fila (antes hacía falta un event.stopPropagation() en cada uno).
+function _catBindDelegation(){
+  cevenDelegate('catbody', 'click', function(ev){
+    var el = cevenActEl(ev, this);
+    if(!el) return;
+    var p = _catRowAt(el.getAttribute('data-i'));
+    if(!p) return;
+    var act = el.getAttribute('data-act');
+    if(act === 'edit')      editManualProduct(p.id);
+    else if(act === 'del')  deleteManualProduct(p.id);
+    else                    toggleRow(p.id);   // 'row' y 'chk'
+  });
 }
 
 function toggleRow(pid) { if(selIds[pid]) delete selIds[pid]; else selIds[pid]=_nextSel(); renderCat(); }

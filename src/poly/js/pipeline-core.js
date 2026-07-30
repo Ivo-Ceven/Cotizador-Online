@@ -11,7 +11,7 @@ function refreshOpgDatalist(){
     var o = (r.opg||'').trim();
     if(o && !seen[o]){ seen[o]=1; opgs.push(o); }
   });
-  dl.innerHTML = opgs.map(function(o){ return '<option value="'+o.replace(/"/g,'&quot;')+'">'; }).join('');
+  dl.innerHTML = opgs.map(function(o){ return '<option value="'+cevenEsc(o)+'">'; }).join('');
 }
 
 // Agrega la cotización actual (una Sala) al pipeline. Si tiene OPG, la fila de
@@ -27,8 +27,11 @@ function addToPipeline(){
   var sala   = (document.getElementById('sala').value||'').trim();
   if(!client){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
   if(!sala){ showToast('Cargá la Sala/ubicación antes de agregar al pipeline.'); return; }
+  // Sin ejecutivo la fila queda con ejecutivo '—' y cevenCanEditPipelineRow('—')
+  // le niega la edición al propio autor. Se corta antes de tocar el pipeline.
+  if(!cevenRequireExec()) return;
 
-  var exec      = document.getElementById('exec').value || '';
+  var exec      = cevenExecActual();
   var mesCierre = getMesCierre();
   var estadoQ   = (document.getElementById('quote-estado') && document.getElementById('quote-estado').value) || 'Cotizado';
   var qn        = String(qNum).padStart(4,'0');

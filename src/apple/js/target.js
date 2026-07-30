@@ -73,10 +73,22 @@ function closeSkuDashboard(){
 }
 function toggleSkuRow(sku){
   window._skuExpanded = window._skuExpanded || {};
-  var k = sku.replace(/\\'/g,"'");
-  window._skuExpanded[k] = !window._skuExpanded[k];
+  // El SKU llega tal cual desde data-sku: ya no hay que deshacer ningún escape
+  // ad-hoc (antes venía con las comillas simples convertidas en \').
+  window._skuExpanded[sku] = !window._skuExpanded[sku];
   renderSkuDashboard();
 }
+
+// Delegación de eventos del análisis por SKU.
+(function(){
+  var dash = document.getElementById('sku-dashboard');
+  if(!dash) return;
+  dash.addEventListener('click', function(e){
+    var el = e.target.closest ? e.target.closest('[data-skurow]') : null;
+    if(!el || !dash.contains(el)) return;
+    toggleSkuRow(el.getAttribute('data-skurow'));
+  });
+})();
 
 function renderSkuDashboard(){
   var pipe = getPipeline();
@@ -165,8 +177,8 @@ function renderSkuDashboard(){
       segs+='<span style="display:inline-block;font-size:10px;color:'+stColor[s]+';font-weight:600;margin-right:6px;white-space:nowrap">'+u+' '+s+'</span>';
     });
     html+='<div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">'
-      +'<div style="font-family:monospace;font-size:12px;font-weight:600;color:#1d1d1f">'+a.sku+'</div>'
-      +'<div style="font-size:10px;color:#6e6e73;margin:2px 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+(a.desc||'').replace(/"/g,'&quot;')+'">'+(a.desc||'—')+'</div>'
+      +'<div style="font-family:monospace;font-size:12px;font-weight:600;color:#1d1d1f">'+cevenEsc(a.sku)+'</div>'
+      +'<div style="font-size:10px;color:#6e6e73;margin:2px 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+cevenEsc(a.desc||'')+'">'+cevenEsc(a.desc||'—')+'</div>'
       +'<div style="font-size:24px;font-weight:700;color:#1d1d1f">'+fI(a.rank)+' <span style="font-size:11px;font-weight:400;color:#6e6e73">unid.</span></div>'
       +'<div style="margin-top:6px;line-height:1.6">'+segs+'</div>'
     +'</div>';
@@ -187,11 +199,13 @@ function renderSkuDashboard(){
     +'</tr></thead><tbody>';
 
   arr.forEach(function(a){
-    var skuEsc=a.sku.replace(/'/g,"\\'");
+    // El SKU (que sale del Excel del price list) iba dentro de un string JS del
+    // onclick escapando sólo las comillas simples: con  \');alert(1);//  se
+    // cerraba el string y se ejecutaba lo que siguiera. Va por data-sku.
     var expanded=window._skuExpanded&&window._skuExpanded[a.sku];
-    html+='<tr style="border-top:0.5px solid #f0f0f0;cursor:pointer" onclick="toggleSkuRow(\''+skuEsc+'\')">'
-      +'<td style="padding:8px 12px;font-family:monospace;font-weight:600">'+a.sku+'</td>'
-      +'<td style="padding:8px 12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+(a.desc||'').replace(/"/g,'&quot;')+'">'+(a.desc||'—')+'</td>';
+    html+='<tr style="border-top:0.5px solid #f0f0f0;cursor:pointer" data-skurow="'+cevenEsc(a.sku)+'">'
+      +'<td style="padding:8px 12px;font-family:monospace;font-weight:600">'+cevenEsc(a.sku)+'</td>'
+      +'<td style="padding:8px 12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+cevenEsc(a.desc||'')+'">'+cevenEsc(a.desc||'—')+'</td>';
     states.forEach(function(s){
       var u=a.byState[s]||0;
       html+='<td style="text-align:center;padding:8px 6px;color:'+(u?stColor[s]:'#d2d2d7')+';font-weight:'+(u?'600':'400')+'">'+(u||'—')+'</td>';
@@ -211,13 +225,13 @@ function renderSkuDashboard(){
       var clientRows=Object.keys(cmap).map(function(k){return cmap[k];});
       clientRows.sort(function(x,y){ return y.qty-x.qty; });
       var inner='<div style="padding:8px 14px 12px 24px;background:#fafafa">'
-        +'<div style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Clientes cotizando '+a.sku+'</div>'
+        +'<div style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Clientes cotizando '+cevenEsc(a.sku)+'</div>'
         +'<table style="width:100%;border-collapse:collapse;font-size:12px">';
       clientRows.forEach(function(cr){
         inner+='<tr style="border-top:0.5px solid #eee">'
-          +'<td style="padding:5px 10px;font-weight:500;min-width:160px">'+cr.client+'</td>'
-          +'<td style="padding:5px 10px"><span style="background:'+stBg[cr.state]+';color:'+stColor[cr.state]+';border-radius:980px;padding:2px 9px;font-size:10px;font-weight:600">'+cr.state+'</span></td>'
-          +'<td style="padding:5px 10px;color:#6e6e73">'+fmtMes(cr.mes)+'</td>'
+          +'<td style="padding:5px 10px;font-weight:500;min-width:160px">'+cevenEsc(cr.client)+'</td>'
+          +'<td style="padding:5px 10px"><span style="background:'+(stBg[cr.state]||'#f2f2f7')+';color:'+(stColor[cr.state]||'#1d1d1f')+';border-radius:980px;padding:2px 9px;font-size:10px;font-weight:600">'+cevenEsc(cr.state)+'</span></td>'
+          +'<td style="padding:5px 10px;color:#6e6e73">'+cevenEsc(fmtMes(cr.mes))+'</td>'
           +'<td style="padding:5px 10px;text-align:right;font-weight:700">'+fI(cr.qty)+' unid.</td>'
           +'</tr>';
       });
@@ -696,7 +710,7 @@ function renderTargetAnual(){
       +'<td style="padding:9px 10px;text-align:center;color:'+(serv4>0?'var(--ct1,#1d1d1f)':'var(--ct3,#d2d2d7)')+'">'+(serv4||'—')+'</td>'
       +'<td style="padding:9px 12px;text-align:right;color:var(--ct2,#6e6e73)">'+(marFinal!=null?marFinal.toFixed(2)+'%':'—')+'</td>'
       +'<td style="padding:9px 8px;text-align:center">'
-        +(editable?'<button onclick="toggleTargetEdit(\''+mk+'\')" style="background:none;border:0.5px solid var(--cb,#d2d2d7);border-radius:6px;cursor:pointer;font-size:11px;padding:2px 6px;font-family:inherit;color:var(--ct2,#6e6e73)" title="Ajuste manual">'+(isOpen?'▲':'✎')+'</button>':'')
+        +(editable?'<button data-tact="toggle" data-tmk="'+cevenEsc(mk)+'" style="background:none;border:0.5px solid var(--cb,#d2d2d7);border-radius:6px;cursor:pointer;font-size:11px;padding:2px 6px;font-family:inherit;color:var(--ct2,#6e6e73)" title="Ajuste manual">'+(isOpen?'▲':'✎')+'</button>':'')
       +'</td>'
     +'</tr>';
 
@@ -709,29 +723,29 @@ function renderTargetAnual(){
           +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6e36c8;margin-bottom:10px">✎ Ajuste manual para '+meses[mi]+' '+year+' <span style="font-weight:400;color:var(--ct2,#6e6e73)">(se suma al dato del pipeline · pipeline: USD '+fI(pm4.monto||0)+')</span></div>'
           +'<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">'
             +'<div><div class="tgt-lbl" style="font-size:11px;color:#6e6e73;margin-bottom:4px">+Monto USD</div>'
-              +'<input type="number" min="0" '+IS+' value="'+(mn4.monto||'')+'" placeholder="0"'
-              +' onchange="saveTargetManualField(\''+mk+'\',\'monto\',this.value)"></div>'
+              +'<input type="number" min="0" '+IS+' value="'+cevenEsc(mn4.monto||'')+'" placeholder="0"'
+              +' data-tact="field" data-tfield="monto" data-tmk="'+cevenEsc(mk)+'"></div>'
             +'<div><div class="tgt-lbl" style="font-size:11px;color:#6e6e73;margin-bottom:4px">+Mac</div>'
-              +'<input type="number" min="0" '+IC+' value="'+(mn4.mac||'')+'" placeholder="0"'
-              +' onchange="saveTargetManualField(\''+mk+'\',\'mac\',this.value)"></div>'
+              +'<input type="number" min="0" '+IC+' value="'+cevenEsc(mn4.mac||'')+'" placeholder="0"'
+              +' data-tact="field" data-tfield="mac" data-tmk="'+cevenEsc(mk)+'"></div>'
             +'<div><div class="tgt-lbl" style="font-size:11px;color:#6e6e73;margin-bottom:4px">+iPhone</div>'
-              +'<input type="number" min="0" '+IC+' value="'+(mn4.iph||'')+'" placeholder="0"'
-              +' onchange="saveTargetManualField(\''+mk+'\',\'iph\',this.value)"></div>'
+              +'<input type="number" min="0" '+IC+' value="'+cevenEsc(mn4.iph||'')+'" placeholder="0"'
+              +' data-tact="field" data-tfield="iph" data-tmk="'+cevenEsc(mk)+'"></div>'
             +'<div><div class="tgt-lbl" style="font-size:11px;color:#6e6e73;margin-bottom:4px">+iPad</div>'
-              +'<input type="number" min="0" '+IC+' value="'+(mn4.ipad||'')+'" placeholder="0"'
-              +' onchange="saveTargetManualField(\''+mk+'\',\'ipad\',this.value)"></div>'
+              +'<input type="number" min="0" '+IC+' value="'+cevenEsc(mn4.ipad||'')+'" placeholder="0"'
+              +' data-tact="field" data-tfield="ipad" data-tmk="'+cevenEsc(mk)+'"></div>'
             +'<div><div class="tgt-lbl" style="font-size:11px;color:#6e6e73;margin-bottom:4px">+Acc</div>'
-              +'<input type="number" min="0" '+IC+' value="'+(mn4.acc||'')+'" placeholder="0"'
-              +' onchange="saveTargetManualField(\''+mk+'\',\'acc\',this.value)"></div>'
+              +'<input type="number" min="0" '+IC+' value="'+cevenEsc(mn4.acc||'')+'" placeholder="0"'
+              +' data-tact="field" data-tfield="acc" data-tmk="'+cevenEsc(mk)+'"></div>'
             +'<div><div class="tgt-lbl" style="font-size:11px;color:#6e6e73;margin-bottom:4px">+Serv</div>'
-              +'<input type="number" min="0" '+IC+' value="'+(mn4.serv||'')+'" placeholder="0"'
-              +' onchange="saveTargetManualField(\''+mk+'\',\'serv\',this.value)"></div>'
+              +'<input type="number" min="0" '+IC+' value="'+cevenEsc(mn4.serv||'')+'" placeholder="0"'
+              +' data-tact="field" data-tfield="serv" data-tmk="'+cevenEsc(mk)+'"></div>'
             +'<div><div class="tgt-lbl" style="font-size:11px;color:#6e6e73;margin-bottom:4px">Margen %</div>'
-              +'<input type="number" min="0" max="100" step="0.01" '+IS+' value="'+(mn4.margen!=null?mn4.margen:'')+'" placeholder="auto"'
-              +' onchange="saveTargetManualField(\''+mk+'\',\'margen\',this.value)"></div>'
+              +'<input type="number" min="0" max="100" step="0.01" '+IS+' value="'+cevenEsc(mn4.margen!=null?mn4.margen:'')+'" placeholder="auto"'
+              +' data-tact="field" data-tfield="margen" data-tmk="'+cevenEsc(mk)+'"></div>'
             +'<div style="display:flex;gap:6px;margin-left:4px">'
-              +'<button onclick="toggleTargetEdit(\''+mk+'\')" style="background:#0071e3;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Listo</button>'
-              +(hasAdj?'<button onclick="clearTargetManual(\''+mk+'\')" style="background:none;color:#d70015;border:0.5px solid #d70015;border-radius:8px;padding:7px 10px;font-size:12px;cursor:pointer;font-family:inherit">Borrar ajuste</button>':'')
+              +'<button data-tact="toggle" data-tmk="'+cevenEsc(mk)+'" style="background:#0071e3;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Listo</button>'
+              +(hasAdj?'<button data-tact="clear" data-tmk="'+cevenEsc(mk)+'" style="background:none;color:#d70015;border:0.5px solid #d70015;border-radius:8px;padding:7px 10px;font-size:12px;cursor:pointer;font-family:inherit">Borrar ajuste</button>':'')
             +'</div>'
           +'</div>'
         +'</td>'
@@ -755,6 +769,28 @@ function renderTargetAnual(){
   html+='</tbody></table></div></div>';
   dash.innerHTML=html;
 }
+
+// Delegación de eventos del Target Anual (ajustes manuales por mes).
+(function(){
+  var dash = document.getElementById('target-dashboard');
+  if(!dash) return;
+  var pick = function(e){
+    var el = e.target.closest ? e.target.closest('[data-tact]') : null;
+    return (el && dash.contains(el)) ? el : null;
+  };
+  dash.addEventListener('change', function(e){
+    var el = pick(e); if(!el) return;
+    if(el.getAttribute('data-tact') === 'field'){
+      saveTargetManualField(el.getAttribute('data-tmk'), el.getAttribute('data-tfield'), el.value);
+    }
+  });
+  dash.addEventListener('click', function(e){
+    var el = pick(e); if(!el) return;
+    var mk = el.getAttribute('data-tmk');
+    if(el.getAttribute('data-tact') === 'toggle')     toggleTargetEdit(mk);
+    else if(el.getAttribute('data-tact') === 'clear') clearTargetManual(mk);
+  });
+})();
 
 function clearTargetManual(mk){
   var data=getTargetManual();

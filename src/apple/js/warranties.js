@@ -23,25 +23,52 @@ function renderWarranties() {
     var wTotal = wPrice * w.cantidad;
     var canalColor = w.canal === 'CC' ? '#c84e00' : '#0071e3';
     var canalBg   = w.canal === 'CC' ? '#fff0e8' : '#e8f4ff';
+    // Las garantías llegan por postMessage desde CevenCare y se persisten en
+    // cquotes (que se sincroniza con el resto del equipo): se escapan igual que
+    // cualquier otro dato remoto. El índice viaja por data-widx.
+    var idxA = ' data-widx="' + origIdx + '"';
     html += '<tr>'
-      + '<td style="font-weight:500;font-size:12px">' + w.sku + '</td>'
-      + '<td class="wrap">' + w.equipo + '</td>'
-      + '<td style="text-align:right"><input class="si" type="number" min="1" value="' + w.cantidad + '" style="width:44px" onchange="upWarrantyQty(' + origIdx + ',this.value)"></td>'
-      + '<td style="text-align:center"><span style="background:' + canalBg + ';color:' + canalColor + ';border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">' + w.canal + '</span></td>'
+      + '<td style="font-weight:500;font-size:12px">' + cevenEsc(w.sku) + '</td>'
+      + '<td class="wrap">' + cevenEsc(w.equipo) + '</td>'
+      + '<td style="text-align:right"><input class="si" type="number" min="1" value="' + cevenEsc(w.cantidad) + '" style="width:44px" data-wact="qty"' + idxA + '></td>'
+      + '<td style="text-align:center"><span style="background:' + canalBg + ';color:' + canalColor + ';border-radius:20px;padding:2px 8px;font-size:11px;font-weight:700">' + cevenEsc(w.canal) + '</span></td>'
       + '<td style="text-align:right;white-space:nowrap">'
         + '<div style="display:inline-flex;align-items:center;gap:3px;justify-content:flex-end">'
           + '<span style="font-size:12px;color:#6e6e73;margin-right:2px">USD</span>'
-          + '<input class="si no-spin" type="number" min="0.01" step="0.01" value="' + wPrice + '" style="width:72px;text-align:right;font-weight:500" onchange="upWarrantyPriceDirect(' + origIdx + ',this.value)" onblur="upWarrantyPriceDirect(' + origIdx + ',this.value)">'
+          + '<input class="si no-spin" type="number" min="0.01" step="0.01" value="' + cevenEsc(wPrice) + '" style="width:72px;text-align:right;font-weight:500" data-wact="price"' + idxA + '>'
         + '</div>'
       + '</td>'
       + '<td style="text-align:right;font-weight:500">USD ' + wTotal.toLocaleString('es-AR',{minimumFractionDigits:wTotal%1===0?0:2,maximumFractionDigits:2}) + '</td>'
       + '<td style="text-align:center;color:#6e6e73">21%</td>'
-      + '<td style="text-align:center;color:#6e6e73">' + w.años + ' ' + (w.años === 1 ? 'año' : 'años') + '</td>'
-      + '<td style="text-align:center"><button class="bsr" onclick="rmWarranty(' + origIdx + ')" title="Eliminar">×</button></td>'
+      + '<td style="text-align:center;color:#6e6e73">' + cevenEsc(w.años) + ' ' + (w.años === 1 ? 'año' : 'años') + '</td>'
+      + '<td style="text-align:center"><button class="bsr" data-wact="rm"' + idxA + ' title="Eliminar">×</button></td>'
       + '</tr>';
   }
   document.getElementById('wbody').innerHTML = html;
 }
+
+// Delegación de eventos de la tabla de garantías.
+(function(){
+  var body = document.getElementById('wbody');
+  if(!body) return;
+  function pick(e){
+    var el = e.target.closest ? e.target.closest('[data-wact]') : null;
+    return (el && body.contains(el)) ? el : null;
+  }
+  body.addEventListener('change', function(e){
+    var el = pick(e); if(!el) return;
+    var i = parseInt(el.getAttribute('data-widx'), 10);
+    if(isNaN(i) || !warrantyItems[i]) return;
+    if(el.getAttribute('data-wact') === 'qty') upWarrantyQty(i, el.value);
+    else if(el.getAttribute('data-wact') === 'price') upWarrantyPriceDirect(i, el.value);
+  });
+  body.addEventListener('click', function(e){
+    var el = pick(e); if(!el) return;
+    if(el.getAttribute('data-wact') !== 'rm') return;
+    var i = parseInt(el.getAttribute('data-widx'), 10);
+    if(!isNaN(i) && warrantyItems[i]) rmWarranty(i);
+  });
+})();
 
 function upWarrantyQty(idx, v) {
   warrantyItems[idx].cantidad = Math.max(1, parseInt(v) || 1);
@@ -87,6 +114,16 @@ function openCevenCare() {
     modal.style.display = 'flex';
   }
   if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(closeCevenCare);
+}
+
+// El onerror del iframe la llamaba y no existía: cuando cevencare.html no cargaba,
+// el modal quedaba en blanco y la única señal era un ReferenceError en la consola.
+function iframeError() {
+  var modal = document.getElementById('cc-modal');
+  if (modal) modal.style.display = 'none';
+  if (window.cevenNav) cevenNav.notifyClosed(closeCevenCare);
+  var popup = window.open('cevencare.html', 'cevencare', 'width=820,height=700,resizable=yes,scrollbars=yes');
+  if (!popup) alert('No se pudo abrir CevenCare. Habilitá los popups o verificá que cevencare.html esté en la misma carpeta.');
 }
 
 function iframeLoaded(iframe) {
