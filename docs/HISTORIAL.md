@@ -9,12 +9,70 @@ Bitácora de qué se hizo, cuándo y **por qué**. Complementa a `ARQUITECTURA.m
 
 ---
 
-## Estado actual (28/07/2026)
+## Estado actual (30/07/2026)
 
-Plataforma multi-marca en producción: **https://cotizadores-ceven.vercel.app**
+Plataforma multi-marca deployada en **https://cotizadores-ceven.vercel.app**
 (Vercel, team CEVEN, proyecto `cotizadores-ceven`). Shell con login + selector de
 marcas, cotizador **Apple** y cotizador **Poly** completos, HP pendiente.
 PWA instalable y funcional offline. Base Supabase `iqewnebpdyctexavtpmt`.
+
+**Todavía no está en uso real** (sin usuarios ni datos productivos), que es lo que
+permitió el refactor del 28–30/07 sin red de contención. Los signups públicos están
+cerrados: la única alta es la Edge Function `admin-users`.
+
+---
+
+## 28–30/07/2026 · Review completo y fin del monolito troceado
+
+Commits `09b8525` (Ola 1), `b8bf98e` (Olas 2–3), `7241d34` (Ola 4).
+
+**El punto de partida**: un review con agentes en paralelo sobre los ~10.500
+renglones propios encontró ~60 hallazgos únicos. Tres problemas de fondo, y cada
+uno explicaba varios bugs concretos: (1) no había autorización real —los roles
+vivían en el cliente—, (2) el modelo de sync no tenía reloj, así que "quién gana"
+lo decidía el orden de llegada de los POST, y (3) los errores se tragaban en
+silencio, de modo que fallas de cuota y de red se presentaban como éxitos.
+
+**La decisión**: el usuario pidió eliminar la estructura de monolito troceado
+antes que parchar. Como la app no está en uso real, se priorizó estructura por
+encima de compatibilidad. Se hizo en cuatro olas, con agentes en paralelo sobre
+conjuntos de archivos disjuntos y el cableado (`index.html`, `sw.js`) siempre
+reservado al hilo principal para que nadie se pisara.
+
+**Lo que cambió estructuralmente**: `src/<marca>/brand.js` concentra todo lo que
+distingue una marca (prefijo de localStorage, columnas del pipeline, claves de
+settings, tags de backup). Los módulos compartidos lo leen y no tienen ni una
+constante por marca adentro. Pasaron a `src/shared/`: `sync.js`, `backup.js`,
+`backup-folder.js`, `ui-core.js`, `undo.js`, `init.js`, el CSS y `safe.js`
+(`cevenEsc`, `cevenLsSet`, `cevenLsJSON`, `cevenParseMoney`). Apple bajó de 22 a
+17 módulos propios; Poly, de 20 a 13 y ~1.900 renglones, casi solo su lógica de
+negocio. Cero definiciones globales duplicadas en el bundle de cada marca.
+
+El total de renglones **subió ~290**: la dedup sacó ~1.900 pero los fixes
+agregaron más. `sync.js` pasó de 751 (sumando las dos copias) a 954 porque ahora
+persiste la cola de pendientes, mergea por id, distingue "vacío" de "no se pudo
+leer" y maneja los races.
+
+**Los arreglos que más importaban**:
+- El precio unitario se multiplicaba por 100 al reeditarlo, en las dos marcas: el
+  input mostraba el número crudo de JS (`1041.67`) y el parser borraba todos los
+  puntos asumiendo separador de miles.
+- El backup de Apple volcaba **todas** las claves de localStorage —incluido el
+  `access_token` y el `refresh_token`— a un JSON que se reescribe cada 8 s en la
+  carpeta del usuario, típicamente OneDrive. Poly ya lo filtraba bien. Ahora es
+  lista blanca derivada de `settingKeys`, aplicada también al import.
+- XSS almacenado: `cliente`, `SKU` y `descripción` se concatenaban crudos en
+  `innerHTML` en ~20 módulos, y como esos datos se sincronizan, el payload se
+  ejecutaba en la pantalla de todo el equipo. Todo pasa por `cevenEsc()` y los
+  handlers inline con datos adentro se convirtieron a delegación de eventos.
+- El rol salía de localStorage: escribir `{role:'admin'}` a mano alcanzaba para
+  habilitar la UI de admin. Ahora se deriva del JWT.
+- CSP con `connect-src` acotado a Supabase, que corta la exfiltración aunque
+  quede un XSS sin ver.
+
+**Verificación**: toda estática —sintaxis, precache, globales duplicadas, y
+bancos de prueba en Node para sync (37/37 Apple, 34/34 Poly) y para auth (7
+escenarios, incluida la sesión forjada). **Nadie abrió la app en un navegador.**
 
 ---
 
@@ -103,6 +161,20 @@ dato intacto, el poll no pisa; (b) al volver la red, el reintento reconstruye el
 diff y el POST lleva la fila. Los push son upserts por PK / deletes por id, así
 que reintentar es idempotente.
 
+> **⚠ CORRECCIÓN (30/07/2026): este fix nunca funcionó del todo.** El review
+> encontró que el bloque de rescate del `bootstrap()` leía `cpipeline` *después*
+> de que la línea de arriba ya lo había pisado con lo del servidor, así que su
+> condición era inalcanzable **por construcción**: `lp` siempre daba `[]`. Había
+> además una segunda vía, más barata: `fetchJSON` devolvía `null` igual para
+> "vacío" que para "no se pudo leer", de modo que un solo GET fallido borraba el
+> pipeline entero. Arreglado en `b8bf98e`, ahora con merge por `id`.
+>
+> Lo que la verificación de arriba probó fue el camino del **reintento en
+> memoria**, que sí andaba. El que perdía datos era el del **reload**, que no se
+> cubrió: la cola de pendientes vivía solo en variables del IIFE. Moraleja para
+> quien lea esta bitácora: acá "verificado" significa "se probó el escenario que
+> se le ocurrió a quien lo escribió", no "es correcto".
+
 **Deploy**: primer deploy a Vercel (team CEVEN). Atención: `vercel deploy` a secas
 mandó el primer deploy **directo a producción**, no hizo preview.
 
@@ -137,23 +209,39 @@ validaciones server-side.
 ## Pendientes
 
 ### 🔴 Urgente — depende del usuario
-- **Los signups públicos están ABIERTOS** (`disable_signup: false`). Con la app ya
-  pública, cualquiera puede registrarse, confirmar su mail y —como las policies son
-  `to authenticated` a secas— leer/escribir TODO el pipeline. Hoy no se filtra nada
-  solo porque la base está casi vacía; se vuelve real en cuanto se siembren los
-  datos. **Dashboard → Authentication → Sign In/Providers → Email → apagar "Allow
-  new users to sign up"**.
+- **Aplicar la migración de RLS**: `supabase/migrations/20260730120000_rls_por_rol_y_marca.sql`,
+  escrita el 30/07 y **sin aplicar**. Hoy las policies siguen siendo
+  `for all using(true) with check(true)`, así que cualquier usuario autenticado
+  —incluido un `lector`— puede borrar el pipeline entero o pisar el price list con
+  un `curl`. Los roles de la app son solo UI. La migración tiene los pasos manuales
+  del dashboard comentados arriba; es **fail-closed**, así que el orden importa:
+  entre aplicar las policies y activar el hook, nadie puede escribir.
 - **No hay backup de los datos productivos**: viven SOLO en el `localStorage` del
   navegador del usuario, sin copia en la base. Exportar el backup JSON y, ya
   logueado, importarlo para sembrar Supabase.
 
 ### Técnicos
+- **Nada de lo hecho el 28–30/07 se probó en un navegador**: la verificación fue
+  estática (sintaxis, precache, globales duplicadas, y bancos de prueba en Node
+  para sync y auth). Falta abrir las dos marcas y recorrer los flujos.
 - **Verificar `nav.js` en un navegador real** (Atrás en el celular, Escape en cada
   modal). Nunca se probó de forma interactiva.
-- `ARQUITECTURA.md` quedó desactualizado tras Poly/PWA/nav — actualizar.
 - Sacar del repo los tres archivos de datos commiteados el 24/07.
 - La pastilla offline de `pwa.js`: la rama que depende de `navigator.onLine` sigue
   sin verificar (la de "push pendientes" sí está verificada).
+- `shared/pwa.js` necesita `updateViaCache: 'none'` en el `register()`.
+- La Edge Function `admin-users` escribe el rol solo en `user_metadata`: después de
+  aplicar la migración hay que agregarle el upsert a `user_roles` o el modal de
+  usuarios deja de cambiar permisos reales (detalle en la migración, paso 5).
+
+### Decisiones de datos pendientes
+Dos cosas que los fixes del 30/07 cortan hacia adelante pero no limpian hacia atrás:
+- **Cotizaciones con `Margen %` en 0 que en realidad era negativo** (el clamp viejo).
+  Es recomputable desde `_base` y `_nac`, pero reabrir la cotización no lo corrige:
+  `itemMargin` se carga del valor guardado. Pipeline y Target siguen reportando 0%.
+- **Ítems marcados `_nacIncluded:true` por el bug de FOB**: nunca vuelven a
+  nacionalizar aunque se saque el FOB, con el costo subestimado ~24%. Una migración
+  tendría que distinguir los NAC✓ legítimos de los accidentes de FOB.
 
 ---
 

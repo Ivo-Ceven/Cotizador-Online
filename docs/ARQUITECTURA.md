@@ -10,57 +10,86 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 
 | Archivo | Responsabilidad |
 |---|---|
+| `safe.js` | Primitivas seguras: `cevenEsc()` (escapado de HTML), `cevenLsSet()` (localStorage que **devuelve booleano** y avisa si la cuota está llena), `cevenLsJSON()`, `cevenParseMoney()` |
 | `config.js` | URL/key de Supabase, dominio, admin, `APP_VERSION` |
-| `auth.js` | Login GoTrue por REST, sesión con refresh, roles y permisos, gestión de usuarios |
+| `auth.js` | Login GoTrue por REST, sesión con refresh, roles y permisos, gestión de usuarios. Rol y vencimiento se derivan **del JWT** |
+| `sync.js` | Sincronización con Supabase para cualquier marca, parametrizada por `brand.js` |
+| `backup.js` / `backup-folder.js` | Snapshot, export/import JSON y backup automático a carpeta (File System Access API + IndexedDB) |
+| `ui-core.js` | Logo, navegación (`_navApply`/`goTo`), formateo (`fI`/`fD`/`dp`/`getTC`), mes de cierre, `showErr` |
+| `undo.js` | Deshacer cambios del pipeline, incluidas inserciones y borrados de fila |
 | `nav.js` | `window.cevenNav`: integra el botón Atrás del navegador/celular y la tecla Escape (una sola pila de overlays, un solo listener `popstate`) |
 | `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos |
 | `todos.js` | Organizador de tareas del equipo (tabla `todos`, poll cada 15 s). Solo lo usa el shell |
 | `pwa.js` | Registro del service worker, aviso de versión nueva, botón instalar, pastilla de cambios pendientes |
+| `init.js` | Pinta la versión y sincroniza el ícono de dark mode |
+| `css/base.css`, `css/dark.css` | Estilos, idénticos para todas las marcas |
 
 El historial de decisiones y de por qué cada cosa está como está vive en [`HISTORIAL.md`](HISTORIAL.md).
 
-Cada cotizador es una **SPA sin framework y sin build**: JavaScript "vanilla" con funciones y variables globales (`var`), manipulación directa del DOM y `onclick` inline en el HTML. No usa ES modules — los archivos de `js/` se cargan con `<script src>` clásicos y comparten el scope global.
+Cada cotizador es una **SPA sin framework y sin build**: JavaScript "vanilla" con funciones y variables globales (`var`), manipulación directa del DOM. No usa ES modules — los archivos se cargan con `<script src>` clásicos y comparten el scope global.
 
-Fue reestructurada desde dos HTML monolíticos (`index.html` de 7.365 líneas y `CevenCareV2.html` de 2.627 líneas; la carpeta legacy que los contenía ya fue eliminada). La extracción fue **por rangos contiguos de líneas**, sin reordenar código, para preservar exactamente el comportamiento.
+Nació de dos HTML monolíticos (7.365 y 2.627 líneas) que en 07/2026 se partieron **por rangos contiguos de líneas**, sin reordenar código, para no arriesgar el comportamiento. Eso dejó un "monolito troceado": archivos separados pero con las constantes de cada marca adentro, y Poly como copia literal de Apple (~71 % del JS duplicado). El 28–30/07 se terminó el trabajo: la lógica común vive en `src/shared/` y lo que distingue a una marca está en un solo archivo declarativo.
+
+## `brand.js`: el contrato de marca
+
+`src/<marca>/brand.js` es lo **primero** que carga cada cotizador y define `window.CEVEN_BRAND`. Los módulos de `src/shared/` lo leen y **no tienen ni una constante por marca adentro**.
+
+| Campo | Para qué |
+|---|---|
+| `id` | valor de la columna `brand` en Supabase (`'apple'` / `'poly'`) |
+| `prefix` | prefijo de las claves de localStorage (`''` en Apple por historia, `'poly_'` en Poly) |
+| `settingKeys` | claves que se sincronizan a `app_settings`, **sin** prefijo |
+| `pipeCols` / `numCols` / `objCols` | columnas de la tabla `pipeline` de esa marca, cuáles son numéricas y cuáles jsonb |
+| `nullableCols` | escalares que aceptan `NULL`. Hay que emitirlos explícitamente: si se omiten, PostgREST conserva el valor viejo y el poll lo revierte en un ciclo infinito |
+| `localOnlyCols` | campos que existen solo en localStorage y que el poll debe preservar al mergear (`skuOvLinks`) |
+| `padCols` | columnas que vuelven del servidor como número pero se guardan con ceros a la izquierda (`qNum` → `'0071'`) |
+| `idbKey`, `appTag`, `backupVersion`, `pipeFilePrefix`, `fullBackupFile`, `exportPrefix`, `backupExtraKeys` | identidad de los backups de la marca |
+| `plLabel` | cómo se llama el listado de productos en los carteles (`price list` / `catálogo`) |
+
+`window.cevenK(base)` devuelve `prefix + base`. **Todo** acceso a localStorage desde código compartido pasa por ahí.
+
+Si un módulo compartido necesita algo que no está en el contrato, se **agrega el campo a las dos marcas** — nunca un `if (CEVEN_BRAND.id === 'apple')` adentro de `shared/`.
 
 ## ⚠️ El orden de carga importa
 
-Los `<script>` en `src/apple/index.html` replican el orden del monolito original. Hay código que se **ejecuta al cargar** (IIFEs, listeners, `renderQ()` inicial) y depende de que los archivos anteriores ya estén cargados. **No reordenar los tags de script ni mover funciones entre archivos sin revisar dependencias.**
+Hay código que se **ejecuta al cargar** (IIFEs, listeners, `renderQ()` inicial) y depende de que los archivos anteriores ya estén. **No reordenar los tags de script ni mover funciones entre archivos sin revisar dependencias.**
 
-Orden en `apple/index.html`:
+Orden en el `index.html` de cada marca:
 
-| # | Posición en el documento | Archivo | Contenido |
+| # | Posición | Archivo | Por qué ahí |
 |---|---|---|---|
-| 1 | `<head>` | `../vendor/` (xlsx, html2canvas, jsPDF) + `css/base.css` + `css/dark.css` | |
-| 2 | tras la barra de cuenta | `../shared/config.js` | URL/key de Supabase, dominio, admin, `APP_VERSION` |
-| 3 | ídem | `../shared/auth.js` + guard inline | Login GoTrue por REST, sesión con refresh, roles y permisos, gestión de usuarios (Edge Function). El guard redirige al shell si no hay sesión válida |
-| 4 | después de todo el markup de la app | `js/sync.js` | Capa de sincronización con Supabase (IIFE). Si `SUPABASE_URL` está vacío se desactiva y la app corre 100% local |
-| 5–22 | ídem | módulos de la app (tabla siguiente) | |
-| 23 | después del zócalo de versión | `js/init.js` | Pinta versión y sincroniza el ícono de dark mode |
+| 1 | `<head>` | `../vendor/` (xlsx, html2canvas, jsPDF) + `../shared/css/` | |
+| 2 | tras la barra de cuenta | **`brand.js`** | Define `CEVEN_BRAND` y `cevenK()`. **Va primero**: todo `shared/` depende de él |
+| 3 | ídem | `../shared/safe.js` | Primitivas que usan todos los demás |
+| 4 | ídem | `../shared/config.js`, `auth.js`, `notify.js` + guard inline | El guard redirige al shell si no hay sesión válida |
+| 5 | tras el markup | `../shared/nav.js`, `sync.js` | `sync.js` es un IIFE; si `SUPABASE_URL` está vacío se desactiva y la app corre 100 % local |
+| 6 | ídem | `js/state.js` | Variables globales y constantes de la marca |
+| 7 | ídem | `../shared/ui-core.js` → `js/pricing.js` (solo Apple) | `ui-core` corre IIFEs que necesitan `cevenK`, `cevenLsSet` y las globales de `state.js` |
+| 8 | ídem | resto de los módulos, propios y compartidos | |
+| 9 | tras el zócalo de versión | `../shared/init.js` | Pinta versión y sincroniza el ícono de dark mode |
 
-Módulos de la app (5–22), en orden de carga:
+Módulos propios de Apple (`src/apple/js/`):
 
 | Archivo | Responsabilidad |
 |---|---|
 | `state.js` | Variables globales (`products`, `items`, `warrantyItems`…), dark mode, constantes `NAC_DEF`, `MODEL_CATEGORY`, `IVA_MAP`, `COLS`, migraciones de tasas NAC, chequeo de recuperación de datos al arrancar, contador `qNum` |
-| `utils.js` | Logo (claro/oscuro), navegación `goTo()`, formateadores `fI`/`fD`/`dp`, margen global, `calcP()` (fórmula de precio), `getNac()` (matching de % nacionalización), `getIVA()`, mes de cierre |
+| `pricing.js` | Lo que era exclusivo de Apple en el viejo `utils.js`: margen global, `calcP()` (fórmula de precio), `getNac()` (matching de % nacionalización), `getIVA()`, `recalcMarginsFromGlobal()`. Lo genérico se fue a `shared/ui-core.js` |
 | `catalog.js` | Carga de price list (Excel/CSV), actualización de precios, limpieza de SKUs LL/A y E/A, búsqueda (incl. pegado masivo de SKUs), render del catálogo, `addToQuote()` |
 | `quote.js` | Render de la cotización (`renderQ`), orden por familia, qty/margen/precio por ítem, modal de edición de ítem |
 | `nac.js` | Página de % nacionalización global + overrides por cotización + diagnóstico |
 | `products.js` | Alta/edición/baja de artículos manuales del price list |
 | `quotes-db.js` | Persistencia de cotizaciones en `cquotes` (guardar/sobrescribir, nueva, copiar, editar desde historial, export Excel) |
 | `pipeline-data.js` | Storage del pipeline (`cpipeline`) y archivo mensual (`carchive`), `archiveOldEntries()` |
-| `backup.js` | Snapshot completo de la app, export/import de backup JSON, autosnapshot |
 | `pipeline-core.js` | `categorize()` (familia de cada ítem), `addToPipeline()`, limpieza de filtros |
 | `archive-view.js` | Render de meses archivados, restaurar/mover entradas |
 | `pipeline-view.js` | Filtros, orden, dashboard KPI y render de la tabla del pipeline |
 | `pipeline-detail.js` | Fila expandible por cotización: estado/mes/OV por SKU, entregas parciales (filas virtuales, merge y disolución de grupos), export Excel del pipeline |
-| `backup-folder.js` | Backup automático a carpeta (File System Access API + IndexedDB para persistir el handle) |
 | `history.js` | Historial de cotizaciones: filtros, selección, borrado |
 | `pdf.js` | Generación de PDF (html2canvas + jsPDF) de la cotización actual y de seleccionadas |
 | `warranties.js` | Garantías CevenCare: render, integración por `postMessage`, sugerencia automática de garantía para Macs (tabla `MAC_WARRANTIES_3Y`), modal Cliente Final/Canal. **Acá corre el init** (`renderQ()`, defaults de fecha/pago) |
-| `undo.js` | Deshacer cambios de estado/fecha del pipeline |
 | `target.js` | Modal Target Anual (objetivo de facturación, valores manuales por mes) y dashboard por SKU |
+
+Poly tiene los mismos nombres donde el concepto es el mismo, pero su `pipeline-core.js`, `pipeline-detail.js`, `archive-view.js` y `quotes-db.js` implementan otro modelo de negocio: una fila por **OPG** con salas anidadas, sin margen, nacionalización, IVA ni garantías. Esa divergencia es deliberada.
 
 `cevencare.html` + `js/cevencare.js` + `css/cevencare.css` son una mini-app aparte (sin Supabase): cotiza garantías por dispositivo/canal y envía los ítems elegidos al cotizador con `postMessage({type:'cevencare-add-warranty', items})`; `warranties.js` los recibe y los suma a `warrantyItems`.
 
@@ -79,7 +108,21 @@ UI (DOM) ⇄ variables globales (items, products, …)
         poll cada 15 s trae los cambios del resto del equipo
 ```
 
-Reglas del bootstrap de sync: si el servidor tiene datos, **el servidor manda** (pisa el localStorage); si el servidor está vacío o venimos de un import manual (`_ceven_import_reload`), **el local manda** y se siembra la base. Sin conexión (o sin configurar, o sin sesión válida), la app corre local. El poll no pisa claves con un flush propio pendiente (debounce), lo que reduce —no elimina— el riesgo de last-write-wins entre ediciones simultáneas.
+**Reglas del bootstrap** (reescritas el 30/07; antes el bootstrap pisaba el localStorage con lo del servidor y se perdían los cambios hechos sin conexión):
+
+- El pipeline se **mergea por `id`**, no se reemplaza: el servidor gana en las filas que ambos tienen, las filas que solo están en local se conservan y se pushean.
+- `fetchJSON` distingue **"el servidor está vacío" de "no se pudo leer"**. Si el GET falla, no se toca nada. Antes devolvía `null` en los dos casos, así que un solo request fallido borraba el pipeline entero.
+- La **cola de pendientes se persiste** en `cevenK('_sync_dirty')` (que nunca debe entrar en `settingKeys`, o se sincronizaría a sí misma). Sobrevive al reload; toda clave que figure ahí gana sobre el servidor.
+- Se reintenta al volver la red (`online`) y al volver la pestaña al frente (`visibilitychange`), no solo por backoff.
+- Sin conexión, sin configurar o sin sesión válida, la app corre local — y el bootstrap se reintenta cada 10 s en vez de rendirse.
+
+**Invariantes que hay que respetar** (están comentadas en `shared/sync.js`):
+
+- Todo lo que baja del servidor se escribe con `rawSet()`, el `setItem` original. Usar `localStorage.setItem` o `cevenLsSet()` ahí haría que el intercept marque la clave como sucia y la vuelva a subir: ping-pong infinito con el poll.
+- `_dirty[k]` se prende antes de cualquier request y se apaga **solo** con confirmación del servidor.
+- `_pipeSnap` solo avanza con push confirmado; ante fallo parcial se hace rollback completo, porque reintentar un upsert de más es gratis y perder un delete no.
+
+**Lo que sigue sin resolver**: no hay `updated_at` ni versión por fila, así que "quién gana" ante una edición concurrente lo decide el orden de llegada de los POST. `cquotes`, `cpl` y `carchive` viajan como **un blob único** en `app_settings`, o sea last-write-wins a nivel documento: dos usuarios que guardan dentro de la misma ventana de 15 s pueden pisarse. El pipeline no sufre esto porque va fila por fila.
 
 ## Páginas (SPA)
 
@@ -94,19 +137,23 @@ Desde 2026-07-27 la navegación pasa por `shared/nav.js`:
 
 **Al agregar un modal nuevo**: enganchar `openOverlay`/`notifyClosed` y —si es un archivo nuevo— **agregarlo a `ASSETS` en `src/sw.js`** y correr `node scripts/check-precache.js`.
 
-## Multi-marca: cómo enchufar HP (la receta que se usó para Poly)
+## Multi-marca: cómo enchufar HP
 
-> Poly ya está hecho (24/07/2026) siguiendo exactamente estos pasos. Queda como
-> receta para HP. Además de esto, hoy hay que sumar el paso 6.
+> **La receta vieja era "copiar `src/apple/` → `src/<marca>/`". Ya no.** Así se
+> hizo Poly en 07/2026 y el resultado fue ~2.100 líneas duplicadas y bugs
+> arreglados en una marca y no en la otra (el guard de IndexedDB y el filtro de
+> backup solo en Poly; las clases de dark mode y `moveArchiveEntryMonth` solo en
+> Apple). Con una tercera marca cada bug costaba tres arreglos.
 
-1. Copiar `src/apple/` → `src/poly/` como plantilla.
-2. En `src/poly/js/sync.js` cambiar `var BRAND = 'apple'` → `'poly'`.
-3. Prefijar las claves de localStorage del cotizador nuevo (`poly_cpl`, `poly_cpipeline`, `poly_cquotes`, …) en TODOS los módulos — las marcas comparten origin, sin prefijo se pisan entre sí. Apple conserva sus claves históricas sin prefijo. Claves neutrales compartidas: `ceven_auth_session`, `cdark`.
-4. Adaptar catálogo/categorías: las tablas `NAC_DEF`, `MODEL_CATEGORY`, `IVA_MAP` (`state.js`) y `categorize()` (`pipeline-core.js`) son 100% Apple; definir las equivalentes de la marca (o simplificar si no aplica nacionalización/familias).
-5. Activar la tarjeta de la marca en el shell (`src/index.html`): quitar la clase `soon` y agregar `onclick="location.href='poly/'"`.
-6. **Registrar todos los archivos nuevos en `ASSETS` de `src/sw.js`** (CSS, JS y el `index.html` de la marca en `DOCS`) y verificar con `node scripts/check-precache.js`. Si falta uno, el precache queda incompleto y la marca no abre sin conexión.
+1. **`src/hp/brand.js`**: copiar el de Poly y ajustar `id`, `prefix` (`'hp_'`), `settingKeys`, `pipeCols`/`numCols`/`objCols`/`nullableCols` y los campos de backup. Este archivo es casi todo lo que la marca necesita declarar.
+2. **`src/hp/index.html`**: cargar `brand.js` primero, después `../shared/safe.js`, `config.js`, `auth.js`, `notify.js` + el guard de sesión, y al final los módulos compartidos y los propios (ver "El orden de carga importa").
+3. **Módulos propios en `src/hp/js/`**: solo lo que sea genuinamente distinto. Poly, que es la marca más simple, tiene 13 archivos y ~1.900 líneas; casi todo eso es su modelo de pipeline por OPG.
+4. Activar la tarjeta en el shell (`src/index.html`): quitar la clase `soon` y agregar el `onclick`.
+5. **Registrar los archivos nuevos en `ASSETS` de `src/sw.js`** (y el `index.html` en `DOCS`), subir `APP_VERSION` en `shared/config.js` y verificar con `node scripts/check-precache.js`. Si falta uno, el precache queda incompleto y la marca no abre sin conexión.
 
-En Supabase no hay que tocar nada: las tablas ya separan por `brand` (PK compuestas `(brand,id)` / `(brand,key)`). Si la marca necesita campos propios, se agregan a `pipeline` como columnas aditivas que quedan NULL para las demás (así se hizo con `opg`/`salas`/`factura` de Poly).
+En Supabase no hay que tocar nada: las tablas ya separan por `brand` (PK compuestas `(brand,id)` / `(brand,key)`). Si la marca necesita campos propios, se agregan a `pipeline` como columnas aditivas que quedan NULL para las demás (así se hizo con `opg`/`salas`/`factura` de Poly) y se declaran en `pipeCols`.
+
+**Qué NO hacer**: meter `if (CEVEN_BRAND.id === 'hp')` dentro de `src/shared/`. Si un módulo compartido necesita variar, el parámetro va en `brand.js`. Y a la inversa: si la lógica de la marca es realmente distinta (como el pipeline por OPG de Poly frente al de familias de Apple), **va en su carpeta** — forzarla a un módulo común con ramas por marca adentro es peor que la duplicación.
 
 ## Roles y permisos (definidos en shared/auth.js)
 
@@ -115,6 +162,10 @@ En Supabase no hay que tocar nada: las tablas ya separan por `brand` (PK compues
 - **lector**: no modifica nada guardado ni usa pipeline; puede armar y guardar una cotización nueva.
 
 El campo Vendedor (`#exec`) se autocompleta y bloquea para no-admins.
+
+El rol se deriva **del JWT**, no de localStorage: `cevenMyRole()` lee el claim `user_role` (el que inyecta el hook de la migración pendiente) y, si no está, cae a `user_metadata.role`. Sin token usable devuelve `lector` — fail-safe.
+
+> ⚠️ **Esto decide qué botones se muestran, no qué datos se pueden tocar.** `user_metadata` lo puede editar el propio usuario con `PUT /auth/v1/user`, y las policies de Supabase siguen siendo `using(true) with check(true)`: cualquier autenticado puede leer y escribir todo el pipeline y el price list de todas las marcas con un `curl`. La barrera real son las policies — ver `supabase/migrations/`, sin aplicar.
 
 ## Claves de localStorage
 
@@ -134,15 +185,29 @@ El campo Vendedor (`#exec`) se autocompleta y bloquea para no-admins.
 | `ceven_auth_session` | sesión de auth, compartida entre shell y cotizadores (también puede vivir en sessionStorage) |
 | `_ceven_import_reload` | flag transitorio post-import de backup |
 
-Los que se sincronizan a `app_settings` en Supabase: `cquotes`, `cpl`, `carchive`, `cnac`, `cqc`, `ctarget`, `ctarget_manual`, `clogo`, `clogo_dark`, `cnac_mac24_v2`. `cpipeline` va a su propia tabla.
+La tabla de arriba usa los nombres de Apple. **Poly usa los mismos con el prefijo `poly_`** (`poly_cquotes`, `poly_cpipeline`, …). Neutrales, compartidas entre marcas: `cdark` y `ceven_auth_session`.
+
+Qué se sincroniza lo dice `settingKeys` en `brand.js`, no una lista en este doc — Apple sincroniza 10 claves y Poly 6 (no tiene nacionalización ni target). `cpipeline` va a su propia tabla, fila por fila. `_sync_dirty` (la cola de pendientes) es local por diseño y **nunca** debe entrar en `settingKeys`.
 
 ## Fórmula de precio
 
 `calcP(base, nac, mg) = round( base · (1 + nac/100) / (1 − mg/100) )` — costo base + % nacionalización según modelo (tabla NAC con overrides por cotización), dividido por (1 − margen). Cotizaciones "FOB" (observaciones que empiezan con `FOB`) fuerzan NAC = 0.
 
-## Puntos frágiles conocidos (heredados del original)
+## Puntos frágiles conocidos
 
-- Todo es global: cualquier función nueva puede pisar otra si repite nombre (p. ej. `openSkuOvLink`/`editSkuOvLink` están definidas dos veces en `pipeline-detail.js`; gana la segunda — así venía en el monolito).
-- `qNum` se crea sin `var` (global implícito) en `state.js`.
-- La sync sube el `localStorage` entero por clave (`app_settings.value` puede ser grande, p. ej. logo en base64).
-- El HTML se genera con concatenación de strings + `onclick` inline; cuidado con escapado de comillas.
+- **Todo es global**: cualquier función nueva puede pisar otra si repite nombre, y el que pierde es el que se define primero — en silencio. Hay un chequeo para esto; ver más abajo.
+- `qNum` se crea sin `var` (global implícito) en `state.js`, y se **incrementa en cada carga de página**, así que dos usuarios que abren la app a la vez pueden tomar el mismo número y pisarse la cotización al guardar. El arreglo de fondo es una sequence en Postgres.
+- La sync sube el `localStorage` entero por clave: `app_settings.value` puede ser grande (el logo en base64, el price list), y el poll lo baja **completo cada 15 s**.
+- El HTML se genera concatenando strings. Todo dato que venga de la base o de un Excel **tiene que pasar por `cevenEsc()`** antes de interpolarse: el pipeline y el price list se sincronizan entre todo el equipo, así que un `<img src=x onerror=...>` guardado como nombre de cliente se ejecutaba en la pantalla de todos. Los handlers con datos adentro van por `data-*` + delegación de eventos, nunca por `onclick="fn('"+dato+"')"` — ese escapado no cubre la barra invertida.
+- **La autorización real todavía no existe**: mientras las policies sean `using(true)`, los roles de `auth.js` solo deciden qué botones se muestran. Ver la migración pendiente en `supabase/migrations/`.
+
+## Verificar antes de commitear
+
+No hay tests. Lo mínimo que conviene correr:
+
+```bash
+node scripts/check-precache.js       # rutas del service worker vs. archivos reales
+node --check src/<archivo>.js        # sintaxis de lo que tocaste
+```
+
+Y al mover código entre archivos o agregar módulos, chequear que no haya quedado una función definida dos veces en el bundle de una marca (es lo que pasó con `openSkuOvLink`/`editSkuOvLink`, duplicadas desde el corte del monolito hasta 07/2026). El orden de carga de los `<script>` de cada `index.html` es la fuente de verdad de qué entra en cada bundle.
