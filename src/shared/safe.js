@@ -49,6 +49,41 @@ window.cevenLsSet = function(key, value){
   }
 };
 
+/* Parsea un importe tipeado por el usuario, tolerando formato es-AR y en-US.
+
+   El bug que motivo esto: el input se renderizaba con el numero crudo de JS
+   ("1041.67") pero el parser borraba TODOS los puntos asumiendo separador de
+   miles, asi que reeditar un precio lo multiplicaba por 100. Las dos marcas
+   tenian la misma linea.
+
+   Regla: el ultimo separador (. o ,) es DECIMAL solo si le siguen 1 o 2
+   digitos; en cualquier otro caso es separador de miles.
+     "1041.67"    -> 1041.67      "1.041,67"  -> 1041.67
+     "1,041"      -> 1041         "1.250.000" -> 1250000
+     "USD 1.234,56" -> 1234.56    "-24,5"     -> -24.5
+   Devuelve NaN si no hay ningun digito. */
+window.cevenParseMoney = function(v){
+  if(typeof v === 'number') return isFinite(v) ? v : NaN;
+  if(v === null || v === undefined) return NaN;
+  var s = String(v).trim();
+  if(!s) return NaN;
+  var neg = s.charAt(0) === '-';
+  s = s.replace(/[^0-9.,]/g, '');            // fuera "USD", "$", espacios, NBSP
+  if(!/[0-9]/.test(s)) return NaN;
+  var lastDot = s.lastIndexOf('.');
+  var lastCom = s.lastIndexOf(',');
+  var sep = lastDot > lastCom ? lastDot : lastCom;
+  var intPart = s, decPart = '';
+  if(sep !== -1){
+    var tail = s.slice(sep + 1);
+    if(tail.length === 1 || tail.length === 2){ intPart = s.slice(0, sep); decPart = tail; }
+  }
+  intPart = intPart.replace(/[.,]/g, '');
+  var n = parseFloat((intPart || '0') + (decPart ? '.' + decPart : ''));
+  if(isNaN(n)) return NaN;
+  return neg ? -n : n;
+};
+
 /* Lee y parsea JSON de localStorage sin romper la app si esta corrupto. */
 window.cevenLsJSON = function(key, fallback){
   var raw = null;

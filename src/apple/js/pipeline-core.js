@@ -104,7 +104,9 @@ function addToPipeline(){
   }
   savePipeline(pipe);
 
-  doSave(true);
+  // doSave devuelve false si el localStorage está lleno: no anunciar un
+  // guardado que no ocurrió (savePipeline ya corrió, es otra clave).
+  if(!doSave(true)) return;
 
   showToast('✓ Agregada al pipeline: ' + client + (proyecto?' / '+proyecto:''));
 }

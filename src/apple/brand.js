@@ -34,6 +34,12 @@ window.CEVEN_BRAND = {
   objCols: ['skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt','skuPartialRemMes',
     'skuArchivedQty'],
 
+  // Columnas numericas en Supabase que la app guarda como string con ceros a la
+  // izquierda. col -> ancho. qNum vuelve de la base como 71 (bigint) pero
+  // cquotes lo tiene como '0071': sin re-rellenar, el match falla y el diff
+  // marca la fila como cambiada para siempre.
+  padCols: { qNum: 4 },
+
   // Escalares que aceptan NULL: hay que emitirlos explicitamente como null.
   // Si se omiten del payload, PostgREST conserva el valor viejo y el poll lo
   // vuelve a traer, dejando el pipeline en un ciclo de revert infinito.
@@ -51,7 +57,16 @@ window.CEVEN_BRAND = {
   autoSnapVersion: 2,
   pipeFilePrefix:  'Ceven_Pipeline_Backup_',
   fullBackupFile:  'Ceven_Backup_Completo.json',
-  exportPrefix:    'Ceven_Backup_'
+  exportPrefix:    'Ceven_Backup_',
+
+  // Claves BASE que entran al backup pero NO a settingKeys (no sincronizan).
+  // Son los flags de migracion de las tasas NAC: si se pierden, la migracion
+  // se vuelve a aplicar y pisa los porcentajes que el usuario haya tocado.
+  // (cnac_mac24_v2 ya esta en settingKeys.)
+  backupExtraKeys: ['cnac_neo25_v3'],
+
+  // Como se llama el listado de productos en los carteles al usuario.
+  plLabel: 'price list'
 };
 
 /* Helper de claves: cevenK('cquotes') -> 'cquotes' en Apple, 'poly_cquotes' en Poly.

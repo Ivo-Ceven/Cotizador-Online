@@ -4,7 +4,17 @@ function exportSelectedPDF(){
   if(!keys.length) return;
   var db=getDB();
   var grouped={};
-  for(var i=0;i<db.length;i++){var k=db[i]['N° Cotización'];if(histSel[k]){if(!grouped[k])grouped[k]=[];grouped[k].push(db[i]);}}
+  for(var i=0;i<db.length;i++){
+    var k=db[i]['N° Cotización'];
+    if(!histSel[k]) continue;
+    // Las filas meta_* (overrides de % Nac por cotización) son metadata, no
+    // productos: antes las filtraba el propio saveDB por no tener SKU, y ahora
+    // que persisten hay que excluirlas acá o salen como una fila vacía.
+    var tipo = db[i]['Tipo'];
+    if(typeof tipo === 'string' && tipo.indexOf('meta') === 0) continue;
+    if(!grouped[k])grouped[k]=[];
+    grouped[k].push(db[i]);
+  }
   var logoTag=_logo?'<img src="'+_logo+'" style="height:40px;object-fit:contain;display:block;margin:0 auto 20px">':'';
   var allBlocks='';
   for(var ki=0;ki<keys.length;ki++){
@@ -83,6 +93,9 @@ function exportSelectedPDF(){
 // ── PDF INDIVIDUAL ──
 function buildPDF(){
   if(!items.length && !warrantyItems.length){alert('La cotización está vacía.');return;}
+  // En ARS sin tipo de cambio, dp() no puede dar un importe: antes salía un PDF
+  // con los números de USD rotulados como ARS (1:1).
+  if(!cevenTCValido()){alert('Cargá el tipo de cambio antes de exportar en ARS.');return;}
   doSave();
   var client=document.getElementById('client').value;
   var exec=document.getElementById('exec').value;

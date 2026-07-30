@@ -134,7 +134,10 @@ window.addEventListener('message', function(e) {
   showToast('✓ Garantía agregada · Usá el botón Volver para volver al cotizador');
 });
 
-function showToast(msg) {
+// showToast() vive en shared/notify.js, que ahora carga en las dos marcas.
+// Esta copia se definía DESPUÉS y pisaba la compartida, descartando el segundo
+// argumento — por eso el botón "Deshacer" de notifyUndo() no aparecía en Apple.
+function _warrantiesShowToastLegacy(msg) {
   var t = document.getElementById('ceven-toast');
   if (!t) {
     t = document.createElement('div');

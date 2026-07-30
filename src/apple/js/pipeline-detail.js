@@ -47,44 +47,10 @@ function _pipeSkuOVState(r){
   return 'partial';
 }
 
-// ── OV por línea de SKU ──
-function openSkuOvLink(pipeId, lineKey){
-  var pipe = getPipeline();
-  for(var i=0;i<pipe.length;i++){
-    if(pipe[i].id === pipeId){
-      var url = (pipe[i].skuOvLinks || {})[lineKey];
-      if(url){
-        if(!/^https?:\/\//i.test(url)) url = 'https://' + url;
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
-      return;
-    }
-  }
-}
-
-function editSkuOvLink(pipeId, lineKey){
-  var pipe = getPipeline();
-  var idx = -1;
-  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === pipeId){ idx = i; break; } }
-  if(idx < 0) return;
-  if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
-  if(!pipe[idx].skuOvLinks) pipe[idx].skuOvLinks = {};
-  var current = pipe[idx].skuOvLinks[lineKey] || '';
-  var msg = current
-    ? 'OV actual:\n' + current + '\n\nDejá vacío para quitar, o pegá uno nuevo:'
-    : 'Pegá el link de la Orden de Venta para esta línea:';
-  var newLink = prompt(msg, current);
-  if(newLink === null) return;
-  newLink = newLink.trim();
-  if(newLink === ''){
-    delete pipe[idx].skuOvLinks[lineKey];
-    if(!Object.keys(pipe[idx].skuOvLinks).length) delete pipe[idx].skuOvLinks;
-  } else {
-    pipe[idx].skuOvLinks[lineKey] = newLink;
-  }
-  savePipeline(pipe);
-  renderPipeline();
-}
+// openSkuOvLink() / editSkuOvLink() estaban definidas DOS veces en este archivo
+// (herencia del corte del monolito). La segunda pisaba a esta, así que la que
+// corría era la de más abajo — la que habla de "OC parcial", que es el término
+// correcto. Se borró esta copia muerta; la activa quedó donde estaba.
 
 function togglePipelineRow(id){
   window._pipeExpanded = window._pipeExpanded || {};

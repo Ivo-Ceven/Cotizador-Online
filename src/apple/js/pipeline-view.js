@@ -138,8 +138,11 @@ function renderPipeline(){
   // Recalcular unidades desde DB (corrige categorizaciones guardadas incorrectamente)
   recalcPipelineUnits();
 
-  // Archivar automáticamente cualquier entrada Facturada/Perdida de mes pasado
-  archiveOldEntries();
+  // El archivado automático NO va acá: lo hace _navApply('pipeline') en
+  // shared/ui-core.js. Estaba en los dos lados, así que cada entrada al
+  // pipeline escribía dos veces y disparaba dos veces la cadena de backup
+  // (savePipeline → autoSnapshot → scheduleFullBackup). Además renderPipeline()
+  // lo llama el poll de sync cada 15s, o sea que archivaba sin que nadie navegue.
 
   // Poblar selector de meses archivados
   var archive = getArchive();

@@ -106,8 +106,9 @@ var COLS = ['N° Cotización','Fecha','Hora','Cliente','Proyecto','Ejecutivo','O
             '⚠ Se detectó que los datos del cotizador están vacíos.\n\n' +
             'Se encontró un backup automático del ' + ts + ':\n' +
             '• ' + cotCount + ' filas de cotizaciones\n' +
-            '• ' + pipeCount + ' entradas de pipeline\n' +
-            '• ' + plCount + ' productos en price list\n\n' +
+            '• ' + pipeCount + ' entradas de pipeline\n\n' +
+            'El price list no entra en el backup automático (ocupaba más que\n' +
+            'todo el resto junto); se reimporta desde el Excel.\n\n' +
             '¿Restaurar automáticamente?'
           )) {
             if(snap.cquotes)          localStorage.setItem('cquotes',         JSON.stringify(snap.cquotes));

@@ -1,4 +1,15 @@
-// ── PIPELINE UNDO ──
+/* ============================================================
+   PIPELINE UNDO  ·  compartido por todas las marcas
+   ------------------------------------------------------------
+   Sale de poly/js/undo.js, que era un superset estricto del de
+   Apple: tiene además pushPipeUndoInsert / pushPipeUndoRemove
+   (deshacer un alta y deshacer una baja), que Apple no tenía y
+   ahora gana gratis.
+
+   No toca localStorage ni nada de marca: opera sobre
+   getPipeline() / savePipeline() / renderPipeline(), que cada
+   marca define en su pipeline-core.js.
+   ============================================================ */
 var _pipeUndoStack = [];
 
 function pushPipeUndo(id){
@@ -55,4 +66,3 @@ function updatePipeUndoBtn(){
   var btn = document.getElementById('pipe-undo-btn');
   if(btn) btn.disabled = (_pipeUndoStack.length === 0);
 }
-

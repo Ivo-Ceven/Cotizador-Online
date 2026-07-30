@@ -1,10 +1,36 @@
 // ── DB ──
-function getDB(){ try{return JSON.parse(localStorage.getItem('cquotes')||'[]');}catch(e){return[];} }
+function getDB(){
+  var db = cevenLsJSON('cquotes', []);
+  return Object.prototype.toString.call(db) === '[object Array]' ? db : [];
+}
+
+// Filas "meta_*": guardan datos de la COTIZACIÓN (no líneas de producto), por eso
+// no tienen SKU ni Descripción. Hoy la única es meta_nac (overrides de % Nac).
+// Cualquier consumidor que recorra las filas de una cotización tiene que
+// excluirlas — los .filter(Tipo==='producto'||'garantia') ya lo hacen.
+function isQuoteMetaRow(r){
+  return !!(r && typeof r['Tipo'] === 'string' && r['Tipo'].indexOf('meta') === 0);
+}
+
+// Contador de cotizaciones. Se lee crudo (no es JSON) y tolera cualquier formato
+// guardado; solo el getItem puede tirar excepción (localStorage deshabilitado).
+function _readQCounter(){
+  var raw = null;
+  try{ raw = localStorage.getItem('cqc'); }catch(e){}
+  return parseInt(raw || '0', 10) || 0;
+}
+
+// Devuelve true solo si se escribió de verdad en localStorage.
 function saveDB(db){
-  // Limpiar filas corruptas antes de guardar
-  db = db.filter(function(r){ return r['SKU'] && r['SKU'] !== 'undefined' && r['Descripción'] && r['Descripción'] !== 'undefined'; });
-  try{localStorage.setItem('cquotes',JSON.stringify(db));}catch(e){}
+  // Limpiar filas corruptas antes de guardar (las meta no tienen SKU/Descripción
+  // por diseño: si no se las exceptúa, los overrides de Nac se descartan siempre).
+  db = db.filter(function(r){
+    if(isQuoteMetaRow(r)) return true;
+    return r['SKU'] && r['SKU'] !== 'undefined' && r['Descripción'] && r['Descripción'] !== 'undefined';
+  });
+  var ok = cevenLsSet('cquotes',JSON.stringify(db));
   autoSnapshot();
+  return ok;
 }
 
 function doSave(overwrite){
@@ -21,13 +47,13 @@ function doSave(overwrite){
   var qn=String(qNum).padStart(4,'0');
   var db=getDB();
   var already=false; for(var i=0;i<db.length;i++){if(db[i]['N° Cotización']===qn){already=true;break;}}
-  if(already && !overwrite) return;
+  if(already && !overwrite) return false;
   if(already && overwrite){
     db=db.filter(function(r){return r['N° Cotización']!==qn;});
   }
   for(var j=0;j<items.length;j++){
     var it=items[j];
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded});
+    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin});
   }
   for(var k=0;k<warrantyItems.length;k++){
     var w=warrantyItems[k];
@@ -38,19 +64,23 @@ function doSave(overwrite){
   if(Object.keys(quoteNacOverrides).length){
     db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Tipo':'meta_nac','_qnac':JSON.stringify(quoteNacOverrides)});
   }
-  saveDB(db);
+  return saveDB(db);
 }
 
 function saveQuote(){
   if(!items.length && !warrantyItems.length){alert('La cotización está vacía.');return;}
-  doSave(true); // siempre sobreescribe al guardar manualmente
-  alert('✓ Cotización #'+String(qNum).padStart(4,'0')+' guardada.');
+  // El "✓ guardada" solo si se escribió de verdad: antes salía igual con la
+  // cuota de localStorage llena y no se había guardado nada.
+  if(doSave(true)) alert('✓ Cotización #'+String(qNum).padStart(4,'0')+' guardada.');
 }
 
 function nuevaCotizacion(){
-  if(items.length && !confirm('¿Empezar una cotización nueva? Se perderán los productos actuales si no guardaste.')){return;}
+  // Una cotización armada solo con garantías CevenCare es válida (saveQuote y
+  // buildPDF la aceptan): también hay que avisar antes de borrarla.
+  if((items.length || warrantyItems.length) && !confirm('¿Empezar una cotización nueva? Se perderán los productos y las garantías actuales si no guardaste.')){return;}
   // Incrementar número
-  try { qNum = parseInt(localStorage.getItem('cqc')||'0') + 1; localStorage.setItem('cqc', qNum); } catch(e){}
+  qNum = _readQCounter() + 1;
+  cevenLsSet('cqc', qNum);
   document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
   // Limpiar todo
   items = [];
@@ -79,10 +109,11 @@ function copiarCotizacion(){
   if(!items.length && !warrantyItems.length){ alert('La cotización está vacía, no hay nada para copiar.'); return; }
   if(!confirm('¿Crear una nueva cotización copiando la actual?')) return;
   // Nuevo número de cotización
-  try { qNum = parseInt(localStorage.getItem('cqc')||'0') + 1; localStorage.setItem('cqc', qNum); } catch(e){}
+  qNum = _readQCounter() + 1;
+  cevenLsSet('cqc', qNum);
   document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
-  // Clonar productos y garantías (ids nuevos para los items)
-  items = items.map(function(it){ return Object.assign({}, it, { id: Date.now() + Math.random() }); });
+  // Clonar productos y garantías (ids nuevos y únicos para los items)
+  items = items.map(function(it){ return Object.assign({}, it, { id: _nextItemId() }); });
   warrantyItems = warrantyItems.map(function(w){ return Object.assign({}, w); });
   // Clonar overrides de Nac de la cotización
   quoteNacOverrides = Object.assign({}, quoteNacOverrides);
@@ -90,8 +121,8 @@ function copiarCotizacion(){
   // entrega) se mantienen tal cual están en pantalla → ya forman parte de la copia.
   renderQ();
   renderWarranties();
-  doSave(true); // persistir la copia como cotización nueva
-  showToast('✓ Copia creada como Cotización #' + String(qNum).padStart(4,'0'));
+  // Solo confirmar la copia si realmente se persistió.
+  if(doSave(true)) showToast('✓ Copia creada como Cotización #' + String(qNum).padStart(4,'0'));
 }
 
 // Duplica una cotización del historial como una NUEVA (nuevo número, fecha de hoy)
@@ -101,8 +132,8 @@ function copiarCotizacionHist(qn){
   var rows=db.filter(function(r){return r['N° Cotización']===qn;});
   if(!rows.length){ alert('No se encontró la cotización #'+qn+'.'); return; }
   if(!confirm('¿Crear una copia de la cotización #'+qn+' y abrirla para editar?')) return;
-  var newNum;
-  try { newNum = parseInt(localStorage.getItem('cqc')||'0') + 1; localStorage.setItem('cqc', newNum); } catch(e){ newNum = Date.now(); }
+  var newNum = _readQCounter() + 1;
+  cevenLsSet('cqc', newNum);
   var newQn = String(newNum).padStart(4,'0');
   var now=new Date();
   var date=now.toLocaleDateString('es-AR');
@@ -117,7 +148,7 @@ function copiarCotizacionHist(qn){
     if(!isAdmin && myNombre) c['Ejecutivo']=myNombre; /* la copia queda atribuida a quien la crea */
     db.push(c);
   });
-  saveDB(db);
+  if(!saveDB(db)) return; // no se guardó: no abrir ni anunciar una copia inexistente
   // Abrir la copia en el cotizador (sin pedir confirmación, ya confirmamos arriba)
   editQuoteFromHistory(newQn, true);
   showToast('✓ Copia creada como Cotización #'+newQn);
@@ -165,8 +196,21 @@ function editQuoteFromHistory(qn, skipConfirm){
     // solo si la cotización es vieja y nunca se guardó ese campo.
     var hasSavedTaxes = r['_taxes'] !== undefined && r['_taxes'] !== null && r['_taxes'] !== '';
     var taxesVal = hasSavedTaxes ? r['_taxes'] : (lob ? getIVA(lob) : '');
+    // Restaurar si el margen fue negociado a mano. Sin esto toda cotización
+    // recuperada quedaba como "margen automático" y el primer toque al slider
+    // global le pisaba el precio negociado a todos los ítems.
+    var mgFlag = r['_manualMg'];
+    var hasMgFlag = mgFlag !== undefined && mgFlag !== null && mgFlag !== '';
+    var isManualMg;
+    if(hasMgFlag){
+      isManualMg = (mgFlag === true || mgFlag === 'true' || mgFlag === 1 || mgFlag === '1');
+    } else {
+      // Cotizaciones viejas (guardadas antes de que existiera el flag): si el
+      // margen guardado no es el global de hoy, fue tocado a mano → no pisarlo.
+      isManualMg = (typeof margen === 'number' && !isNaN(margen) && Math.abs(margen - getM()) > 0.005);
+    }
     items.push({
-      id: Date.now() + Math.random(),
+      id: _nextItemId(),
       sku: r['SKU'] || '',
       description: r['Descripción'] || '',
       sellingBase: base,
@@ -177,7 +221,8 @@ function editQuoteFromHistory(qn, skipConfirm){
       qty: parseInt(r['Cantidad']) || 1,
       stock: r['Disponibilidad'] !== '—' ? r['Disponibilidad'] : '',
       taxes: taxesVal,
-      nacIncluded: r['_nacIncluded'] === true || r['_nacIncluded'] === 'true' || r['_nacIncluded'] === 1
+      nacIncluded: r['_nacIncluded'] === true || r['_nacIncluded'] === 'true' || r['_nacIncluded'] === 1,
+      manualMargin: isManualMg
     });
   });
   // Resetear sort para que los productos cargados queden en orden de importación
@@ -192,6 +237,9 @@ function editQuoteFromHistory(qn, skipConfirm){
 
 function exportDB(){
   var db=getDB(); if(!db.length){alert('No hay cotizaciones guardadas.');return;}
+  // Las filas meta_* no son líneas de cotización: no van al Excel.
+  db=db.filter(function(r){ return !isQuoteMetaRow(r); });
+  if(!db.length){alert('No hay cotizaciones guardadas.');return;}
   var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++)o[COLS[i]]=r[COLS[i]]!==undefined?r[COLS[i]]:'';return o;});
   var ws=XLSX.utils.json_to_sheet(data,{header:COLS});
   ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:18},{wch:28},{wch:16},{wch:40},{wch:10},{wch:14},{wch:10},{wch:20},{wch:14}];

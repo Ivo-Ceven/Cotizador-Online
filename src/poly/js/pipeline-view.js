@@ -78,7 +78,8 @@ var statusColorsPill = {
 var statusOrderPipe = ['Proyecto','Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
 
 function renderPipeline(){
-  archiveOldEntries();
+  // El archivado automático NO va acá: lo hace _navApply('pipeline') en
+  // shared/ui-core.js. Ver el comentario largo en apple/js/pipeline-view.js.
 
   // Poblar selector de meses archivados
   var archive = getArchive();

@@ -1,4 +1,8 @@
 // ── ADD PRODUCT ──
+// Contador para los ids de productos manuales: Date.now() solo colisionaba
+// creando dos en el mismo milisegundo, pero el id es la clave de borrado.
+var _manualProdSeq = 0;
+
 function prepAddProd(){
   document.getElementById('np-sku').value='';
   document.getElementById('np-desc').value='';
@@ -46,7 +50,7 @@ function deleteManualProduct(pid){
   if(!confirm('¿Eliminar el producto "'+p.sku+'" del price list?')) return;
   products = products.filter(function(x){ return x.id!==pid; });
   delete selIds[pid];
-  try{localStorage.setItem('cpl',JSON.stringify(products));}catch(e){}
+  if(!cevenLsSet(cevenK('cpl'), JSON.stringify(products))) return;
   var b=document.getElementById('plbadge');b.className='bk bkok';b.textContent='✓ '+products.length+' productos';
   renderCat();
 }
@@ -90,10 +94,11 @@ function saveNewProd(){
     editingManualId = null;
     document.getElementById('addprod-title').textContent = 'Agregar artículo al price list';
   } else {
-    newId = Date.now();
+    // Date.now() solo colisiona si se crean dos productos en el mismo ms.
+    newId = 'pm_' + Date.now() + '_' + (++_manualProdSeq);
     products.push({id:newId,sku:sku,description:desc,sellingPrice:price,lob:mc,modelCol:mc,country:country,manual:true,nacIncluded:nacIncluded});
   }
-  try{localStorage.setItem('cpl',JSON.stringify(products));}catch(e){}
+  if(!cevenLsSet(cevenK('cpl'), JSON.stringify(products))) return;
   var models=uniq(products.map(function(p){return p.modelCol;}));
   var countries=uniq(products.map(function(p){return p.country;}));
   if(countries.indexOf('Uruguay')<0) countries.push('Uruguay');

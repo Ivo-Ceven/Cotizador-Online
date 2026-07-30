@@ -58,22 +58,30 @@ function renderQ() {
     if(k===_qSortKey) ths[t].classList.add(_qSortDir===1?'asc':'desc');
   }
   var html='';
+  // El TC puede ser inválido (getTC() devuelve 0): en ese caso no se puede
+  // expresar el precio en ARS sin mentir, así que se muestra el USD real.
+  var _tcQ = getTC();
+  var _arsQ = getCur()==='ARS' && _tcQ > 0;
   for(var i=0;i<list.length;i++){
     var it=list[i];
-    var priceRaw = getCur()==='ARS' ? Math.round(it.salePrice*getTC()) : it.salePrice;
-    var pricePfx = getCur()==='ARS' ? 'ARS' : 'USD';
+    var priceRaw = _arsQ ? Math.round(it.salePrice*_tcQ) : Math.round((it.salePrice||0)*100)/100;
+    var pricePfx = _arsQ ? 'ARS' : 'USD';
+    // Margen negativo = se vende bajo costo. Se muestra tal cual y en rojo.
+    var mgNum = (typeof it.itemMargin==='number' && !isNaN(it.itemMargin)) ? it.itemMargin : null;
+    var mgNeg = mgNum !== null && mgNum < 0;
+    var mgStyle = mgNeg ? ';color:#d70015;font-weight:600;border-color:#d70015' : '';
     html+='<tr>'
       +'<td style="font-weight:500">'+it.sku+'</td>'
       +'<td class="wrap">'+it.description+'</td>'
       +'<td style="text-align:right"><input class="si" type="number" min="1" value="'+it.qty+'" style="width:48px" onchange="upQty(\''+it.id+'\',this.value)"></td>'
-      +'<td style="text-align:center"><input class="si" type="number" min="0" max="80" step="0.25" value="'+(typeof it.itemMargin==='number'?it.itemMargin.toFixed(2):(it.itemMargin||''))+'" style="width:64px" onchange="upMargin(\''+it.id+'\',this.value)"></td>'
+      +'<td style="text-align:center"><input class="si" type="number" min="0" max="80" step="0.25" value="'+(mgNum!==null?mgNum.toFixed(2):(it.itemMargin||''))+'" title="'+(mgNeg?'Venta por debajo del costo nacionalizado':'')+'" style="width:64px'+mgStyle+'" onchange="upMargin(\''+it.id+'\',this.value)"></td>'
       +'<td style="text-align:right;white-space:nowrap;overflow:visible">'
         +'<div style="display:inline-flex;align-items:center;gap:4px">'
           +'<span style="font-size:11px;color:#6e6e73">'+pricePfx+'</span>'
-          +'<input class="si no-spin" type="text" inputmode="decimal" value="'+priceRaw+'" style="width:96px;text-align:right;font-size:13px" onchange="upSalePriceDirect(\''+it.id+'\',this.value)" onblur="renderQ()">'
+          +'<input class="si no-spin" type="text" inputmode="decimal" value="'+priceRaw+'" style="width:96px;text-align:right;font-size:13px'+mgStyle+'" onchange="upSalePriceDirect(\''+it.id+'\',this.value)" onblur="renderQ()">'
         +'</div>'
       +'</td>'
-      +'<td style="text-align:right;font-weight:500">'+dp(it.salePrice*it.qty)+'</td>'
+      +'<td style="text-align:right;font-weight:500'+(mgNeg?';color:#d70015':'')+'">'+dp(it.salePrice*it.qty)+'</td>'
       +'<td style="text-align:center"><input class="si" type="text" value="'+((it.taxes||'').replace(/(\d),(\d)/g,"$1.$2"))+'" placeholder="—" style="width:70px" onchange="upField(\''+it.id+'\',\'taxes\',this.value)"></td>'
       +'<td style="text-align:center"><input class="si" type="text" value="'+(it.stock||'')+'" placeholder="—" style="width:60px" onchange="upField(\''+it.id+'\',\'stock\',this.value)"></td>'
       +'<td style="text-align:center;white-space:nowrap">'
@@ -124,16 +132,23 @@ function upQty(id,v){
       changedItem = items[i];
     }
   }
-  // Sincronizar cantidad de las garantías vinculadas a este producto
+  // Sincronizar cantidad de las garantías vinculadas a este producto.
+  // Si la garantía tiene vínculo directo (_fromProduct, la que se sugirió sola al
+  // agregar el equipo) ese vínculo manda y es EXCLUSIVO: dos MacBook Pro 14
+  // distintos (M4 Pro ×5 y M4 Max ×1) son de la misma familia pero tienen SKU
+  // distinto, y antes subir la cantidad de uno arrastraba las garantías del otro.
+  // La heurística por familia queda solo para las CevenCare cargadas a mano,
+  // que no tienen con qué producto vincularse.
   if(changedItem){
     var marker  = changedItem.sku + '|' + changedItem.description;
     var prodFam = _macFamilyOf(changedItem.description);
     var changedW = false;
     for(var k=0;k<warrantyItems.length;k++){
       var w = warrantyItems[k];
-      // Vínculo directo (auto-sugerida) o por familia (CevenCare manual)
-      var sameFam = prodFam && _macFamilyOf(w.equipo || w.equipo_desc || '') === prodFam;
-      if(w._fromProduct === marker || sameFam){
+      var linked = w._fromProduct
+        ? (w._fromProduct === marker)
+        : !!(prodFam && _macFamilyOf(w.equipo || w.equipo_desc || '') === prodFam);
+      if(linked){
         w.cantidad = changedItem.qty;
         changedW = true;
       }
@@ -163,11 +178,14 @@ function upNac(id, v){
 }
 function calcMargenFromPrice(base, nac, price){
   // Margen exacto a partir de un precio de venta dado. Fórmula inversa de calcP.
+  // El margen NEGATIVO se conserva: vender bajo el costo nacionalizado es una
+  // pérdida real y tiene que llegar así al pipeline y al Target Anual. Antes se
+  // clampeaba a 0 y el margen ponderado salía inflado (18,2% en vez de 16,0%).
   if(!price || price <= 0) return 0;
   var costoNac = base * (1 + (nac||0)/100);
   if(costoNac <= 0) return 0;
   var mg = (1 - costoNac/price) * 100;
-  if(mg < 0) mg = 0;
+  if(mg < -100) mg = -100; // piso: precio de venta ridículo / dato corrupto
   if(mg > 99) mg = 99;
   return Math.round(mg * 100) / 100; // 2 decimales
 }
@@ -186,18 +204,23 @@ function upSalePrice(id,delta){
 }
 
 function upSalePriceDirect(id, v){
-  // Carga manual del precio unitario; calcula margen exacto con 2 decimales
-  // Limpiar separadores de miles (puntos en es-AR) y aceptar coma decimal
-  var clean = String(v||'').replace(/\./g, '').replace(/,/g, '.');
-  var newP = parseFloat(clean);
+  // Carga manual del precio unitario; calcula margen exacto con 2 decimales.
+  // cevenParseMoney distingue miles de decimales: "1.041,67", "1041,67" y
+  // "1041.67" son todos 1041.67 (antes reeditar un precio ya cargado lo ×100).
+  var newP = cevenParseMoney(v);
   if(isNaN(newP) || newP < 0) return;
+  var curARS = getCur()==='ARS';
+  var tc = getTC();
+  // Sin TC válido no se puede convertir: guardar el número como si fueran USD
+  // sería multiplicar el precio por ~1200. Mejor no tocar nada y avisar.
+  if(curARS && !(tc > 0)){
+    if(typeof showToast === 'function') showToast('⚠ Cargá un tipo de cambio válido antes de editar precios en ARS.');
+    renderQ();
+    return;
+  }
   for(var i=0;i<items.length;i++){
     if(String(items[i].id)===String(id)){
-      var priceUSD = newP;
-      if(getCur()==='ARS'){
-        var tc = getTC();
-        if(tc>0) priceUSD = newP / tc;
-      }
+      var priceUSD = curARS ? (newP / tc) : newP;
       priceUSD = Math.round(priceUSD * 100) / 100;
       items[i].salePrice = priceUSD;
       items[i].itemMargin = calcMargenFromPrice(items[i].sellingBase, items[i].itemNac, priceUSD);
@@ -228,7 +251,11 @@ function openQuoteItemEdit(id){
   var modelOptions = '<option value=""'+(!it.lob?' selected':'')+'>— Sin modelo —</option>'
     + models.map(function(v){ return '<option'+(v===it.lob?' selected':'')+'>'+v+'</option>'; }).join('');
   document.getElementById('qie-model').innerHTML = modelOptions;
-  var isNacIncluded = !!(it.nacIncluded) || it.itemNac === 0;
+  // "El precio YA incluye nacionalización" es un flag propio del ítem. NO se
+  // deduce de itemNac===0: con FOB todos los ítems tienen 0% y antes abrir este
+  // modal y guardar los marcaba nacionalizados para siempre — al sacar el FOB
+  // quedaban en 0% y su costo subestimado ~24%.
+  var isNacIncluded = !!it.nacIncluded;
   document.getElementById('qie-sku').value        = it.sku || '';
   document.getElementById('qie-desc').value       = it.description || '';
   document.getElementById('qie-price').value      = it.sellingBase || '';
@@ -268,16 +295,20 @@ function saveQuoteItemEdit(){
       // que ya tenía el ítem en vez de borrarlo — evita perder la familia/IVA
       // cuando el modelo guardado no coincide con ninguna opción del catálogo.
       var finalLob = model || items[i].lob;
+      // Si el campo quedó vacío se recalcula por categoría, salvo que la
+      // cotización sea FOB (ahí no se nacionaliza nada).
       var nac = nacIncluded ? 0
               : nacVal !== '' ? Math.max(0, Math.min(100, parseFloat(nacVal)||0))
-              : getNac({lob: finalLob, modelCol: finalLob, description: desc});
+              : (isCotizacionFOB() ? 0 : getNac({lob: finalLob, modelCol: finalLob, description: desc}));
+      var mgEdit = (typeof items[i].itemMargin === 'number' && !isNaN(items[i].itemMargin)) ? items[i].itemMargin : getM();
       items[i].sku         = sku;
       items[i].description = desc;
       items[i].sellingBase = price;
       items[i].lob         = finalLob;
       items[i].itemNac     = nac;
       items[i].nacIncluded = nacIncluded;
-      items[i].salePrice   = calcP(price, nac, items[i].itemMargin);
+      items[i].itemMargin  = mgEdit;
+      items[i].salePrice   = calcP(price, nac, mgEdit);
       items[i].taxes       = finalLob ? getIVA(finalLob) : items[i].taxes;
       break;
     }

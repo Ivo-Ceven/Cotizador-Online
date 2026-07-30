@@ -52,8 +52,9 @@ function _checkRecovery(){
       '⚠ Se detectó que los datos del cotizador Poly están vacíos.\n\n' +
       'Se encontró un backup automático del ' + ts + ':\n' +
       '• ' + cotCount + ' filas de cotizaciones\n' +
-      '• ' + pipeCount + ' entradas de pipeline\n' +
-      '• ' + plCount + ' productos en catálogo\n\n' +
+      '• ' + pipeCount + ' entradas de pipeline\n\n' +
+      'El catálogo no entra en el backup automático (ocupaba más que todo\n' +
+      'el resto junto); se reimporta desde el Excel.\n\n' +
       '¿Restaurar automáticamente?',
       function(){
         if(snap.cquotes)    localStorage.setItem('poly_cquotes',   JSON.stringify(snap.cquotes));

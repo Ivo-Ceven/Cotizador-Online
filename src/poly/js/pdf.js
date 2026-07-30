@@ -82,6 +82,9 @@ function exportSelectedPDF(){
 // ── PDF INDIVIDUAL ──
 function buildPDF(){
   if(!items.length){showToast('La cotización está vacía.');return;}
+  // En ARS sin tipo de cambio, dp() no puede dar un importe: antes salía un PDF
+  // con los números de USD rotulados como ARS (1:1).
+  if(!cevenTCValido()){showToast('Cargá el tipo de cambio antes de exportar en ARS.');return;}
   doSave();
   var client=document.getElementById('client').value;
   var opg=document.getElementById('opg').value;

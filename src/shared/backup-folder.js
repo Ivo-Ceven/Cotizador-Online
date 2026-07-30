@@ -1,19 +1,31 @@
-// ── BACKUP AUTOMÁTICO ──
-// Estrategia 1 (Chrome/Edge con File System Access API):
-//   El usuario elige una carpeta UNA vez con "📂 Elegir carpeta de backup".
-//   A partir de ahí, cada vez que entra al pipeline se guarda silenciosamente
-//   en esa carpeta sobreescribiendo "Ceven_Poly_Pipeline_Backup_<fecha>.xlsx".
-// Estrategia 2 (Safari/Firefox): no soporta API, así que se desactiva el auto-backup
-//   silencioso. El usuario puede usar el botón "⬇ Excel" cuando quiera.
+/* ============================================================
+   BACKUP EN CARPETA  ·  compartido por todas las marcas
+   ------------------------------------------------------------
+   Estrategia 1 (Chrome/Edge con File System Access API):
+     El usuario elige una carpeta UNA vez con "📂 Elegir carpeta
+     de backup". A partir de ahi, cada vez que entra al pipeline
+     se guarda silenciosamente el Excel del pipeline ahi, y cada
+     12hs (o 8s despues de cada cambio) el JSON completo.
+   Estrategia 2 (Safari/Firefox): no soporta la API, asi que el
+     auto-backup silencioso queda desactivado. El usuario puede
+     usar el boton "⬇ Excel" cuando quiera.
+
+   Nombres de archivo y clave de IndexedDB salen de CEVEN_BRAND.
+   ============================================================ */
 
 var _pipeBackupHandle = null; // FileSystemDirectoryHandle persistido en IndexedDB
 
-// Nombre de store propio de Poly: si se usa el mismo navegador para Apple y Poly,
-// cada cotizador recuerda su propia carpeta y no pisa los archivos del otro.
-var _POLY_IDB_KEY = 'pipeFolder_poly';
+// Todas las marcas comparten la base 'cevenBackup' en el mismo origin, pero
+// cada una guarda su handle bajo su propia clave (brand.idbKey): asi el mismo
+// navegador recuerda una carpeta distinta por cotizador y no se pisan los
+// archivos. OJO: esos valores no se tocan nunca — cambiarlos le hace perder
+// al usuario el permiso de carpeta que ya concedio.
 function _idbOpen(){
   return new Promise(function(resolve, reject){
     var req = indexedDB.open('cevenBackup', 1);
+    // El guard del contains() no es decorativo: como la base es compartida,
+    // la primera marca que corra el upgrade crea el store y la segunda
+    // tiraria ConstraintError sin el chequeo.
     req.onupgradeneeded = function(){ if(!req.result.objectStoreNames.contains('handles')) req.result.createObjectStore('handles'); };
     req.onsuccess = function(){ resolve(req.result); };
     req.onerror = function(){ reject(req.error); };
@@ -42,18 +54,18 @@ function _idbPut(key, val){
 
 async function pickBackupFolder(){
   if(!('showDirectoryPicker' in window)){
-    showToast('Tu navegador no soporta backup automático en carpeta. Usá Chrome o Edge en escritorio — mientras tanto, tocá "⬇ Excel" para descargar manualmente.');
+    showToast('Tu navegador no soporta backup automatico en carpeta. Usa Chrome o Edge en escritorio — mientras tanto, toca "⬇ Excel" para descargar manualmente.');
     return;
   }
   try {
     var handle = await window.showDirectoryPicker({mode:'readwrite'});
     _pipeBackupHandle = handle;
-    await _idbPut(_POLY_IDB_KEY, handle);
-    showToast('✓ Carpeta configurada — backup completo automático de TODOS los datos (se mantiene al día)');
+    await _idbPut(window.CEVEN_BRAND.idbKey, handle);
+    showToast('✓ Carpeta configurada — backup completo automatico de TODOS los datos (se mantiene al dia)');
     updateBackupButtonLabel();
     autoBackupPipeline(true);
     // Forzar un backup completo inicial al configurar la carpeta
-    localStorage.removeItem('poly_cbackup_full_last');
+    localStorage.removeItem(cevenK('cbackup_full_last'));
     maybeAutoFullBackup();
   } catch(e){ /* user cancelled */ }
 }
@@ -61,11 +73,11 @@ async function pickBackupFolder(){
 async function clearBackupFolder(){
   var prevHandle = _pipeBackupHandle;
   _pipeBackupHandle = null;
-  try { await _idbPut(_POLY_IDB_KEY, null); } catch(e){}
+  try { await _idbPut(window.CEVEN_BRAND.idbKey, null); } catch(e){}
   updateBackupButtonLabel();
-  notifyUndo('Backup automático desactivado.', function(){
+  notifyUndo('Backup automatico desactivado.', function(){
     _pipeBackupHandle = prevHandle;
-    _idbPut(_POLY_IDB_KEY, prevHandle).catch(function(){});
+    _idbPut(window.CEVEN_BRAND.idbKey, prevHandle).catch(function(){});
     updateBackupButtonLabel();
   });
 }
@@ -93,25 +105,30 @@ function _backupDateStamp(){
   return yyyy + '-' + mm + '-' + dd;
 }
 
+// Pide (o revalida) el permiso de escritura sobre la carpeta elegida.
+function _ensureFolderPermission(){
+  if(!_pipeBackupHandle.queryPermission) return Promise.resolve(true);
+  return _pipeBackupHandle.queryPermission({mode:'readwrite'}).then(function(perm){
+    if(perm === 'granted') return true;
+    return _pipeBackupHandle.requestPermission({mode:'readwrite'}).then(function(req){
+      return req === 'granted';
+    });
+  });
+}
+
 async function autoBackupPipeline(silentSuccess){
   if(!_pipeBackupHandle) return;
   var wb = buildPipelineWorkbook();
   if(!wb) return; // pipeline vacío, no escribir
   try {
-    // Verificar permisos
-    if(_pipeBackupHandle.queryPermission){
-      var perm = await _pipeBackupHandle.queryPermission({mode:'readwrite'});
-      if(perm !== 'granted'){
-        var req = await _pipeBackupHandle.requestPermission({mode:'readwrite'});
-        if(req !== 'granted'){
-          showToast('⚠ Permiso de carpeta revocado — reactivá tocando 📂');
-          _pipeBackupHandle = null;
-          updateBackupButtonLabel();
-          return;
-        }
-      }
+    if(!(await _ensureFolderPermission())){
+      showToast('⚠ Permiso de carpeta revocado — reactivá tocando 📂');
+      _pipeBackupHandle = null;
+      updateBackupButtonLabel();
+      return;
     }
-    var fileHandle = await _pipeBackupHandle.getFileHandle('Ceven_Poly_Pipeline_Backup_' + _backupDateStamp() + '.xlsx', {create:true});
+    var name = window.CEVEN_BRAND.pipeFilePrefix + _backupDateStamp() + '.xlsx';
+    var fileHandle = await _pipeBackupHandle.getFileHandle(name, {create:true});
     var writable = await fileHandle.createWritable();
     var arrayBuf = XLSX.write(wb, {bookType:'xlsx', type:'array'});
     await writable.write(arrayBuf);
@@ -128,20 +145,16 @@ async function autoBackupPipeline(silentSuccess){
 }
 
 // ── BACKUP COMPLETO AUTOMÁTICO (2 veces por día, mismo archivo) ──
-// Escribe un JSON con TODO el estado en la carpeta elegida, reemplazando siempre el mismo archivo.
+// Escribe un JSON con TODO el estado en la carpeta elegida, reemplazando
+// siempre el mismo archivo. Lo que entra al JSON lo decide la lista blanca
+// de shared/backup.js — nunca credenciales: este archivo se reescribe cada
+// 8 segundos y la carpeta elegida suele estar sincronizada a OneDrive.
 async function writeFullBackupToFolder(){
   if(!_pipeBackupHandle) return false;
   try {
-    // Verificar permisos de escritura
-    if(_pipeBackupHandle.queryPermission){
-      var perm = await _pipeBackupHandle.queryPermission({mode:'readwrite'});
-      if(perm !== 'granted'){
-        var req = await _pipeBackupHandle.requestPermission({mode:'readwrite'});
-        if(req !== 'granted') return false;
-      }
-    }
+    if(!(await _ensureFolderPermission())) return false;
     var snap = buildFullBackupSnapshot();
-    var fileHandle = await _pipeBackupHandle.getFileHandle('Ceven_Poly_Backup_Completo.json', {create:true});
+    var fileHandle = await _pipeBackupHandle.getFileHandle(window.CEVEN_BRAND.fullBackupFile, {create:true});
     var writable = await fileHandle.createWritable();
     await writable.write(JSON.stringify(snap, null, 2));
     await writable.close();
@@ -156,12 +169,12 @@ async function writeFullBackupToFolder(){
 async function maybeAutoFullBackup(){
   if(!_pipeBackupHandle) return;
   var HALF_DAY = 12*60*60*1000;
-  var last = parseInt(localStorage.getItem('poly_cbackup_full_last')||'0');
+  var last = parseInt(localStorage.getItem(cevenK('cbackup_full_last'))||'0');
   var now = Date.now();
   if(last && (now - last < HALF_DAY)) return;
   var ok = await writeFullBackupToFolder();
   if(ok){
-    localStorage.setItem('poly_cbackup_full_last', String(now));
+    cevenLsSet(cevenK('cbackup_full_last'), String(now));
     showToast('✓ Backup completo automático guardado');
     console.log('[Backup completo] Guardado en', _pipeBackupHandle.name, new Date(now).toLocaleString('es-AR'));
   }
@@ -170,7 +183,7 @@ async function maybeAutoFullBackup(){
 // Restaurar handle al cargar (si el navegador lo permite — Chrome lo permite)
 (async function restoreBackupHandle(){
   try {
-    var h = await _idbGet(_POLY_IDB_KEY);
+    var h = await _idbGet(window.CEVEN_BRAND.idbKey);
     if(h){ _pipeBackupHandle = h; updateBackupButtonLabel(); }
   } catch(e){}
   // Chequear backup completo al cargar y luego cada 30 min mientras la app esté abierta

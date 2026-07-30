@@ -1,6 +1,25 @@
+// ── PARSER DE IMPORTES ──
+// Convierte a Number cualquier texto de un input/celda de plata distinguiendo el
+// separador de miles del decimal. Regla: el ÚLTIMO separador ("." o ",") es el
+// decimal solo si le siguen 1 o 2 dígitos; si le siguen 3 o más (o ninguno) es
+// separador de miles y se descarta.
+//   "1041,67" → 1041.67    "1041.67" → 1041.67    "1.041,67" → 1041.67
+//   "1.041"   → 1041       "1,041"   → 1041       "1.250.000" → 1250000
+// Antes, upSalePriceDirect borraba TODOS los puntos: al reeditar un precio ya
+// guardado ("1041.67") lo convertía en 104167 (×100 silencioso).
+// Devuelve NaN si no hay ningún número en la entrada.
+// cevenParseMoney() vive en shared/safe.js — las dos marcas la usan.
+
+// IDs de ítem de cotización: contador monótono. Date.now()+random colisionaba al
+// agregar varios productos de una sola vez (rmItem borraba dos filas, upQty/upMargin
+// actualizaban dos filas).
+var _itemSeq = 0;
+function _nextItemId(){ return 'it_' + Date.now() + '_' + (++_itemSeq); }
+
 // ── PRICE LIST ──
 (function(){
-  try { var s=localStorage.getItem('cpl'); if(s){ products=JSON.parse(s); initCat(); } } catch(e){}
+  var s = cevenLsJSON('cpl', null);
+  if(s && s.length){ products = s; initCat(); }
 })();
 
 function handlePL(f) {
@@ -66,11 +85,14 @@ function processRows(rows) {
   products=[];
   for(var i=0;i<rows.length;i++) {
     var r=rows[i];
-    var sp=parseFloat(String(r[pK]||'0').replace(/[^0-9,\.]/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.'))||0;
+    var sp=cevenParseMoney(r[pK]); if(isNaN(sp)) sp=0;
     if(sp>0||r[sK]) products.push({id:i,sku:r[sK]||'',lob:r[lK]||'',modelCol:r[mK]||'',country:r[cK]||'',description:r[dK]||'',sellingPrice:sp});
   }
-  try{ localStorage.setItem('cpl',JSON.stringify(products)); }catch(e){}
-  showErr(''); initCat();
+  // El catálogo ya está en memoria: se muestra igual, pero si no se pudo persistir
+  // hay que decirlo en vez de dejar el cartel de "OK".
+  var okPL = cevenLsSet('cpl',JSON.stringify(products));
+  showErr(okPL ? '' : '⚠ El price list se cargó en pantalla pero NO se pudo guardar: se pierde al recargar.');
+  initCat();
 }
 
 // ── Actualizar precios (merge): a diferencia de processRows(), NO reemplaza el catálogo.
@@ -154,7 +176,7 @@ function finishPriceUpdate(rows, hadError){
     var r = rows[i];
     var sku = String(r[skuK]||'').trim();
     if(!sku) continue;
-    var sp = parseFloat(String(r[pK]||'0').replace(/[^0-9,\.]/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.'))||0;
+    var sp = cevenParseMoney(r[pK]); if(isNaN(sp)) sp = 0;
     if(!bySku[sku] || sp > bySku[sku].sellingPrice){
       bySku[sku] = {
         sku: sku,
@@ -195,10 +217,10 @@ function finishPriceUpdate(rows, hadError){
     if(!bySku[products[y].sku]){ products[y].needsReview = true; notReviewed++; }
   }
 
-  try{ localStorage.setItem('cpl', JSON.stringify(products)); }catch(e){}
+  var okUpd = cevenLsSet('cpl', JSON.stringify(products));
   initCat();
-  showErr('');
-  showToast('✓ Precios actualizados: '+updated+' actualizados, '+added+' nuevos agregados, '+notReviewed+' a revisar (no estaban en la lista nueva). Catálogo: '+products.length+' productos.');
+  showErr(okUpd ? '' : '⚠ Los precios se actualizaron en pantalla pero NO se pudieron guardar: se pierden al recargar.');
+  if(okUpd) showToast('✓ Precios actualizados: '+updated+' actualizados, '+added+' nuevos agregados, '+notReviewed+' a revisar (no estaban en la lista nueva). Catálogo: '+products.length+' productos.');
 }
 
 // Elimina del catálogo los SKU con sufijo de país "LL/A" (EE.UU./Canadá) — no eliminan
@@ -208,14 +230,14 @@ function deleteLLASkus(){
   if(!toRemove.length){ alert('No hay SKU terminados en LL/A en el catálogo.'); return; }
   if(!confirm('¿Eliminar '+toRemove.length+' SKU terminados en "LL/A" del catálogo?\nNo afecta cotizaciones ni pipeline ya guardados.')) return;
   products = products.filter(function(p){ return (p.sku||'').toUpperCase().slice(-4) !== 'LL/A'; });
-  try{ localStorage.setItem('cpl', JSON.stringify(products)); }catch(e){}
+  var okDel = cevenLsSet('cpl', JSON.stringify(products));
   if(products.length) initCat();
   else {
     document.getElementById('catui').style.display='none';
     document.getElementById('nopl').style.display='block';
     var b=document.getElementById('plbadge'); b.className='bk bkw'; b.textContent='Sin price list';
   }
-  showToast('✓ '+toRemove.length+' SKU "LL/A" eliminados. Catálogo: '+products.length+' productos.');
+  if(okDel) showToast('✓ '+toRemove.length+' SKU "LL/A" eliminados. Catálogo: '+products.length+' productos.');
 }
 
 // SKU termina en "E/A" con sufijo de país de UNA sola letra (ej. "MDH74E/A") — distinto
@@ -231,14 +253,14 @@ function deleteEASkus(){
   if(!toRemove.length){ alert('No hay SKU con sufijo "E/A" (de una letra) en el catálogo.'); return; }
   if(!confirm('¿Eliminar '+toRemove.length+' SKU con sufijo "E/A" del catálogo?\nNo afecta "LE/A" ni "BE/A" (países reales), ni cotizaciones/pipeline ya guardados.')) return;
   products = products.filter(function(p){ return !isExactEASuffix(p.sku); });
-  try{ localStorage.setItem('cpl', JSON.stringify(products)); }catch(e){}
+  var okDelEA = cevenLsSet('cpl', JSON.stringify(products));
   if(products.length) initCat();
   else {
     document.getElementById('catui').style.display='none';
     document.getElementById('nopl').style.display='block';
     var b=document.getElementById('plbadge'); b.className='bk bkw'; b.textContent='Sin price list';
   }
-  showToast('✓ '+toRemove.length+' SKU "E/A" eliminados. Catálogo: '+products.length+' productos.');
+  if(okDelEA) showToast('✓ '+toRemove.length+' SKU "E/A" eliminados. Catálogo: '+products.length+' productos.');
 }
 
 function toggleCleanupMenu(ev){
@@ -377,8 +399,13 @@ function getFiltered() {
 
 function renderCat() {
   var filtered=getFiltered(), mg=getM(), html='';
+  // MISMO criterio que addToQuote(): si la cotización es FOB o el precio del
+  // producto ya viene nacionalizado (badge NAC✓), no se vuelve a nacionalizar.
+  // Antes el catálogo mostraba USD 1.550 (costo 1000 + 24% nac + 20% mg) y la
+  // cotización cargaba USD 1.250 para el mismo producto.
+  var fobCat = isCotizacionFOB();
   for(var i=0;i<filtered.length;i++){
-    var p=filtered[i], nac=getNac(p), nt=p.sellingPrice*(1+nac/100), sp=calcP(p.sellingPrice,nac,mg), sel=!!selIds[p.id];
+    var p=filtered[i], nac=(fobCat||p.nacIncluded)?0:getNac(p), nt=p.sellingPrice*(1+nac/100), sp=calcP(p.sellingPrice,nac,mg), sel=!!selIds[p.id];
     html+='<tr class="crow'+(sel?' sel':'')+'" onclick="toggleRow('+p.id+')">'
       +'<td style="overflow:visible"><input type="checkbox"'+(sel?' checked':'')+' onclick="event.stopPropagation();toggleRow('+p.id+')"></td>'
       +'<td style="font-weight:500">'+p.sku+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+(p.nacIncluded?' <span style="font-size:10px;color:#6e36c8;font-weight:600;background:#f0e8ff;padding:1px 5px;border-radius:8px;margin-left:2px" title="Precio ya nacionalizado">NAC✓</span>':'')+(p.needsReview?' <span style="font-size:10px;color:#c84e00;font-weight:600;background:#fff3e0;padding:1px 5px;border-radius:8px;margin-left:2px" title="No apareció en la última actualización de precios — verificar costo">⚠ Revisar costo</span>':'')+'</td>'
@@ -443,20 +470,24 @@ function addToQuote() {
   var fob = isCotizacionFOB(); // Si es FOB, nac = 0 para todos los ítems
 
   if(editId !== null) {
-    var p=toAdd[0], nac=fob||p.nacIncluded ? 0 : getNac(p);
+    var p=toAdd[0], nac=(fob||p.nacIncluded) ? 0 : getNac(p);
     for(var i=0;i<items.length;i++){
       if(String(items[i].id)===String(editId)){
+        var mgEd = (typeof items[i].itemMargin==='number') ? items[i].itemMargin : mg;
         items[i].sku=p.sku; items[i].description=p.description;
         items[i].sellingBase=p.sellingPrice; items[i].lob=p.lob;
-        items[i].itemNac=nac; items[i].salePrice=calcP(p.sellingPrice,nac,items[i].itemMargin);
+        items[i].itemNac=nac; items[i].salePrice=calcP(p.sellingPrice,nac,mgEd);
+        // El flag viaja con el producto: "precio ya nacionalizado" es un dato del
+        // artículo, no algo a deducir después de itemNac===0 (que también pasa con FOB).
+        items[i].nacIncluded=!!p.nacIncluded;
         items[i].taxes=getIVA(p.lob);
       }
     }
     editId=null;
   } else {
     for(var j=0;j<toAdd.length;j++){
-      var p2=toAdd[j], nac2=fob||p2.nacIncluded ? 0 : getNac(p2);
-      var newItem={id:Date.now()+j*13+Math.floor(Math.random()*1000),sku:p2.sku,lob:p2.lob,description:p2.description,sellingBase:p2.sellingPrice,itemNac:nac2,itemMargin:mg,salePrice:calcP(p2.sellingPrice,nac2,mg),qty:1,stock:'',taxes:getIVA(p2.lob)};
+      var p2=toAdd[j], nac2=(fob||p2.nacIncluded) ? 0 : getNac(p2);
+      var newItem={id:_nextItemId(),sku:p2.sku,lob:p2.lob,description:p2.description,sellingBase:p2.sellingPrice,itemNac:nac2,itemMargin:mg,salePrice:calcP(p2.sellingPrice,nac2,mg),qty:1,stock:'',taxes:getIVA(p2.lob),nacIncluded:!!p2.nacIncluded};
       items.push(newItem);
       // Sugerir garantía si es Mac
       if(typeof suggestMacWarranty==='function') suggestMacWarranty(newItem);

@@ -32,6 +32,10 @@ window.CEVEN_BRAND = {
   // Columnas jsonb: viajan como objeto/array nativo, no como string.
   objCols: ['salas'],
 
+  // Columnas numericas en Supabase que la app guarda como string con ceros a la
+  // izquierda (col -> ancho). Poly numera por OPG, que es texto libre: ninguna.
+  padCols: {},
+
   // Escalares que aceptan NULL: hay que emitirlos explicitamente como null.
   // `factura` es el caso que motivo esto: al vaciar el campo se seteaba null,
   // el upsert omitia la columna, PostgREST conservaba el numero viejo y el poll
@@ -49,7 +53,14 @@ window.CEVEN_BRAND = {
   autoSnapVersion: 1,
   pipeFilePrefix:  'Ceven_Poly_Pipeline_Backup_',
   fullBackupFile:  'Ceven_Poly_Backup_Completo.json',
-  exportPrefix:    'Ceven_Poly_Backup_'
+  exportPrefix:    'Ceven_Poly_Backup_',
+
+  // Claves BASE que entran al backup pero NO a settingKeys (no sincronizan).
+  // Poly no tiene flags de migracion todavia.
+  backupExtraKeys: [],
+
+  // Como se llama el listado de productos en los carteles al usuario.
+  plLabel: 'catálogo'
 };
 
 /* Helper de claves: cevenK('cquotes') -> 'cquotes' en Apple, 'poly_cquotes' en Poly.

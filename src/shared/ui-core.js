@@ -1,8 +1,25 @@
+/* ============================================================
+   UI CORE  ·  compartido por todas las marcas
+   ------------------------------------------------------------
+   Sale de apple/js/utils.js + poly/js/utils.js, que eran 96%
+   identicos. Aca vive TODO lo generico: logo, navegacion entre
+   vistas, formateo de numeros/moneda, helpers de mes de cierre
+   y el cartel de error.
+
+   Lo que era exclusivo de Apple (margenes, nacionalizacion,
+   IVA) se fue a apple/js/pricing.js. Poly no tiene equivalente.
+
+   Depende de: brand.js (cevenK), safe.js (cevenLsSet), state.js
+   (_darkMode, _logo, _logoDark, editingManualId).
+   Se carga DESPUES de state.js y ANTES de pricing.js.
+   ============================================================ */
+
 // ── LOGO ──
 function applyLogo(){
   var src = (_darkMode && _logoDark) ? _logoDark : _logo;
   var img = document.getElementById('logo-img');
   var ph  = document.getElementById('logo-ph');
+  if(!img || !ph) return;
   if(src){ img.src = src; img.style.display = 'block'; ph.style.display = 'none'; }
   else   { img.style.display = 'none'; ph.style.display = 'inline-block'; }
   // Placeholder indica qué logo se puede subir
@@ -11,24 +28,26 @@ function applyLogo(){
 }
 (function(){
   try {
-    var s = localStorage.getItem('poly_clogo');
+    var s = localStorage.getItem(cevenK('clogo'));
     if(s) _logo = s;
-    var sd = localStorage.getItem('poly_clogo_dark');
+    var sd = localStorage.getItem(cevenK('clogo_dark'));
     if(sd) _logoDark = sd;
-    applyLogo();
   } catch(e){}
+  applyLogo();
 })();
 
 function handleLogo(f) {
   if(!f) return;
   var r = new FileReader();
   r.onload = function(e) {
+    // Un logo es un data-URL grande: es justo el caso donde localStorage
+    // revienta por cuota. cevenLsSet avisa en vez de fallar en silencio.
     if(_darkMode){
       _logoDark = e.target.result;
-      try { localStorage.setItem('poly_clogo_dark', _logoDark); } catch(ex){}
+      cevenLsSet(cevenK('clogo_dark'), _logoDark);
     } else {
       _logo = e.target.result;
-      try { localStorage.setItem('poly_clogo', _logo); } catch(ex){}
+      cevenLsSet(cevenK('clogo'), _logo);
     }
     applyLogo();
   };
@@ -38,14 +57,22 @@ function handleLogo(f) {
 // ── SCREENS ──
 // Aplica una vista SIN tocar el historial. Lo usa cevenNav (en popstate y en el
 // arranque). goTo() es la entrada pública, que además integra el botón Atrás.
+//
+// Las vistas 'nac' y 'qnac' existen sólo en Apple: van con typeof porque este
+// archivo lo comparten las dos marcas.
 function _navApply(n) {
   var el = document.getElementById('p-'+n);
   if(!el) return;                          // vista desconocida: no hacemos nada
   var pgs = document.querySelectorAll('.pg');
   for(var i=0;i<pgs.length;i++) pgs[i].classList.remove('on');
   el.classList.add('on');
+  if(n === 'nac'  && typeof renderNac === 'function') renderNac();
+  if(n === 'qnac' && typeof renderQuoteNac === 'function') renderQuoteNac();
   if(n === 'history') renderHistory();
   if(n === 'addprod' && editingManualId === null) prepAddProd();
+  // archiveOldEntries() se llama ACÁ Y SOLO ACÁ. renderPipeline() no debe
+  // volver a llamarlo: cada pasada que archiva algo dispara savePipeline() →
+  // autoSnapshot() → scheduleFullBackup(), y duplicarlo duplica ese trabajo.
   if(n === 'pipeline'){ archiveOldEntries(); renderPipeline(); if(typeof autoBackupPipeline === 'function') autoBackupPipeline(false); if(typeof maybeAutoFullBackup === 'function') maybeAutoFullBackup(); }
   if(typeof cevenUpdateAccountBar === 'function') cevenUpdateAccountBar();
 }
@@ -80,7 +107,7 @@ function setMesCierre(v){
   if(!s) return;
   s.value = v || '';
 }
-// Genera <option> de meses/años para un período (default: año a año+4)
+// Genera <option> de meses/años para un período (año actual a año+4)
 function generateMesYearOptions(currentVal){
   var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   var now = new Date();
@@ -103,13 +130,41 @@ function generateMesYearOptions(currentVal){
 })();
 function fD(n) { return n.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-function getCur() { return document.getElementById('cur').value; }
-function getTC() { return parseFloat(document.getElementById('tc').value) || 1; }
-function dp(u) { return getCur()==='ARS' ? 'ARS '+fI(Math.round(u*getTC())) : 'USD '+fI(u); }
+// ── MONEDA ──
+function getCur() { var el = document.getElementById('cur'); return el ? el.value : 'USD'; }
 
-function showErr(m) { var e=document.getElementById('errbox'); e.textContent=m; e.style.display=m?'block':'none'; }
+// Devuelve el tipo de cambio, o 0 si falta / es inválido.
+//
+// Antes esto era `parseFloat(...) || 1`. El fallback estaba para evitar dividir
+// por cero, pero convertía un TC vacío en una cotización a 1:1: un ítem de
+// USD 1.041 se imprimía "ARS 1.041" y salía así al cliente. Ahora 0 significa
+// "no hay TC" y quien lo use TIENE que chequearlo (ver cevenTCValido).
+function getTC() {
+  var el = document.getElementById('tc');
+  if(!el) return 0;
+  var v = parseFloat(el.value);
+  if(isNaN(v) || v <= 0) return 0;
+  return v;
+}
+
+// ¿Se puede mostrar/exportar precios con la configuración actual?
+// En USD el TC es irrelevante; en ARS hace falta un TC > 0.
+// El PDF debe bloquear la exportación si esto da false.
+function cevenTCValido(){ return getCur() !== 'ARS' || getTC() > 0; }
+
+// Precio formateado. Si estamos en ARS sin TC NO inventa un número: lo dice.
+function dp(u) {
+  if(getCur() !== 'ARS') return 'USD '+fI(u);
+  var tc = getTC();
+  if(tc <= 0) return 'ARS — (falta TC)';
+  return 'ARS '+fI(Math.round(u*tc));
+}
+
+function showErr(m) { var e=document.getElementById('errbox'); if(!e) return; e.textContent=m; e.style.display=m?'block':'none'; }
 
 function toggleTC() {
-  document.getElementById('tc').style.display = getCur()==='ARS' ? 'block' : 'none';
-  document.getElementById('cond-cur').textContent = getCur()==='ARS' ? 'Precios unitarios expresados en pesos argentinos' : 'Precios unitarios expresados en dólares estadounidenses';
+  var tc = document.getElementById('tc');
+  var cond = document.getElementById('cond-cur');
+  if(tc) tc.style.display = getCur()==='ARS' ? 'block' : 'none';
+  if(cond) cond.textContent = getCur()==='ARS' ? 'Precios unitarios expresados en pesos argentinos' : 'Precios unitarios expresados en dólares estadounidenses';
 }

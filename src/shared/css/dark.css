@@ -134,7 +134,7 @@ body.dark .tgt-lbl{color:var(--ct2)!important}
 /* toast notification */
 body.dark .dk-toast{background:rgba(60,60,67,.8)!important}
 /* pipeline: ver por mes */
-body.dark .pipe-mpill{background:var(--c2)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
+body.dark .pipe-mpill{background:var(--c1)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark .pipe-mpill-on{background:var(--ct1,#f5f5f7)!important;color:var(--c1,#1d1d1f)!important;border-color:var(--ct1,#f5f5f7)!important}
 body.dark .pipe-month-wrap{background:var(--c1)!important;border-color:var(--cb)!important}
 body.dark .pipe-month-wrap th{background:var(--ch)!important;color:var(--ct2)!important;border-color:var(--cb)!important}

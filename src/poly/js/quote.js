@@ -73,19 +73,23 @@ function upQty(id,v){
 
 // Carga manual del precio unitario — sin fórmula, sin margen: el valor tipeado ES el precio.
 function upUnitPrice(id, v){
-  var clean = String(v||'').replace(/\./g, '').replace(/,/g, '.');
-  if(clean.trim()===''){
+  if(String(v||'').trim()===''){
     for(var j=0;j<items.length;j++){ if(String(items[j].id)===String(id)) items[j].salePrice=''; }
     renderQ(); return;
   }
-  var newP = parseFloat(clean);
+  // cevenParseMoney (shared/safe.js): antes se borraban TODOS los puntos, así que
+  // reeditar un precio con decimales lo multiplicaba por 100.
+  var newP = cevenParseMoney(v);
   if(isNaN(newP) || newP < 0){ renderQ(); return; }
+  var priceUSD = newP;
+  if(getCur()==='ARS'){
+    var tc = getTC();
+    // TC inválido: guardar el número ARS como si fueran USD sería un ×1200 mudo.
+    if(tc <= 0){ showErr('Cargá el tipo de cambio antes de tipear precios en ARS.'); renderQ(); return; }
+    priceUSD = newP / tc;
+  }
   for(var i=0;i<items.length;i++){
-    if(String(items[i].id)===String(id)){
-      var priceUSD = newP;
-      if(getCur()==='ARS'){ var tc=getTC(); if(tc>0) priceUSD = newP / tc; }
-      items[i].salePrice = Math.round(priceUSD * 100) / 100;
-    }
+    if(String(items[i].id)===String(id)) items[i].salePrice = Math.round(priceUSD * 100) / 100;
   }
   renderQ();
 }
