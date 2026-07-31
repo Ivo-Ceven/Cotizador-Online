@@ -88,25 +88,32 @@ Requisitos que impone `sync.js`:
 
 La sync manda `apikey` = publishable key y `Authorization: Bearer <access_token del usuario>` (lo toma de `ceven_auth_session` en cada request, con retry post-refresh si expira). Las policies exigen usuario logueado; el rol `anon` no tiene ningún privilegio:
 
-```sql
-alter table public.pipeline     enable row level security;
-alter table public.app_settings enable row level security;
-create policy "authenticated full access" on public.pipeline
-  for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on public.app_settings
-  for all to authenticated using (true) with check (true);
-revoke all on table public.pipeline from anon;
-revoke all on table public.app_settings from anon;
-```
+Desde el **31/07/2026** hay cuatro policies por tabla (una por operación) en vez de una sola `for all using(true)`. Las definen las migraciones `20260730120000_rls_por_rol_y_marca.sql` y `20260731090000_exigir_dominio_ceven.sql`; el detalle y el porqué están ahí y en `HISTORIAL.md`. En resumen:
 
-> Nota de diseño: cualquier usuario **logueado** puede leer/escribir todo — los datos son compartidos por el equipo y los roles (admin/ventas/lector) se aplican en la UI. El linter de Supabase lo marca como WARN (`using (true)`); es deliberado en esta etapa. Un endurecimiento futuro por roles requeriría claims en el JWT y policies por rol.
+| Quién | Lee | Escribe |
+|---|---|---|
+| `anon` (publishable key sola, sin sesión) | nada | nada |
+| Autenticado **sin** email `@ceven.com` | **nada** | nada |
+| `@ceven.com` con rol `lector` | todo | nada |
+| `@ceven.com` con rol `ventas` | todo | solo las marcas de su `brands` (o todas si es `NULL`) |
+| `@ceven.com` con rol `admin` | todo | todo |
+
+Las policies llaman a cuatro funciones: `ceven_is_staff()` (dominio), `ceven_role()`, `ceven_is_writer()` y `ceven_can_write_brand(b)`.
+
+Dos decisiones que conviene no revertir sin entenderlas:
+
+- **El dominio se exige dentro de la policy**, no solo en la config de GoTrue. Que el signup público esté apagado y no haya OAuth habilitado es config de dashboard: invisible desde el repo y silenciosa si cambia. Con `ceven_is_staff()` en la policy, prender "Sign in with Google" deja de ser un agujero.
+- **El rol sale del claim `user_role`**, que inyecta el Custom Access Token Hook desde `public.user_roles`. **Nunca** de `user_metadata`: ese campo lo edita el propio usuario con `PUT /auth/v1/user` (el mismo endpoint que usa "cambiar mi contraseña"), así que leerlo en una policy sería una escalada a admin de un request.
+
+Efecto secundario esperado: un cambio de rol no es inmediato — se aplica cuando el usuario refresca el token (~1 h) o vuelve a entrar. Para forzarlo, cerrarle la sesión.
 
 ## 2. Autenticación (GoTrue)
 
 - Proveedor **Email/Password** habilitado, sin confirmación por mail (los usuarios los crea el admin ya confirmados).
 - **Signups públicos deshabilitados** (Dashboard → Authentication → Sign In/Up): la única vía de alta es la Edge Function `admin-users`, que valida dominio y admin server-side.
 - Usuarios con email `@ceven.com` (validado server-side en la Edge Function; el client-side es solo UX).
-- Perfil en `user_metadata`: `{ "nombre": "Fer Castro", "role": "admin" | "ventas" | "lector" }`.
+- Perfil en `user_metadata`: `{ "nombre": "Fer Castro", "role": "admin" | "ventas" | "lector" }`. **El `role` de acá es solo una pista para la UI** — el autoritativo vive en `public.user_roles` (ver la sección de RLS). Los escribe juntos la Edge Function.
+- **Custom Access Token Hook activo** (Authentication → Hooks): `public.custom_access_token_hook` agrega el claim `user_role` a cada token. Si se desactiva, las policies dan `lector` a todos y la app queda en solo lectura.
 - **Crear manualmente el usuario `admin@ceven.com`** (Dashboard → Authentication → Add user, auto-confirm). Es admin por bootstrap aunque no tenga `role` en metadata.
 
 Endpoints que usa la app: `POST /auth/v1/token?grant_type=password`, `?grant_type=refresh_token`, `POST /auth/v1/logout`, `PUT /auth/v1/user` (cambio de contraseña propia).
@@ -129,81 +136,15 @@ Endpoints que usa la app: `POST /auth/v1/token?grant_type=password`, `?grant_typ
 
 - Errores: status ≥ 400 con `{ "message": "..." }` (el frontend muestra `message`).
 
-Implementación de referencia (Deno, usa la `service_role` key que la plataforma inyecta como `SUPABASE_SERVICE_ROLE_KEY` — nunca exponerla en el frontend):
+**El código fuente vive en `supabase/functions/admin-users/index.ts`** (versionado desde el 31/07/2026; antes existía solo desplegado, con una copia inlineada acá que quedó desactualizada). Usa la `service_role` key que la plataforma inyecta como `SUPABASE_SERVICE_ROLE_KEY` — nunca exponerla en el frontend.
 
-```ts
-import { createClient } from "npm:@supabase/supabase-js@2";
+Lo que conviene saber sin abrir el archivo:
 
-const admin = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-);
-
-Deno.serve(async (req) => {
-  const cors = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, content-type, apikey",
-  };
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status, headers: { ...cors, "Content-Type": "application/json" },
-    });
-
-  // 1) Validar que quien llama es el admin
-  const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-  const { data: caller } = await admin.auth.getUser(token);
-  if (caller?.user?.email?.toLowerCase() !== "admin@ceven.com")
-    return json({ message: "Solo el administrador puede gestionar usuarios." }, 403);
-
-  const { action, email, password, nombre, role } = await req.json();
-  const findByEmail = async (e: string) => {
-    const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
-    return data?.users.find(u => u.email?.toLowerCase() === e.toLowerCase());
-  };
-
-  try {
-    if (action === "list") {
-      const { data, error } = await admin.auth.admin.listUsers({ perPage: 1000 });
-      if (error) throw error;
-      return json({ users: data.users.map(u => ({
-        email: u.email,
-        nombre: (u.user_metadata as any)?.nombre ?? "",
-        role:   (u.user_metadata as any)?.role ?? "",
-      })) });
-    }
-    if (action === "create") {
-      const { error } = await admin.auth.admin.createUser({
-        email, password, email_confirm: true, user_metadata: { nombre, role },
-      });
-      if (error) throw error;
-      return json({ ok: true });
-    }
-    const user = await findByEmail(email);
-    if (!user) return json({ message: "Usuario no encontrado." }, 404);
-    if (action === "delete") {
-      const { error } = await admin.auth.admin.deleteUser(user.id);
-      if (error) throw error;
-      return json({ ok: true });
-    }
-    if (action === "reset_password") {
-      const { error } = await admin.auth.admin.updateUserById(user.id, { password });
-      if (error) throw error;
-      return json({ ok: true });
-    }
-    if (action === "update_profile") {
-      const { error } = await admin.auth.admin.updateUserById(user.id, {
-        user_metadata: { ...user.user_metadata, nombre, role },
-      });
-      if (error) throw error;
-      return json({ ok: true });
-    }
-    return json({ message: "Acción inválida." }, 400);
-  } catch (e) {
-    return json({ message: (e as Error).message ?? "Error interno." }, 400);
-  }
-});
-```
+- **Valida server-side** que quien llama sea `admin@ceven.com` (con su `access_token`), que el email sea del dominio y que el rol sea válido. Las validaciones del frontend son solo UX.
+- **Escribe el rol en los dos lados**: `public.user_roles` (el autoritativo, que leen las policies vía el claim del JWT) y `user_metadata` (pista para la UI). Van juntas para que no diverjan.
+- **`list` lee el rol de `user_roles`**, no de `user_metadata`: es el que la base realmente aplica. Un usuario sin fila se muestra como `lector` y se marca con `sinRol`, porque eso es lo que el hook le va a dar.
+- **`delete` no toca `user_roles`**: la FK tiene `on delete cascade`.
+- **Un cambio de rol no es inmediato**: las policies leen el claim del JWT, que se refresca al vencer el token (~1 h) o al volver a entrar. La respuesta de `update_profile` trae `avisoRol` con ese texto.
 
 ## 4. Checklist de puesta en marcha
 

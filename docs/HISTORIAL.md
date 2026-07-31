@@ -283,16 +283,15 @@ validaciones server-side.
 ## Pendientes
 
 ### 🔴 Urgente — depende del usuario
-- **Actualizar la Edge Function `admin-users`**: escribe el rol solo en
-  `user_metadata`, que después de la migración de RLS del 31/07 **la base ignora**.
-  Crear o editar un usuario desde el modal "👤 Usuarios" no le cambia los permisos
-  reales: queda como `lector` efectivo hasta que se corrija a mano con un `UPDATE`
-  sobre `user_roles`. El diff está en el paso 5 de la migración.
 - **No hay backup de los datos productivos**: viven SOLO en el `localStorage` del
   navegador del usuario, sin copia en la base. Exportar el backup JSON y, ya
   logueado, importarlo para sembrar Supabase.
 - **Protección de contraseñas filtradas desactivada** (Authentication → Passwords).
   Es lo único que reporta hoy el linter de seguridad de Supabase.
+- **Probar el alta de usuarios de punta a punta**: crear uno con rol `lector` desde
+  el modal y verificar que aparezca en `user_roles` con ese rol. La función v2 se
+  desplegó y se comprobó que rechaza llamadas sin token o con token inválido, pero
+  el ciclo completo necesita el token del admin, o sea la app abierta.
 
 ### Técnicos
 - **Nada de lo hecho el 28–30/07 se probó en un navegador**: la verificación fue
@@ -304,9 +303,10 @@ validaciones server-side.
 - La pastilla offline de `pwa.js`: la rama que depende de `navigator.onLine` sigue
   sin verificar (la de "push pendientes" sí está verificada).
 - `shared/pwa.js` necesita `updateViaCache: 'none'` en el `register()`.
-- La Edge Function `admin-users` escribe el rol solo en `user_metadata`: después de
-  aplicar la migración hay que agregarle el upsert a `user_roles` o el modal de
-  usuarios deja de cambiar permisos reales (detalle en la migración, paso 5).
+- El modal "👤 Usuarios" del cliente todavía no muestra el campo `sinRol` que
+  ahora devuelve `list` (marca a un usuario sin fila en `user_roles`, que el hook
+  trata como `lector`). Tampoco muestra el `avisoRol` de `update_profile`, que
+  explica que el cambio se aplica recién al re-loguear.
 
 ### Decisiones de datos pendientes
 Dos cosas que los fixes del 30/07 cortan hacia adelante pero no limpian hacia atrás:
