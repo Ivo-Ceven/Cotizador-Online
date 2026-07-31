@@ -191,7 +191,10 @@ function renderPipeline(){
   var sumPipeline = st ? sumMonto : (sumMonto - facturadoData.monto - perdidoData.monto);
 
   var dash = document.getElementById('pipe-dashboard');
-  if(filtered.length){
+  /* Se pinta SIEMPRE, aunque el filtro no deje ninguna fila: antes se escondía
+     entero y el usuario veía desaparecer los carteles en vez de leer 0, que es
+     una respuesta ambigua. Los acumuladores ya arrancan en 0. */
+  if(dash){
     dash.style.display = 'block';
     document.getElementById('dash-count').textContent = filtered.length;
     document.getElementById('dash-salas').textContent  = sumSalas;
@@ -215,8 +218,6 @@ function renderPipeline(){
     });
     pillsHtml += '</div>';
     document.getElementById('dash-by-status').innerHTML = pillsHtml;
-  } else {
-    dash.style.display = 'none';
   }
 
   // ── TABLA ──
@@ -226,8 +227,8 @@ function renderPipeline(){
     var r = filtered[i];
     var expanded = window._pipeExpanded && window._pipeExpanded[r.id];
     var salasCount = (r.salas||[]).length;
-    var mesSel = '<select data-act="mes" data-i="'+i+'" style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:11px;font-family:inherit;background:#fff;min-width:110px">'
-      + generateMesYearOptions(r.mesCierre||'') + '</select>';
+    // Cierre estimado (shared/monthpicker.js)
+    var mesSel = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-i="'+i+'"', {cls:'mpk-sm'});
     var estado = r.estado || 'Cotizado';
     var statusSel = '<select data-act="est" data-i="'+i+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">';
     statusOrderPipe.forEach(function(s){ statusSel += '<option value="'+s+'"'+(s===estado?' selected':'')+'>'+s+'</option>'; });
@@ -263,7 +264,14 @@ function renderPipeline(){
     if(expanded) html += renderPipelineDetailRow(r, i);
   }
 
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">Sin entradas en pipeline. Cargá una cotización y tocá "Agregar a Pipeline".</td></tr>';
+  // Vacío por filtro y vacío de verdad son dos cosas distintas: decir "cargá una
+  // cotización" cuando el pipeline tiene filas y el filtro no matchea ninguna
+  // manda a buscar el problema donde no está.
+  var _hayFiltros = !!(q || ex || monthFilter || _stFilters.length || st);
+  var _vacio = _hayFiltros
+    ? 'Ningún registro coincide con los filtros. Tocá "✕ Filtros" para limpiarlos.'
+    : 'Sin entradas en pipeline. Cargá una cotización y tocá "Agregar a Pipeline".';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
   pipeBindDelegation();
 }

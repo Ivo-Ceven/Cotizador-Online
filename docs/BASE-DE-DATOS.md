@@ -152,5 +152,7 @@ Lo que conviene saber sin abrir el archivo:
 2. ~~Correr el SQL de tablas + policies~~ ✔ (migraciones `esquema_inicial_pipeline_y_settings`, `brand_multimarcas_pk_compuestas`, `rls_solo_usuarios_autenticados`)
 3. ~~Desplegar la Edge Function `admin-users`~~ ✔
 4. ~~Completar `src/shared/config.js`~~ ✔ (publishable key)
-5. **Pendiente (Dashboard):** deshabilitar signups públicos y crear `admin@ceven.com` (auto-confirmado).
-6. **Pendiente:** abrir la app, loguearse y restaurar el backup JSON con el botón ⬆️ — el post-import siembra Supabase con esos datos (con la base vacía, el primer login también siembra lo que haya en el localStorage del navegador).
+5. ~~Deshabilitar signups públicos y crear `admin@ceven.com`~~ ✔ (30/07/2026). Cerrar el signup no afecta el alta desde la app: `admin-users` usa la Admin API (`auth.admin.createUser`), que no pasa por `disable_signup`.
+6. ~~Activar el Custom Access Token Hook~~ ✔ (31/07/2026, Dashboard → Authentication → Hooks). Sin él nadie tiene claim `user_role` y las policies tratan a todos como `lector`.
+7. **Pendiente (Dashboard):** activar la protección de contraseñas filtradas (Authentication → Passwords). Es lo único que reporta hoy el linter de seguridad.
+8. **Pendiente:** abrir la app, loguearse y restaurar el backup JSON con el botón ⬆️ — el post-import siembra Supabase con esos datos (con la base vacía, el primer login también siembra lo que haya en el localStorage del navegador).

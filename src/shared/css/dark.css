@@ -32,6 +32,15 @@ body.dark select{background:var(--c3)!important;color:var(--ct1)!important;borde
 body.dark textarea{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark input::placeholder,body.dark textarea::placeholder{color:var(--ct3)!important}
 body.dark input:focus,body.dark select:focus,body.dark textarea:focus{border-color:var(--cblue)!important}
+/* selector de mes (shared/monthpicker.js). El mes elegido NO se repite acá:
+   usa var(--ct1)/var(--c0), que se dan vuelta solos con los tokens. */
+body.dark .mpk{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
+body.dark .mpk:hover{background:#48484a!important}
+body.dark .mpk-inherit{background:var(--c1)!important;color:var(--ct2)!important}
+body.dark .mpk-pop{background:var(--c1)!important;border-color:var(--cb)!important}
+body.dark .mpk-nav:hover,body.dark .mpk-m:hover{background:rgba(255,255,255,.09)!important}
+body.dark .mpk-ft-btn{background:var(--c3)!important;color:var(--ct2)!important;border-color:var(--cb)!important}
+body.dark .mpk-ft-btn:hover{color:var(--ct1)!important}
 /* botones */
 body.dark .bd{background:var(--ct1)!important;color:var(--c0)!important}
 body.dark .bd:hover{background:#e5e5e5!important}

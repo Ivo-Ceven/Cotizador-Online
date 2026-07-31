@@ -76,8 +76,11 @@ function renderPipeline(){
     window.addEventListener('resize', function(){
       clearTimeout(_pipeRT);
       _pipeRT = setTimeout(function(){
-        var d = document.getElementById('pipe-dashboard');
-        if(d && d.style.display !== 'none') renderPipeline();
+        // Antes se miraba el display del dashboard, que ahora está siempre visible
+        // (y que además quedaba en 'block' aunque el usuario se hubiera ido a otra
+        // vista). Lo que hay que preguntar es si el pipeline está en pantalla.
+        var pg = document.getElementById('p-pipeline');
+        if(pg && pg.classList.contains('on')) renderPipeline();
       }, 200);
     });
   }
@@ -470,7 +473,12 @@ function renderPipeline(){
   var margenPipelineGlobal = pipelineMargenM > 0 ? (pipelineMargenW / pipelineMargenM) : 0;
 
   var dash = document.getElementById('pipe-dashboard');
-  if(filtered.length){
+  /* El dashboard se pinta SIEMPRE, incluso cuando el filtro no deja ninguna fila.
+     Antes se escondía entero con display:none y el usuario no leía "0": veía
+     desaparecer los carteles, que es una respuesta ambigua —¿filtró de más o se
+     rompió algo?—. Todos los acumuladores de arriba arrancan en 0, así que la
+     misma pasada sirve para el caso vacío sin ninguna rama aparte. */
+  if(dash){
     // Cuando hay filtro de estado: mostrar unidades directas del filtro
     // Cuando no: excluir Facturado/Perdido del dashboard general
     var fD = byStatus['Facturado'] || {qMac:0,qIph:0,qIpad:0,qServ:0,qAcc:0,monto:0,count:0,marW:0,marM:0};
@@ -597,6 +605,9 @@ function renderPipeline(){
           +'</div>';
       });
       pillsHtml += '</div>';
+    } else if(!filtered.length){
+      // La matriz Estado × Mes sin filas sería un encabezado vacío: mejor decirlo.
+      pillsHtml += '<div style="font-size:12px;color:#aeaeb2;padding:10px 2px;width:100%">Ningún registro coincide con los filtros.</div>';
     } else {
       // Vista expandida: matriz Estado × Mes
       // Ordenar meses cronológicamente, "sin-fecha" al final
@@ -691,8 +702,6 @@ function renderPipeline(){
     }
 
     document.getElementById('dash-by-status').innerHTML = pillsHtml;
-  } else {
-    dash.style.display = 'none';
   }
 
   // ── TABLA ──
@@ -723,11 +732,9 @@ function renderPipeline(){
     // resuelve el listener delegado de #pipe-body.
     var rowA = ' data-pid="'+cevenEsc(realId)+'" data-pkey="'+cevenEsc(expandKey)+'"'+(isVirtual?' data-pvirtual="1"':'');
 
-    // Cierre estimado: select combinado Mes/Año
+    // Cierre estimado (shared/monthpicker.js)
     var curMC = r.mesCierre || '';
-    var mesSel = '<select data-pact="mes"'+rowA+' style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:11px;font-family:inherit;background:#fff;min-width:110px">'
-      + generateMesYearOptions(curMC)
-      + '</select>';
+    var mesSel = cevenMonthField(curMC, ' data-pact="mes"'+rowA, {cls:'mpk-sm'});
 
     var estado = r.estado || 'Cotizado';
     var statusOpts = ['Proyecto','Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
@@ -809,7 +816,14 @@ function renderPipeline(){
     }
   }
 
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="14" style="text-align:center;color:#aeaeb2;padding:24px">Sin entradas en pipeline. Cargá una cotización y tocá "Agregar a Pipeline".</td></tr>';
+  // Vacío por filtro y vacío de verdad son dos cosas distintas: decir "cargá una
+  // cotización" cuando el pipeline tiene 40 filas y el filtro no matchea ninguna
+  // manda a buscar el problema donde no está.
+  var _hayFiltros = !!(q || ex || fam || monthFilter || _stFilters.length || st);
+  var _vacio = _hayFiltros
+    ? 'Ningún registro coincide con los filtros. Tocá "✕ Filtros" para limpiarlos.'
+    : 'Sin entradas en pipeline. Cargá una cotización y tocá "Agregar a Pipeline".';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="14" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
 }
 

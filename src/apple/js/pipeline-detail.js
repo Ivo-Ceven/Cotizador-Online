@@ -433,9 +433,11 @@ function renderPipelineDetailRow(r, db, pipe){
     var lnMC = skuMesCierre[lineKey] || r.mesCierre || '';
     var hasOwn = skuMesCierre[lineKey] !== undefined;
     var mesCSel = ln._isPartialRem
-      ? '<span style="font-size:10px;color:#6e6e73">'+cevenEsc(lnMC ? lnMC : '—')+'</span>'
-      : '<select data-dact="mes"'+lineA+' title="'+(hasOwn?'Override propio':'Heredado de la cotización')+'" style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:10px;font-family:inherit;background:'+(hasOwn?'#fff':'#fafafa')+';color:'+(hasOwn?'#1d1d1f':'#6e6e73')+';min-width:100px">'
-        + generateMesYearOptions(lnMC) + '</select>';
+      ? '<span style="font-size:10px;color:#6e6e73">'+cevenEsc(cevenMesLabel(lnMC) || '—')+'</span>'
+      : cevenMonthField(lnMC, ' data-dact="mes"'+lineA, {
+          cls: 'mpk-xs' + (hasOwn ? '' : ' mpk-inherit'),
+          title: hasOwn ? 'Override propio de este SKU' : 'Heredado de la cotización'
+        });
 
     // Celda de cantidad: cuando estado=Facturado y qty>1, permitir facturación parcial (opt-in)
     var qtyCell;

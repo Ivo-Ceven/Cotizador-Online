@@ -163,9 +163,7 @@ function cevenIsValidSession(){
 function cevenShowApp(){
   var ov = document.getElementById('ceven-login');
   if(ov) ov.style.display = 'none';
-  var lbl = document.getElementById('ceven-logout-label');
-  if(lbl) lbl.textContent = 'Salir (' + (cevenSessionUser() || '') + ')';
-  cevenUpdateAccountBar();
+  cevenSyncUserUI();
   cevenApplyVendorAutofill();
   /* Aviso para los módulos que NO deben pintar datos del equipo antes del
      login (shared/todos.js). Se dispara también en la carga inicial con
@@ -174,21 +172,9 @@ function cevenShowApp(){
   try{ window.dispatchEvent(new Event('ceven-session-ready')); }catch(e){}
 }
 /* Estado de la UI que depende de quién sos. Corre en cada cambio de vista
-   (_navApply) y al mostrar la app después del login.
-
-   La barra flotante #ceven-account-bar es la forma vieja y ya no existe en
-   ninguna página: la cuenta vive en la navbar (shared/navbar.js), que se ve
-   en todas las vistas. Se conserva el bloque por si alguna página la vuelve a
-   usar, pero NADA acá abajo puede depender de que exista — antes un `return`
-   temprano dejaba sin aplicar los permisos de los botones. */
-function cevenUpdateAccountBar(){
-  var bar = document.getElementById('ceven-account-bar');
-  if(bar){
-    var quote = document.getElementById('p-quote');
-    var onMain = cevenIsValidSession() &&
-      ((quote && quote.classList.contains('on')) || !!document.getElementById('brand-panel'));
-    bar.style.display = onMain ? 'flex' : 'none';
-  }
+   (_navApply) y al mostrar la app después del login. Los botones se buscan de
+   a uno y con guarda: cada página tiene los suyos, y ninguno es obligatorio. */
+function cevenSyncUserUI(){
   var ubtn = document.getElementById('ceven-users-btn');
   if(ubtn) ubtn.style.display = cevenIsAdmin() ? '' : 'none';
   var pbtn = document.getElementById('btn-add-pipeline');

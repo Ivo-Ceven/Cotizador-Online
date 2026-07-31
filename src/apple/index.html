@@ -73,9 +73,8 @@
       </div>
       <div>
         <label class="lbl">Mes estimado de cierre</label>
-        <select id="mes-cierre-mY" style="width:100%">
-          <option value="">— Mes/Año —</option>
-        </select>
+        <!-- Lo llena shared/ui-core.js con el picker de shared/monthpicker.js -->
+        <div id="mes-cierre-box"></div>
       </div>
       <div>
         <label class="lbl">Estado</label>
@@ -541,6 +540,10 @@
 
 <!-- Navegación (botón Atrás del navegador + Escape) -->
 <script src="../shared/nav.js"></script>
+
+<!-- Selector de mes: va ANTES de ui-core.js, que lo usa al cargar para armar
+     el campo "Mes estimado de cierre" -->
+<script src="../shared/monthpicker.js"></script>
 
 <!-- Capa de sincronización con Supabase -->
 <script src="../shared/sync.js"></script>

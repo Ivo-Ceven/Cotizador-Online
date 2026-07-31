@@ -100,7 +100,7 @@ function _navApply(n) {
   // volver a llamarlo: cada pasada que archiva algo dispara savePipeline() →
   // autoSnapshot() → scheduleFullBackup(), y duplicarlo duplica ese trabajo.
   if(n === 'pipeline'){ archiveOldEntries(); renderPipeline(); if(typeof autoBackupPipeline === 'function') autoBackupPipeline(false); if(typeof maybeAutoFullBackup === 'function') maybeAutoFullBackup(); }
-  if(typeof cevenUpdateAccountBar === 'function') cevenUpdateAccountBar();
+  if(typeof cevenSyncUserUI === 'function') cevenSyncUserUI();
 }
 
 function goTo(n) {
@@ -160,37 +160,20 @@ function cevenActEl(ev, container){
 // ── UTILS ──
 function fI(n) { return Math.round(n).toLocaleString('es-AR'); }
 
-// Helpers para Mes de cierre (Safari-friendly: dos selects)
+// Helpers para Mes de cierre. El campo es el picker de shared/monthpicker.js,
+// que expone `value` igual que el <select> que reemplazó.
 function getMesCierre(){
   var s = document.getElementById('mes-cierre-mY');
-  if(!s || !s.value) return '';
-  return s.value;
+  return (s && s.value) ? s.value : '';
 }
 function setMesCierre(v){
-  var s = document.getElementById('mes-cierre-mY');
-  if(!s) return;
-  s.value = v || '';
+  cevenMonthSet('mes-cierre-mY', v);
 }
-// Genera <option> de meses/años para un período (año actual a año+4)
-function generateMesYearOptions(currentVal){
-  var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  var now = new Date();
-  var yr = now.getFullYear();
-  var html = '<option value=""'+((!currentVal)?' selected':'')+'>— Mes/Año —</option>';
-  for(var y = yr; y <= yr + 4; y++){
-    for(var m = 1; m <= 12; m++){
-      var mm = (m < 10 ? '0'+m : ''+m);
-      var val = y + '-' + mm;
-      html += '<option value="'+val+'"'+(currentVal===val?' selected':'')+'>'+meses[m-1]+' '+y+'</option>';
-    }
-  }
-  return html;
-}
-// Poblar el select combinado al cargar
+// El campo se arma desde acá y no en los dos index.html: así el markup del
+// picker vive en un solo lado y no se despega entre marcas.
 (function(){
-  var sel = document.getElementById('mes-cierre-mY');
-  if(!sel) return;
-  sel.innerHTML = generateMesYearOptions('');
+  var box = document.getElementById('mes-cierre-box');
+  if(box) box.innerHTML = cevenMonthField('', ' id="mes-cierre-mY"', {cls:'mpk-full'});
 })();
 function fD(n) { return n.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 

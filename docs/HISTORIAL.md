@@ -9,16 +9,119 @@ Bitácora de qué se hizo, cuándo y **por qué**. Complementa a `ARQUITECTURA.m
 
 ---
 
-## Estado actual (30/07/2026)
+## Estado actual (31/07/2026)
 
 Plataforma multi-marca deployada en **https://cotizadores-ceven.vercel.app**
 (Vercel, team CEVEN, proyecto `cotizadores-ceven`). Shell con login + selector de
 marcas, cotizador **Apple** y cotizador **Poly** completos, HP pendiente.
-PWA instalable y funcional offline. Base Supabase `iqewnebpdyctexavtpmt`.
+PWA instalable y funcional offline. Base Supabase `iqewnebpdyctexavtpmt`, con RLS
+por rol y marca aplicada y restringida a cuentas `@ceven.com`.
 
 **Todavía no está en uso real** (sin usuarios ni datos productivos), que es lo que
 permitió el refactor del 28–30/07 sin red de contención. Los signups públicos están
 cerrados: la única alta es la Edge Function `admin-users`.
+
+---
+
+## 31/07/2026 · Pipeline: el dashboard ya no desaparece, y el mes de cierre se elige
+
+Módulo nuevo `src/shared/monthpicker.js`. `APP_VERSION` 4.5 → 4.6.
+
+**Los carteles desaparecían con un filtro vacío**. `renderPipeline()` terminaba en
+`if(filtered.length){ …pintar… } else { dash.style.display='none' }`, en las dos
+marcas. Tocar un filtro sin resultados no daba "0": borraba el dashboard entero,
+que es una respuesta ambigua —¿filtré de más, o se rompió algo?—. Ahora se pinta
+siempre: todos los acumuladores ya arrancaban en 0, así que la misma pasada
+sirve para el caso vacío y no hay una segunda rama que mantener. Las pastillas
+por estado ya se dibujaban todas, incluso en 0, así que el resultado es coherente
+con lo que la vista compacta venía haciendo.
+
+De paso, dos cosas que colgaban de eso:
+- El cartel de tabla vacía decía siempre *"Cargá una cotización y tocá Agregar a
+  Pipeline"*. Con 40 filas y un filtro que no matchea ninguna, eso manda a buscar
+  el problema donde no está: ahora distingue vacío-por-filtro de vacío-de-verdad.
+- El re-render por `resize` preguntaba `if(dash.style.display !== 'none')`, que con
+  el cambio sería siempre cierto. Peor: ese inline quedaba en `'block'` aunque el
+  usuario se hubiera ido a otra vista, así que redimensionar la ventana
+  re-renderizaba el pipeline desde el catálogo. Ahora pregunta si `#p-pipeline`
+  está en pantalla, que es lo que se quería preguntar.
+
+**El selector de mes de cierre**. Era un `<select>` de **61 opciones** (vacío + 12
+meses × 5 años) generado por `generateMesYearOptions()`, uno por fila del
+pipeline y otro por línea de SKU. Además de incómodo, tenía un bug real: el rango
+arrancaba **siempre en el año actual**, así que una fila con cierre en un año
+anterior no tenía `<option>` que la representara y el select se dibujaba en
+"— Mes/Año —". En pantalla esa fila **no tenía fecha**; en los datos sí. Y ofrecía
+cinco años para adelante, cuatro de los cuales no se usan nunca.
+
+Ahora el campo es un botón que muestra el valor formateado (`Nov 2026`) venga del
+año que venga, y al tocarlo abre una grilla de 12 meses con el año arriba y
+flechas para moverse, más "Sin fecha" y "Este mes". Dos clicks para cualquier
+fecha, y el mes en curso queda marcado.
+
+**Por qué no `<input type="month">`**: es lo que el helper viejo evitaba —su
+comentario decía "Safari-friendly: dos selects"— y sigue valiendo. Safari no lo
+soporta y degrada a un campo de texto libre, que en una PWA que se usa desde
+iPhone es peor que el select. La grilla propia se ve igual en todos lados.
+
+El contrato con el resto de la app no cambió: el `<button>` lleva el valor en
+`value` y dispara un `change` que burbujea, así que los tres listeners delegados
+que ya existían (`data-pact`, `data-dact`, `data-act`) siguen funcionando sin
+tocarlos. El popover va en `<body>` con `position:fixed` porque la tabla del
+pipeline tiene `overflow-x:auto` y columnas sticky: cualquier cosa absoluta
+adentro queda recortada.
+
+**Verificación**: estática (`node --check`, `check-precache` 66 rutas,
+`check-globals` sin colisiones). Sin navegador, otra vez.
+
+---
+
+## 31/07/2026 · Barra de navegación compartida + pasada de diseño
+
+Módulo nuevo `src/shared/navbar.js`. `APP_VERSION` 4.4 → 4.5.
+
+**El problema**: no había navegación. Se saltaba entre vistas con botones sueltos
+repartidos por cada toolbar (📋 al historial y 🎯 al pipeline desde la cotización,
+"← Volver" desde adentro), la cuenta vivía en una barra flotante abajo a la
+derecha que **solo aparecía en la vista de cotización**, y —lo más riesgoso—
+mirando la pantalla no había forma de saber en qué marca estabas. Apple y Poly se
+ven casi iguales y sus datos **no se mezclan**: cargar una cotización en el
+cotizador equivocado era un error fácil y silencioso.
+
+**La solución**: una barra superior única para el shell y las dos marcas, con el
+chip de marca a la izquierda (🍎 Ceven · Apple, click = volver al panel), un ítem
+por vista en el medio y la cuenta a la derecha (dark mode, usuarios, avatar con
+iniciales + nombre + rol, contraseña, salir).
+
+**Declarativa, como el resto del contrato**: los ítems salen de
+`CEVEN_BRAND.navItems`, así que `navbar.js` no tiene ni un `if` por marca. Poly
+simplemente no declara `nac`. `alsoFor` resuelve las vistas sin ítem propio
+(`addprod` marca Catálogo, `qnac` marca Cotización) y `needsPipeline` esconde el
+ítem al rol lector, que no puede usarlo.
+
+**Dos cosas que costaron entender**:
+- Los tokens de color (`:root`) vivían en `dark.css`, que el shell **no carga**:
+  la barra quedaba sin colores en el panel de marcas. Se movieron a `base.css` y
+  en `dark.css` quedó solo lo de `body.dark`.
+- `cevenUpdateAccountBar()` arrancaba con `if(!bar) return`. Al sacar la barra
+  flotante de las tres páginas, ese `return` temprano se llevaba puestos los
+  permisos que se aplicaban más abajo (`#btn-add-pipeline` para el rol lector).
+  Quedó como `cevenSyncUserUI()`, sin nada obligatorio y con guarda por botón.
+
+**De paso, la tipografía**: la pila era `-apple-system, BlinkMacSystemFont,
+sans-serif`, que en Windows —donde trabaja el equipo— no matchea nada y caía en
+Arial. Ahora arranca por la cara variable de cada sistema (Segoe UI Variable en
+Win11, San Francisco en macOS) y hay una escala de tres roles (`.h2`/`.h3`/`.lbl`)
+que reemplaza los `style="font-size:16px;font-weight:500"` repetidos en cada
+título de vista. Sin webfonts a propósito: es una PWA offline-first y la CSP no
+permite orígenes externos. Además: foco visible con el teclado, `prefers-reduced-
+motion`, números tabulares en las columnas de plata, y las tarjetas de marca del
+shell pasaron de `<div onclick>` a `<a href>` (se abren con el teclado y en
+pestaña nueva).
+
+**Verificación**: estática otra vez — `node --check`, `check-precache` (65 rutas)
+y `check-globals` (sin colisiones). **Nadie abrió esto en un navegador**, y es
+todo UI nueva. Ver "Pendientes".
 
 ---
 
@@ -294,9 +397,19 @@ validaciones server-side.
   el ciclo completo necesita el token del admin, o sea la app abierta.
 
 ### Técnicos
-- **Nada de lo hecho el 28–30/07 se probó en un navegador**: la verificación fue
+- **Nada de lo hecho el 28–31/07 se probó en un navegador**: la verificación fue
   estática (sintaxis, precache, globales duplicadas, y bancos de prueba en Node
   para sync y auth). Falta abrir las dos marcas y recorrer los flujos.
+- **El picker de mes nunca se vio en pantalla** (31/07): abrir/cerrar, elegir con
+  el popover cerca del borde de la ventana (tiene que darse vuelta hacia arriba),
+  que el `change` llegue al pipeline y guarde, "Sin fecha", y que una fila con
+  cierre de un año pasado se muestre con su mes y no vacía.
+- **La barra superior nunca se vio en pantalla** (31/07): es UI enteramente nueva.
+  Hay que mirar el ítem activo en cada vista y en las dos que no tienen ítem
+  propio (`addprod`, `qnac`), que el chip de marca vuelva al panel, que el 🌙
+  cambie de ícono, que el 👤 aparezca **solo** para el admin, que el rol lector no
+  vea Pipeline, y cómo queda todo en modo oscuro y con la ventana angosta
+  (por debajo de 820 px se esconden nombre y rol).
 - **Verificar `nav.js` en un navegador real** (Atrás en el celular, Escape en cada
   modal). Nunca se probó de forma interactiva.
 - Sacar del repo los tres archivos de datos commiteados el 24/07.

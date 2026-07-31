@@ -24,11 +24,13 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `pdf-core.js` | `downloadQuotePDF()` (html2canvas + jsPDF) y las hojas de estilo del documento |
 | `undo.js` | Deshacer cambios del pipeline, incluidas inserciones y borrados de fila |
 | `nav.js` | `window.cevenNav`: integra el botón Atrás del navegador/celular y la tecla Escape (una sola pila de overlays, un solo listener `popstate`) |
+| `monthpicker.js` | Campo de mes/año (el "cierre estimado"): un `<button>` que abre una grilla de 12 meses con el año arriba. `cevenMonthField()` devuelve el HTML, `cevenMonthSet()` lo escribe desde código y `cevenMesLabel()` formatea `2026-11` → `Nov 2026`. El botón expone `value` y dispara `change` igual que el `<select>` que reemplazó |
+| `navbar.js` | Barra superior de todas las páginas: chip de marca, un ítem por vista (leídos de `CEVEN_BRAND.navItems`) y el bloque de cuenta (dark mode, usuarios, quién sos + rol, contraseña, salir). `cevenNavbarSync()` marca la vista activa y esconde lo que el rol no puede usar |
 | `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos |
 | `todos.js` | Organizador de tareas del equipo (tabla `todos`, poll cada 15 s). Solo lo usa el shell |
 | `pwa.js` | Registro del service worker, aviso de versión nueva, botón instalar, pastilla de cambios pendientes |
 | `init.js` | Pinta la versión y sincroniza el ícono de dark mode |
-| `css/base.css`, `css/dark.css` | Estilos, idénticos para todas las marcas |
+| `css/base.css`, `css/dark.css` | Estilos, idénticos para todas las marcas. Los tokens de color (`:root`), la pila tipográfica (`--f-ui`/`--f-disp`) y la escala `.h1`/`.h2`/`.h3`/`.sub`/`.lbl` viven en `base.css`, porque el shell **no** carga `dark.css` — ahí quedó solo lo de `body.dark` |
 
 El historial de decisiones y de por qué cada cosa está como está vive en [`HISTORIAL.md`](HISTORIAL.md).
 
@@ -51,6 +53,7 @@ Nació de dos HTML monolíticos (7.365 y 2.627 líneas) que en 07/2026 se partie
 | `padCols` | columnas que vuelven del servidor como número pero se guardan con ceros a la izquierda (`qNum` → `'0071'`) |
 | `idbKey`, `appTag`, `backupVersion`, `pipeFilePrefix`, `fullBackupFile`, `exportPrefix`, `backupExtraKeys` | identidad de los backups de la marca |
 | `plLabel` | cómo se llama el listado de productos en los carteles (`price list` / `catálogo`) |
+| `navItems` | vistas que muestra la barra superior, en orden: `{view, label, alsoFor?, needsPipeline?}`. `alsoFor` lista las vistas sin ítem propio que igual marcan a esta como activa (`addprod` cuelga de `catalog`, `qnac` de `quote`); `needsPipeline` esconde el ítem al rol lector |
 
 `window.cevenK(base)` devuelve `prefix + base`. **Todo** acceso a localStorage desde código compartido pasa por ahí.
 
@@ -65,14 +68,15 @@ Orden en el `index.html` de cada marca:
 | # | Posición | Archivo | Por qué ahí |
 |---|---|---|---|
 | 1 | `<head>` | `../vendor/` (xlsx, html2canvas, jsPDF) + `../shared/css/` | |
-| 2 | tras la barra de cuenta | **`brand.js`** | Define `CEVEN_BRAND` y `cevenK()`. **Va primero**: todo `shared/` depende de él |
+| 2 | apenas abre el `<body>` | **`brand.js`** | Define `CEVEN_BRAND` y `cevenK()`. **Va primero**: todo `shared/` depende de él |
 | 3 | ídem | `../shared/safe.js` | Primitivas que usan todos los demás |
 | 4 | ídem | `../shared/config.js`, `auth.js`, `notify.js` + guard inline | El guard redirige al shell si no hay sesión válida |
-| 5 | tras el markup | `../shared/nav.js`, `sync.js` | `sync.js` es un IIFE; si `SUPABASE_URL` está vacío se desactiva y la app corre 100 % local |
-| 6 | ídem | `js/state.js` | Variables globales y constantes de la marca |
-| 7 | ídem | `../shared/ui-core.js` → `js/pricing.js` (solo Apple) | `ui-core` corre IIFEs que necesitan `cevenK`, `cevenLsSet` y las globales de `state.js` |
-| 8 | ídem | resto de los módulos, propios y compartidos | |
-| 9 | tras el zócalo de versión | `../shared/init.js` | Pinta versión y sincroniza el ícono de dark mode |
+| 5 | ídem, **antes del markup** | `../shared/navbar.js` | Se pinta apenas carga, así la barra ya ocupa su lugar cuando se parsea el resto y la página no salta. Necesita `brand.js` (ítems) y `auth.js` (rol) ya cargados; sus handlers usan `goTo`/`toggleDark`, que se definen más abajo pero recién corren al hacer click |
+| 6 | tras el markup | `../shared/nav.js`, `monthpicker.js`, `sync.js` | `sync.js` es un IIFE; si `SUPABASE_URL` está vacío se desactiva y la app corre 100 % local |
+| 7 | ídem | `js/state.js` | Variables globales y constantes de la marca |
+| 8 | ídem | `../shared/ui-core.js` → `js/pricing.js` (solo Apple) | `ui-core` corre IIFEs que necesitan `cevenK`, `cevenLsSet`, las globales de `state.js` y `cevenMonthField()` de `monthpicker.js` (arma el campo "Mes estimado de cierre" dentro de `#mes-cierre-box`) |
+| 9 | ídem | resto de los módulos, propios y compartidos | |
+| 10 | tras el zócalo de versión | `../shared/init.js` | Pinta versión y sincroniza el ícono de dark mode (incluido el 🌙 de la barra superior) |
 
 Módulos propios de Apple (`src/apple/js/`):
 
@@ -134,7 +138,9 @@ UI (DOM) ⇄ variables globales (items, products, …)
 
 `goTo(nombre)` alterna divs `.pg`: `quote` (cotización), `catalog`, `addprod`, `nac`, `qnac` (NAC por cotización), `history`, `pipeline`. Modales: Target Anual, Análisis por SKU, edición de ítem, usuarios, CevenCare.
 
-Desde 2026-07-27 la navegación pasa por `shared/nav.js`:
+Desde 2026-07-31 la superficie de navegación es la **barra superior** (`shared/navbar.js`), presente en todas las vistas y en el shell. Los saltos entre vistas de primer nivel salen de ahí; los botones sueltos que había repartidos por las toolbars (📋 al historial, 🎯 al pipeline, 🌙 dark mode) se quitaron. El "← Volver" de cada vista se conservó: en `addprod` y `qnac` es la **única** salida, porque no tienen ítem propio en la barra, y en las demás sigue siendo la vuelta al paso anterior del flujo. La barra se resincroniza en cada cambio de vista: `_navApply()` llama a `cevenSyncUserUI()` (en `auth.js`), que aplica los permisos del rol y termina llamando a `cevenNavbarSync()`.
+
+La integración con el historial del navegador pasa por `shared/nav.js`:
 
 - `goTo(n)` delega en `cevenNav.goToView(n)`, que aplica la vista **y** empuja una entrada al historial (`#nombre` en la URL). La función que solo pinta la vista, sin tocar el historial, es `_navApply(n)` — la usa el `popstate` y el arranque.
 - Cada modal llama a `cevenNav.openOverlay(closeXxx)` al abrirse (guardado con un flag `_wasOpen` para no apilar dos veces) y a `cevenNav.notifyClosed(closeXxx)` al cerrarse.
@@ -151,10 +157,10 @@ Desde 2026-07-27 la navegación pasa por `shared/nav.js`:
 > backup solo en Poly; las clases de dark mode y `moveArchiveEntryMonth` solo en
 > Apple). Con una tercera marca cada bug costaba tres arreglos.
 
-1. **`src/hp/brand.js`**: copiar el de Poly y ajustar `id`, `prefix` (`'hp_'`), `settingKeys`, `pipeCols`/`numCols`/`objCols`/`nullableCols` y los campos de backup. Este archivo es casi todo lo que la marca necesita declarar.
-2. **`src/hp/index.html`**: cargar `brand.js` primero, después `../shared/safe.js`, `config.js`, `auth.js`, `notify.js` + el guard de sesión, y al final los módulos compartidos y los propios (ver "El orden de carga importa").
+1. **`src/hp/brand.js`**: copiar el de Poly y ajustar `id`, `prefix` (`'hp_'`), `settingKeys`, `pipeCols`/`numCols`/`objCols`/`nullableCols`, `navItems` y los campos de backup. Este archivo es casi todo lo que la marca necesita declarar.
+2. **`src/hp/index.html`**: cargar `brand.js` primero, después `../shared/safe.js`, `config.js`, `auth.js`, `notify.js` + el guard de sesión, enseguida `navbar.js`, y al final los módulos compartidos y los propios (ver "El orden de carga importa").
 3. **Módulos propios en `src/hp/js/`**: solo lo que sea genuinamente distinto. Poly, que es la marca más simple, tiene 13 archivos y ~1.900 líneas; casi todo eso es su modelo de pipeline por OPG.
-4. Activar la tarjeta en el shell (`src/index.html`): quitar la clase `soon` y agregar el `onclick`.
+4. Activar la tarjeta en el shell (`src/index.html`): convertir el `<div class="mcard soon">` en `<a class="mcard" href="hp/">` y sacarle el `<span class="badge">Próximamente</span>`. El emoji de la marca va además en el mapa `MARKS` de `shared/navbar.js`, que es de donde sale el chip de la barra superior.
 5. **Registrar los archivos nuevos en `ASSETS` de `src/sw.js`** (y el `index.html` en `DOCS`), subir `APP_VERSION` en `shared/config.js` y verificar con `node scripts/check-precache.js`. Si falta uno, el precache queda incompleto y la marca no abre sin conexión.
 
 En Supabase no hay que tocar nada: las tablas ya separan por `brand` (PK compuestas `(brand,id)` / `(brand,key)`). Si la marca necesita campos propios, se agregan a `pipeline` como columnas aditivas que quedan NULL para las demás (así se hizo con `opg`/`salas`/`factura` de Poly) y se declaran en `pipeCols`.
@@ -169,7 +175,7 @@ En Supabase no hay que tocar nada: las tablas ya separan por `brand` (PK compues
 
 El campo Vendedor (`#exec`) se autocompleta y bloquea para no-admins.
 
-El rol se deriva **del JWT**, no de localStorage: `cevenMyRole()` lee el claim `user_role` (el que inyecta el hook de la migración pendiente) y, si no está, cae a `user_metadata.role`. Sin token usable devuelve `lector` — fail-safe.
+El rol se deriva **del JWT**, no de localStorage: `cevenMyRole()` lee el claim `user_role` (el que inyecta el Custom Access Token Hook, activo desde el 31/07/2026) y, si no está, cae a `user_metadata.role`. Sin token usable devuelve `lector` — fail-safe.
 
 > Desde el 31/07/2026 la UI y la base **coinciden**: las policies leen el mismo claim `user_role` (ver `supabase/migrations/`). Un `lector` que fuerce la UI desde la consola igual choca contra la RLS. Ojo con `user_metadata.role`: lo edita el propio usuario con `PUT /auth/v1/user`, así que sirve de pista para la UI pero **nunca** debe usarse en una policy.
 
@@ -205,7 +211,7 @@ Qué se sincroniza lo dice `settingKeys` en `brand.js`, no una lista en este doc
 - `qNum` se crea sin `var` (global implícito) en `state.js`, y se **incrementa en cada carga de página**, así que dos usuarios que abren la app a la vez pueden tomar el mismo número y pisarse la cotización al guardar. El arreglo de fondo es una sequence en Postgres.
 - La sync sube el `localStorage` entero por clave: `app_settings.value` puede ser grande (el logo en base64, el price list), y el poll lo baja **completo cada 15 s**.
 - El HTML se genera concatenando strings. Todo dato que venga de la base o de un Excel **tiene que pasar por `cevenEsc()`** antes de interpolarse: el pipeline y el price list se sincronizan entre todo el equipo, así que un `<img src=x onerror=...>` guardado como nombre de cliente se ejecutaba en la pantalla de todos. Los handlers con datos adentro van por `data-*` + delegación de eventos, nunca por `onclick="fn('"+dato+"')"` — ese escapado no cubre la barra invertida.
-- **La autorización real todavía no existe**: mientras las policies sean `using(true)`, los roles de `auth.js` solo deciden qué botones se muestran. Ver la migración pendiente en `supabase/migrations/`.
+- **Bajarle el rol a alguien no es inmediato**: las policies leen el claim `user_role` del JWT, así que el cambio surte efecto recién cuando el token se refresca (~1 h) o el usuario vuelve a entrar. Fue el costo aceptado al elegir el hook en vez de una subconsulta por fila; está explicado en `HISTORIAL.md` (31/07).
 
 ## Verificar antes de commitear
 

@@ -119,7 +119,7 @@
   }
 
   /* ── Sincronización ───────────────────────────────────────────────────────
-     La llama cevenUpdateAccountBar() de auth.js, que a su vez corre en cada
+     La llama cevenSyncUserUI() de auth.js, que a su vez corre en cada
      cambio de vista (_navApply) y al mostrar la app tras el login. Actualiza
      tres cosas: qué ítem está activo, quién sos, y si el pipeline se ve. */
   window.cevenNavbarSync = function(){
@@ -163,7 +163,7 @@
     var rl = document.getElementById('cvnav-rol');
     if(rl) rl.textContent = ROLES[rol] || '';
 
-    /* La gestión de usuarios es solo del admin. cevenUpdateAccountBar() hace lo
+    /* La gestión de usuarios es solo del admin. cevenSyncUserUI() hace lo
        mismo, pero auth.js llama a cevenShowApp() apenas se carga —antes de que
        exista esta barra—, así que si no se resolviera acá el botón quedaría
        visible para todos hasta el próximo cambio de vista. */
