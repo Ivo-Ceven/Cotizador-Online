@@ -1,7 +1,18 @@
 -- ============================================================================
 --  RLS POR ROL Y POR MARCA  ·  Cotizadores Ceven
 --  ---------------------------------------------------------------------------
---  ESTA MIGRACIÓN NO ESTÁ APLICADA. Leela entera antes de correrla.
+--  ✅ APLICADA el 31/07/2026 en el proyecto iqewnebpdyctexavtpmt, en dos pasos:
+--     Parte A (aditiva) → activar el hook en el dashboard → Parte B (policies).
+--     El hook "Customize Access Token (JWT) Claims" está ACTIVO; sin él las
+--     policies dan 'lector' a todos y la app queda en solo lectura.
+--
+--     Verificado contra datos reales: un lector no escribe ni borra pero lee
+--     todo; un ventas limitado a una marca no toca la otra; un token viejo sin
+--     el claim no escribe. El linter ya no reporta rls_policy_always_true.
+--
+--     Queda pendiente el paso 5 (abajo): admin-users todavía escribe el rol
+--     solo en user_metadata, así que crear un usuario desde el modal no le da
+--     permisos reales hasta que se le agregue el upsert a user_roles.
 --
 --  QUÉ ARREGLA
 --  Hoy las tres tablas tienen una sola policy:

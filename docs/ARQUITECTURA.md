@@ -171,7 +171,7 @@ El campo Vendedor (`#exec`) se autocompleta y bloquea para no-admins.
 
 El rol se deriva **del JWT**, no de localStorage: `cevenMyRole()` lee el claim `user_role` (el que inyecta el hook de la migración pendiente) y, si no está, cae a `user_metadata.role`. Sin token usable devuelve `lector` — fail-safe.
 
-> ⚠️ **Esto decide qué botones se muestran, no qué datos se pueden tocar.** `user_metadata` lo puede editar el propio usuario con `PUT /auth/v1/user`, y las policies de Supabase siguen siendo `using(true) with check(true)`: cualquier autenticado puede leer y escribir todo el pipeline y el price list de todas las marcas con un `curl`. La barrera real son las policies — ver `supabase/migrations/`, sin aplicar.
+> Desde el 31/07/2026 la UI y la base **coinciden**: las policies leen el mismo claim `user_role` (ver `supabase/migrations/`). Un `lector` que fuerce la UI desde la consola igual choca contra la RLS. Ojo con `user_metadata.role`: lo edita el propio usuario con `PUT /auth/v1/user`, así que sirve de pista para la UI pero **nunca** debe usarse en una policy.
 
 ## Claves de localStorage
 

@@ -22,6 +22,48 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 31/07/2026 · RLS por rol y marca: los roles dejan de ser decorativos
+
+Migración `20260730120000_rls_por_rol_y_marca.sql`, aplicada en dos pasos.
+
+**El problema**: las tres tablas tenían una sola policy, `for all to authenticated
+using(true) with check(true)`. Cualquier usuario logueado —incluido uno con rol
+`lector`— podía borrar el pipeline entero o pisar el price list de toda la empresa
+con un `curl` y su propio token legítimo. Los permisos de `shared/auth.js` eran
+solo UI.
+
+**Por qué no alcanzaba con `user_metadata`**: era la opción obvia
+(`auth.jwt() -> 'user_metadata' ->> 'role'`), pero ese campo **lo edita el propio
+usuario** con `PUT /auth/v1/user` — el mismo endpoint que la app ya usa para
+cambiar la contraseña. Habría recreado del lado del servidor la misma escalada que
+se acababa de cerrar en el cliente. Por eso el rol autoritativo vive en
+`public.user_roles`, que solo escribe la service_role, y llega al JWT por un
+Custom Access Token Hook.
+
+**El orden importó**: la Parte A (tabla + hook + sembrado) es aditiva y no cambia
+ningún permiso; la Parte B (las policies) es **fail-closed** — sin el claim
+`user_role` todos son `lector`. Aplicar B antes de activar el hook deja la app en
+solo lectura, así que se hizo A → activar el hook en el dashboard → verificar que
+el claim llegue → B.
+
+**Por qué el hook y no una subconsulta**: se puede hacer lo mismo sin hook, con
+`exists (select 1 from user_roles where ...)` dentro de cada policy, y para la
+escala actual (2 usuarios, 4 filas) habría sido más simple y con cambios de rol
+instantáneos. Se eligió el claim porque no paga una subconsulta por fila evaluada
+y escala mejor. El costo: bajarle el rol a alguien no surte efecto hasta que
+refresque su token (~1 h) o se le cierre la sesión.
+
+Verificado contra datos reales: un `lector` no escribe ni borra pero lee todo; un
+`ventas` limitado a una marca no toca la otra; un token viejo sin el claim no
+escribe. El linter de Supabase ya no reporta `rls_policy_always_true`.
+
+> Trampa al verificar policies a mano: un `UPDATE` que la RLS filtra **no lanza
+> error**, afecta 0 filas y punto. Hay que mirar el `row_count`, y contra una
+> clave que exista de verdad — probar contra una fila inexistente da 0 filas
+> igual y parece que la policy funcionó.
+
+---
+
 ## 28–30/07/2026 · Review completo y fin del monolito troceado
 
 Commits `09b8525` (Ola 1), `b8bf98e` (Olas 2–3), `7241d34` (Ola 4).
@@ -209,16 +251,16 @@ validaciones server-side.
 ## Pendientes
 
 ### 🔴 Urgente — depende del usuario
-- **Aplicar la migración de RLS**: `supabase/migrations/20260730120000_rls_por_rol_y_marca.sql`,
-  escrita el 30/07 y **sin aplicar**. Hoy las policies siguen siendo
-  `for all using(true) with check(true)`, así que cualquier usuario autenticado
-  —incluido un `lector`— puede borrar el pipeline entero o pisar el price list con
-  un `curl`. Los roles de la app son solo UI. La migración tiene los pasos manuales
-  del dashboard comentados arriba; es **fail-closed**, así que el orden importa:
-  entre aplicar las policies y activar el hook, nadie puede escribir.
+- **Actualizar la Edge Function `admin-users`**: escribe el rol solo en
+  `user_metadata`, que después de la migración de RLS del 31/07 **la base ignora**.
+  Crear o editar un usuario desde el modal "👤 Usuarios" no le cambia los permisos
+  reales: queda como `lector` efectivo hasta que se corrija a mano con un `UPDATE`
+  sobre `user_roles`. El diff está en el paso 5 de la migración.
 - **No hay backup de los datos productivos**: viven SOLO en el `localStorage` del
   navegador del usuario, sin copia en la base. Exportar el backup JSON y, ya
   logueado, importarlo para sembrar Supabase.
+- **Protección de contraseñas filtradas desactivada** (Authentication → Passwords).
+  Es lo único que reporta hoy el linter de seguridad de Supabase.
 
 ### Técnicos
 - **Nada de lo hecho el 28–30/07 se probó en un navegador**: la verificación fue
