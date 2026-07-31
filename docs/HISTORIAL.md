@@ -22,6 +22,38 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 31/07/2026 · Solo cuentas @ceven.com acceden a los datos
+
+Migración `20260731090000_exigir_dominio_ceven.sql`.
+
+**El requisito real del usuario**, dicho por él: lo único que importa es que
+nadie sin cuenta Ceven llegue a los datos, ni siquiera como lector. Los roles
+son secundarios.
+
+**El problema**: después de la migración de roles, las policies de lectura
+seguían siendo `using(true)` para cualquier `authenticated`. La única barrera
+para no llegar a ser `authenticated` era la configuración de GoTrue —signup
+público apagado, ningún OAuth habilitado—, que es config de dashboard: invisible
+desde el repo y silenciosa si cambia. Prender "Sign in with Google" o los
+signins anónimos habría bastado para que cualquiera con un Gmail leyera el
+pipeline y el price list completos.
+
+**La solución**: el dominio se exige **dentro de la policy**
+(`public.ceven_is_staff()`), así la garantía no depende de ninguna casilla.
+Se usa `split_part(email,'@',2) = 'ceven.com'` y no `LIKE '%@ceven.com'` para
+que no haya ambigüedad con dominios parecidos; sin claim `email` (usuario
+anónimo) da `false`.
+
+Verificado contra datos reales: `@ceven.com` ve las 4/5/1 filas; un
+`@gmail.com` **con `user_role: admin` en el token** ve 0 y no escribe ni borra;
+`@notceven.com`, `x@ceven.com.evil.io` y un anónimo sin email, 0. Y `anon` (la
+publishable key sola, sin sesión) ya estaba bloqueado en las tres tablas.
+
+Si algún día hay que sumar otro dominio, es un solo lugar: el `in (...)` de
+`ceven_is_staff()`.
+
+---
+
 ## 31/07/2026 · RLS por rol y marca: los roles dejan de ser decorativos
 
 Migración `20260730120000_rls_por_rol_y_marca.sql`, aplicada en dos pasos.
