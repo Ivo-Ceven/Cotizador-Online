@@ -49,6 +49,12 @@ window.CEVEN_BRAND = {
   // El poll tiene que preservarlos al mergear las filas del servidor.
   localOnlyCols: ['skuOvLinks'],
 
+  /* --- Pipeline: vista (shared/pipeline-ui.js) ---------------------- */
+
+  // Columnas cuyo orden por defecto es DESCENDENTE al tocar el encabezado
+  // (numeros y fechas se leen "de mayor a menor"; el texto, alfabetico).
+  pipeSortDescCols: ['monto','qMac','qIph','qIpad','qServ','qAcc','margenPond','fechaISO'],
+
   /* --- Backup (shared/backup.js, shared/backup-folder.js) ----------- */
 
   idbKey:          'pipeFolder',                    // handle de carpeta en IndexedDB

@@ -25,12 +25,15 @@ function deleteManualProduct(pid){
   if(!p) return;
   products = products.filter(function(x){ return x.id!==pid; });
   delete selIds[pid];
-  try{localStorage.setItem('poly_cpl',JSON.stringify(products));}catch(e){}
+  // Si el guardado falla no se sigue: ofrecer "deshacer" sobre un borrado que
+  // en disco nunca ocurrio deja la pantalla y el localStorage diciendo cosas
+  // distintas. cevenLsSet ya le avisa al usuario.
+  if(!cevenLsSet(cevenK('cpl'), JSON.stringify(products))) return;
   var b=document.getElementById('plbadge');b.className='bk bkok';b.textContent='✓ '+products.length+' productos';
   renderCat();
   notifyUndo('Eliminaste "'+p.sku+'" del catálogo.', function(){
     products.splice(Math.min(pIdx, products.length), 0, p);
-    try{localStorage.setItem('poly_cpl',JSON.stringify(products));}catch(e){}
+    cevenLsSet(cevenK('cpl'), JSON.stringify(products));
     var b2=document.getElementById('plbadge'); if(b2){ b2.className='bk bkok'; b2.textContent='✓ '+products.length+' productos'; }
     renderCat();
   });
@@ -38,7 +41,7 @@ function deleteManualProduct(pid){
 
 function cancelEditManual(){
   editingManualId = null;
-  document.getElementById('addprod-title').textContent = 'Agregar artículo al catálogo';
+  document.getElementById('addprod-title').textContent = cevenAddProdTitle();
   // Si hay SKUs pendientes, se descartan directamente (con opción de deshacer)
   if(_pendingNewSKUs.length){
     var discarded = _pendingNewSKUs.slice();
@@ -67,12 +70,12 @@ function saveNewProd(){
       }
     }
     editingManualId = null;
-    document.getElementById('addprod-title').textContent = 'Agregar artículo al catálogo';
+    document.getElementById('addprod-title').textContent = cevenAddProdTitle();
   } else {
     newId = Date.now();
     products.push({id:newId,sku:sku,description:desc,manual:true});
   }
-  try{localStorage.setItem('poly_cpl',JSON.stringify(products));}catch(e){}
+  if(!cevenLsSet(cevenK('cpl'), JSON.stringify(products))) return;
   var b=document.getElementById('plbadge');b.className='bk bkok';b.textContent='✓ '+products.length+' productos';
 
   // Si veníamos de la cola de SKUs faltantes:
@@ -87,7 +90,7 @@ function saveNewProd(){
       return;
     }
     // Cola vacía → volver al catálogo con todos los SKUs seleccionados
-    document.getElementById('addprod-title').textContent = 'Agregar artículo al catálogo';
+    document.getElementById('addprod-title').textContent = cevenAddProdTitle();
     showToast('✓ Todos los SKUs faltantes agregados y seleccionados');
   }
   goTo('catalog'); renderCat();

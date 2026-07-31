@@ -334,18 +334,25 @@
 <!-- Lógica de la app (el orden de carga importa) -->
 <script src="js/state.js"></script>
 <script src="../shared/ui-core.js"></script>
+<script src="../shared/quote-core.js"></script>
+<script src="../shared/catalog-core.js"></script>
 <script src="js/catalog.js"></script>
 <script src="js/quote.js"></script>
 <script src="js/products.js"></script>
 <script src="js/quotes-db.js"></script>
+<script src="../shared/pipeline-store.js"></script>
 <script src="js/pipeline-data.js"></script>
 <script src="../shared/backup.js"></script>
+<!-- recovery.js delega en _applyBackupRestore() de backup.js: va después -->
+<script src="../shared/recovery.js"></script>
 <script src="js/pipeline-core.js"></script>
 <script src="js/archive-view.js"></script>
+<script src="../shared/pipeline-ui.js"></script>
 <script src="js/pipeline-view.js"></script>
 <script src="js/pipeline-detail.js"></script>
 <script src="../shared/backup-folder.js"></script>
 <script src="js/history.js"></script>
+<script src="../shared/pdf-core.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/boot.js"></script>
 <script src="../shared/undo.js"></script>

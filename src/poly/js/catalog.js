@@ -1,6 +1,18 @@
 // ── CATÁLOGO (SKU + Descripción; precio de lista y stock son solo referencia) ──
+// cevenLsJSON() devuelve el fallback cuando el JSON guardado está corrupto. Antes
+// eso pasaba en silencio: la app arrancaba con el catálogo vacío y el usuario
+// creía que nunca había importado nada, así que perdía tiempo buscando el Excel.
 (function(){
-  try { var s=localStorage.getItem('poly_cpl'); if(s){ products=JSON.parse(s); initCat(); } } catch(e){}
+  var raw = null;
+  try{ raw = localStorage.getItem(cevenK('cpl')); }catch(e){}
+  var s = cevenLsJSON(cevenK('cpl'), null);
+  if(s && s.length){ products = s; initCat(); return; }
+  if(raw){
+    // Había algo guardado y no se pudo usar (JSON inválido o forma inesperada).
+    var aviso = '⚠ El catálogo guardado está corrupto y no se pudo leer. Volvé a importar el Excel.';
+    showErr(aviso);
+    if(typeof showToast === 'function') setTimeout(function(){ showToast(aviso); }, 400);
+  }
 })();
 
 function handlePL(f) {
@@ -26,38 +38,7 @@ function handlePL(f) {
   }
 }
 
-function parseCSV(txt) {
-  var sep = txt.indexOf('\t')!==-1 ? '\t' : (txt.split('\n')[0].indexOf(';')!==-1 ? ';' : ',');
-  var lines = txt.trim().split('\n');
-  if(lines.length < 2) return [];
-  var hdr = lines[0].split(sep).map(function(h){ return h.trim().replace(/^"|"$/g,''); });
-  var rows = [];
-  for(var i=1;i<lines.length;i++) {
-    var cols=[],cur='',inQ=false,line=lines[i];
-    for(var j=0;j<line.length;j++) {
-      var c=line[j];
-      if(c==='"') inQ=!inQ;
-      else if(c===sep && !inQ){ cols.push(cur.trim()); cur=''; }
-      else cur+=c;
-    }
-    cols.push(cur.trim());
-    var row={};
-    for(var k=0;k<hdr.length;k++) row[hdr[k]]=(cols[k]||'').replace(/^"|"$/g,'').trim();
-    var hasVal=false; for(var kk in row){ if(row[kk]){ hasVal=true; break; } }
-    if(hasVal) rows.push(row);
-  }
-  return rows;
-}
-
-function fk(obj) {
-  var nk = function(s){ return s.toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,''); };
-  var keys = Object.keys(obj);
-  for(var c=1;c<arguments.length;c++) {
-    var n = nk(arguments[c]);
-    for(var k=0;k<keys.length;k++) { if(nk(keys[k])===n || nk(keys[k]).indexOf(n)!==-1) return keys[k]; }
-  }
-  return null;
-}
+// parseCSV() y fk() viven en shared/catalog-core.js (eran identicos).
 
 // SKU + Descripción son lo único que se usa para agregar a la cotización — el precio
 // nunca se auto-completa (se carga a mano por OPG). "listPrice" y "stock" quedan
@@ -80,8 +61,11 @@ function processRows(rows) {
     seen[sku] = {id:i, sku:sku, description:r[dK]||'', listPrice:listPrice, stock:stock}; // último duplicado gana
   }
   products = Object.keys(seen).map(function(k){ return seen[k]; });
-  try{ localStorage.setItem('poly_cpl',JSON.stringify(products)); }catch(e){}
-  showErr(''); initCat();
+  // El catálogo ya está en memoria: se muestra igual, pero si no se pudo persistir
+  // hay que decirlo en vez de dejar el cartel de "OK".
+  var okPL = cevenLsSet(cevenK('cpl'), JSON.stringify(products));
+  showErr(okPL ? '' : '⚠ El catálogo se cargó en pantalla pero NO se pudo guardar: se pierde al recargar.');
+  initCat();
 }
 
 function initCat() {
@@ -93,92 +77,8 @@ function initCat() {
   renderCat();
 }
 
-// ── MULTI-SKU PASTE ──
-var _pendingNewSKUs = []; // SKUs a crear manualmente (pegados pero no encontrados)
-
-function handleSearchInput(){
-  // Si hay un solo término (sin saltos/tabs/commas), se usa como búsqueda normal
-  var v = document.getElementById('fsearch').value;
-  if(!/[\n\t,;]/.test(v)){
-    renderCat();
-    return;
-  }
-  // Si hay múltiples tokens detectados, esperar al onpaste o cuando el usuario presiona Enter
-  renderCat();
-}
-
-function handleSearchPaste(e){
-  // Capturar el texto pegado y procesarlo como múltiples SKUs si tiene separadores
-  var text = (e.clipboardData || window.clipboardData).getData('text');
-  if(!text) return;
-  // Detectar si tiene múltiples líneas/tabs/comas (tokens delimitados)
-  if(!/[\n\t,;]/.test(text.trim())){
-    // Texto normal — dejar pegar y buscar
-    setTimeout(renderCat, 0);
-    return;
-  }
-  e.preventDefault();
-  // Tokenizar
-  var tokens = text.split(/[\n\t,;]+/).map(function(s){return s.trim();}).filter(function(s){return s.length>0;});
-  if(!tokens.length) return;
-  processMultiSKUs(tokens);
-}
-
-function processMultiSKUs(tokens){
-  // Para cada token, intentar match exacto por SKU
-  var found = [];
-  var notFound = [];
-  for(var i=0;i<tokens.length;i++){
-    var t = tokens[i].trim();
-    if(!t) continue;
-    var match = null;
-    for(var j=0;j<products.length;j++){
-      if((products[j].sku||'').toLowerCase() === t.toLowerCase()){ match = products[j]; break; }
-    }
-    if(match){
-      found.push(match);
-      selIds[match.id] = _nextSel();
-    } else {
-      notFound.push(t);
-    }
-  }
-
-  document.getElementById('fsearch').value = '';
-  renderCat();
-
-  var msg = '';
-  if(found.length) msg += '✓ ' + found.length + ' SKU(s) encontrados y seleccionados';
-  if(notFound.length){
-    msg += (msg?' · ':'') + '⚠ ' + notFound.length + ' no encontrados';
-  }
-  if(msg) showToast(msg);
-
-  // Si hay SKUs no encontrados, encolar y abrir el form para el primero
-  if(notFound.length){
-    _pendingNewSKUs = notFound.slice();
-    setTimeout(function(){
-      promptForNextPendingSKU();
-    }, 600);
-  }
-}
-
-function promptForNextPendingSKU(){
-  if(!_pendingNewSKUs.length){
-    document.getElementById('addprod-title').textContent = 'Agregar artículo al catálogo';
-    return;
-  }
-  var nextSku = _pendingNewSKUs[0];
-  prepAddProd();
-  document.getElementById('np-sku').value = nextSku;
-  var remaining = _pendingNewSKUs.length;
-  document.getElementById('addprod-title').textContent = 'Agregar SKU faltante (' + remaining + ' pendiente' + (remaining===1?'':'s') + ')';
-  // Auto-foco en descripción para acelerar carga
-  goTo('addprod');
-  setTimeout(function(){
-    var d = document.getElementById('np-desc');
-    if(d) d.focus();
-  }, 100);
-}
+// _pendingNewSKUs, handleSearchInput/Paste, processMultiSKUs y
+// promptForNextPendingSKU viven en shared/catalog-core.js.
 
 function getFiltered() {
   var s=document.getElementById('fsearch').value.toLowerCase().trim();
@@ -252,13 +152,7 @@ function _catBindDelegation(){
   });
 }
 
-function toggleRow(pid) { if(selIds[pid]) delete selIds[pid]; else selIds[pid]=_nextSel(); renderCat(); }
-function toggleAll(cb) { var f=getFiltered(); if(cb.checked){for(var i=0;i<f.length;i++){if(!selIds[f[i].id])selIds[f[i].id]=_nextSel();}}else{for(var i=0;i<f.length;i++)delete selIds[f[i].id];} renderCat(); }
-
-function clearCatalogFilters(){
-  document.getElementById('fsearch').value = '';
-  renderCat();
-}
+// toggleRow(), toggleAll() y clearCatalogFilters() viven en shared/catalog-core.js.
 
 // ── AGREGAR A LA COTIZACIÓN (precio siempre en blanco: se tipea a mano) ──
 function addToQuote() {
@@ -289,4 +183,4 @@ function addToQuote() {
   goTo('quote');
 }
 
-var _qSortKey = null, _qSortDir = 1; // dir: 1=asc, -1=desc
+// _qSortKey/_qSortDir viven en shared/quote-core.js.

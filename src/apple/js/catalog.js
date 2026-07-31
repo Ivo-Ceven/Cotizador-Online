@@ -50,38 +50,7 @@ function handlePL(f) {
   }
 }
 
-function parseCSV(txt) {
-  var sep = txt.indexOf('\t')!==-1 ? '\t' : (txt.split('\n')[0].indexOf(';')!==-1 ? ';' : ',');
-  var lines = txt.trim().split('\n');
-  if(lines.length < 2) return [];
-  var hdr = lines[0].split(sep).map(function(h){ return h.trim().replace(/^"|"$/g,''); });
-  var rows = [];
-  for(var i=1;i<lines.length;i++) {
-    var cols=[],cur='',inQ=false,line=lines[i];
-    for(var j=0;j<line.length;j++) {
-      var c=line[j];
-      if(c==='"') inQ=!inQ;
-      else if(c===sep && !inQ){ cols.push(cur.trim()); cur=''; }
-      else cur+=c;
-    }
-    cols.push(cur.trim());
-    var row={};
-    for(var k=0;k<hdr.length;k++) row[hdr[k]]=(cols[k]||'').replace(/^"|"$/g,'').trim();
-    var hasVal=false; for(var kk in row){ if(row[kk]){ hasVal=true; break; } }
-    if(hasVal) rows.push(row);
-  }
-  return rows;
-}
-
-function fk(obj) {
-  var nk = function(s){ return s.toLowerCase().replace(/\s+/g,'').replace(/[^a-z0-9]/g,''); };
-  var keys = Object.keys(obj);
-  for(var c=1;c<arguments.length;c++) {
-    var n = nk(arguments[c]);
-    for(var k=0;k<keys.length;k++) { if(nk(keys[k])===n || nk(keys[k]).indexOf(n)!==-1) return keys[k]; }
-  }
-  return null;
-}
+// parseCSV() y fk() viven en shared/catalog-core.js (eran identicos).
 
 function processRows(rows) {
   if(!rows.length){ showErr('Archivo vacío.'); return; }
@@ -304,92 +273,8 @@ function initCat() {
 }
 
 // ── CATALOG ──
-// ── MULTI-SKU PASTE ──
-var _pendingNewSKUs = []; // SKUs a crear manualmente (pegados pero no encontrados)
-
-function handleSearchInput(){
-  // Si hay un solo término (sin saltos/tabs/commas), se usa como búsqueda normal
-  var v = document.getElementById('fsearch').value;
-  if(!/[\n\t,;]/.test(v)){
-    renderCat();
-    return;
-  }
-  // Si hay múltiples tokens detectados, esperar al onpaste o cuando el usuario presiona Enter
-  renderCat();
-}
-
-function handleSearchPaste(e){
-  // Capturar el texto pegado y procesarlo como múltiples SKUs si tiene separadores
-  var text = (e.clipboardData || window.clipboardData).getData('text');
-  if(!text) return;
-  // Detectar si tiene múltiples líneas/tabs/comas (tokens delimitados)
-  if(!/[\n\t,;]/.test(text.trim())){
-    // Texto normal — dejar pegar y buscar
-    setTimeout(renderCat, 0);
-    return;
-  }
-  e.preventDefault();
-  // Tokenizar
-  var tokens = text.split(/[\n\t,;]+/).map(function(s){return s.trim();}).filter(function(s){return s.length>0;});
-  if(!tokens.length) return;
-  processMultiSKUs(tokens);
-}
-
-function processMultiSKUs(tokens){
-  // Para cada token, intentar match exacto por SKU
-  var found = [];
-  var notFound = [];
-  for(var i=0;i<tokens.length;i++){
-    var t = tokens[i].trim();
-    if(!t) continue;
-    var match = null;
-    for(var j=0;j<products.length;j++){
-      if((products[j].sku||'').toLowerCase() === t.toLowerCase()){ match = products[j]; break; }
-    }
-    if(match){
-      found.push(match);
-      selIds[match.id] = _nextSel();
-    } else {
-      notFound.push(t);
-    }
-  }
-
-  document.getElementById('fsearch').value = '';
-  renderCat();
-
-  var msg = '';
-  if(found.length) msg += '✓ ' + found.length + ' SKU(s) encontrados y seleccionados';
-  if(notFound.length){
-    msg += (msg?' · ':'') + '⚠ ' + notFound.length + ' no encontrados';
-  }
-  if(msg) showToast(msg);
-
-  // Si hay SKUs no encontrados, encolar y abrir el form para el primero
-  if(notFound.length){
-    _pendingNewSKUs = notFound.slice();
-    setTimeout(function(){
-      promptForNextPendingSKU();
-    }, 600);
-  }
-}
-
-function promptForNextPendingSKU(){
-  if(!_pendingNewSKUs.length){
-    document.getElementById('addprod-title').textContent = 'Agregar artículo al price list';
-    return;
-  }
-  var nextSku = _pendingNewSKUs[0];
-  prepAddProd();
-  document.getElementById('np-sku').value = nextSku;
-  var remaining = _pendingNewSKUs.length;
-  document.getElementById('addprod-title').textContent = 'Agregar SKU faltante (' + remaining + ' pendiente' + (remaining===1?'':'s') + ')';
-  // Auto-foco en descripción para acelerar carga
-  goTo('addprod');
-  setTimeout(function(){
-    var d = document.getElementById('np-desc');
-    if(d) d.focus();
-  }, 100);
-}
+// _pendingNewSKUs, handleSearchInput/Paste, processMultiSKUs y
+// promptForNextPendingSKU viven en shared/catalog-core.js.
 
 function getFiltered() {
   var s=document.getElementById('fsearch').value.toLowerCase().trim();
@@ -435,6 +320,7 @@ function renderCat() {
       +'</tr>';
   }
   document.getElementById('catbody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
+  _catBindDelegation();
   var cnt=Object.keys(selIds).length;
   document.getElementById('catcount').textContent = filtered.length+' productos · '+cnt+' seleccionados';
   var btn=document.getElementById('addbtn');
@@ -444,29 +330,27 @@ function renderCat() {
   document.getElementById('chkall').checked=allSel;
 }
 
-function toggleRow(pid) { if(selIds[pid]) delete selIds[pid]; else selIds[pid]=_nextSel(); renderCat(); }
+// toggleRow() y toggleAll() viven en shared/catalog-core.js.
 
 // Delegación de eventos del catálogo. Reemplaza los onclick inline que llevaban
 // el id del producto concatenado: además del riesgo de inyección, ese formato no
 // soportaba ids no numéricos (productos manuales).
-(function(){
-  var body = document.getElementById('catbody');
-  if(!body) return;
-  body.addEventListener('click', function(e){
-    var el = e.target.closest ? e.target.closest('[data-act]') : null;
-    if(!el || !body.contains(el)) return;
-    var act = el.getAttribute('data-act');
+// Se ata desde renderCat() y no desde una IIFE: si #catbody todavía no existiera
+// cuando corre este <script>, la IIFE se rendía en silencio y el catálogo quedaba
+// sin ningún handler. cevenDelegate() ata una sola vez aunque se llame en cada
+// render (el contenedor sobrevive al innerHTML de sus hijos).
+function _catBindDelegation(){
+  cevenDelegate('catbody', 'click', function(ev){
+    var el = cevenActEl(ev, this);
+    if(!el) return;
     var pid = el.getAttribute('data-pid');
     if(pid === null) return;
-    // closest() ya elige el elemento más interno: el click en un botón NO
-    // dispara además el de la fila, así que no hace falta stopPropagation
-    // (y propagar deja que siga cerrándose el menú de mantenimiento).
-    if(act === 'row' || act === 'chk') toggleRow(pid);
-    else if(act === 'edit') editManualProduct(pid);
-    else if(act === 'del')  deleteManualProduct(pid);
+    var act = el.getAttribute('data-act');
+    if(act === 'edit')     editManualProduct(pid);
+    else if(act === 'del') deleteManualProduct(pid);
+    else                   toggleRow(pid);   // 'row' y 'chk'
   });
-})();
-function toggleAll(cb) { var f=getFiltered(); if(cb.checked){for(var i=0;i<f.length;i++){if(!selIds[f[i].id])selIds[f[i].id]=_nextSel();}}else{for(var i=0;i<f.length;i++)delete selIds[f[i].id];} renderCat(); }
+}
 
 // ── QUOTE ──
 // Cuando cambia el campo Observaciones, si aparece/desaparece FOB recalcular el Nac de todos los items
@@ -537,7 +421,7 @@ function addToQuote() {
 }
 
 // ── SORT DE COTIZACIÓN ──
-var _qSortKey = null, _qSortDir = 1; // dir: 1=asc, -1=desc
+// _qSortKey/_qSortDir viven en shared/quote-core.js.
 
 var FAMILY_ORDER = ['MacBook Neo','MacBook Air','MacBook Pro','iMac','Mac mini','Mac Studio','Mac Pro','iPhone','iPad','Apple Watch','AirPods','Accesorios'];
 

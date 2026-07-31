@@ -1,27 +1,9 @@
 
-// ── PIPELINE ──
-function getPipeline(){
-  try{
-    var arr = JSON.parse(localStorage.getItem('cpipeline')||'[]');
-    // Normalizar qNum a string con ceros para que coincida con N° Cotización en cquotes
-    for(var i=0;i<arr.length;i++){
-      var qn = arr[i].qNum;
-      if(qn!==null && qn!==undefined && qn!==''){
-        arr[i].qNum = String(parseInt(qn)||0).padStart(4,'0');
-      }
-    }
-    return arr;
-  }catch(e){return [];}
-}
-function savePipeline(p){ try{localStorage.setItem('cpipeline',JSON.stringify(p));}catch(e){} autoSnapshot(); }
-
-function getArchive(){ try{return JSON.parse(localStorage.getItem('carchive')||'{}');}catch(e){return {};} }
-function saveArchive(a){ try{localStorage.setItem('carchive',JSON.stringify(a));}catch(e){} }
-
-// Mes actual como "YYYY-MM"
-function currentMonthKey(){
-  var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-}
+// ── PIPELINE · ARCHIVADO (especifico de Apple) ──
+// getPipeline/savePipeline/getArchive/saveArchive/currentMonthKey viven en
+// shared/pipeline-store.js: son identicos en las dos marcas. Lo de abajo NO:
+// Apple archiva porciones de una cotizacion SKU por SKU (parciales, familias
+// Mac/iPhone/iPad), Poly archiva la fila entera. Ver el comentario del modulo.
 
 // Al entrar al pipeline: mueve al archivo las entradas Facturadas/Perdidas de meses anteriores
 function archiveOldEntries(){

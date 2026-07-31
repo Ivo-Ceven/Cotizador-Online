@@ -57,6 +57,12 @@ var ASSETS = [
   './shared/undo.js',
   './shared/backup.js',
   './shared/backup-folder.js',
+  './shared/recovery.js',
+  './shared/quote-core.js',
+  './shared/catalog-core.js',
+  './shared/pipeline-store.js',
+  './shared/pipeline-ui.js',
+  './shared/pdf-core.js',
   './shared/css/base.css',
   './shared/css/dark.css',
 

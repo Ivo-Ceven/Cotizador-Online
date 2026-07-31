@@ -1,17 +1,7 @@
 
-// ── PIPELINE ──
-function getPipeline(){
-  try{ return JSON.parse(localStorage.getItem('poly_cpipeline')||'[]'); }catch(e){ return []; }
-}
-function savePipeline(p){ try{localStorage.setItem('poly_cpipeline',JSON.stringify(p));}catch(e){} autoSnapshot(); }
-
-function getArchive(){ try{return JSON.parse(localStorage.getItem('poly_carchive')||'{}');}catch(e){return {};} }
-function saveArchive(a){ try{localStorage.setItem('poly_carchive',JSON.stringify(a));}catch(e){} }
-
-// Mes actual como "YYYY-MM"
-function currentMonthKey(){
-  var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-}
+// ── PIPELINE · ARCHIVADO (especifico de Poly) ──
+// getPipeline/savePipeline/getArchive/saveArchive/currentMonthKey viven en
+// shared/pipeline-store.js: son identicos en las dos marcas.
 
 // Al entrar al pipeline: mueve al archivo las filas (OPG completos) Facturadas/Perdidas
 // de meses anteriores. A diferencia de Apple, no hay desglose por SKU/familia que archivar

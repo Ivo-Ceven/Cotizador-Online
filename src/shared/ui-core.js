@@ -2,19 +2,45 @@
    UI CORE  ·  compartido por todas las marcas
    ------------------------------------------------------------
    Sale de apple/js/utils.js + poly/js/utils.js, que eran 96%
-   identicos. Aca vive TODO lo generico: logo, navegacion entre
-   vistas, formateo de numeros/moneda, helpers de mes de cierre
-   y el cartel de error.
+   identicos. Aca vive TODO lo generico: modo oscuro, logo,
+   delegacion de eventos, navegacion entre vistas, formateo de
+   numeros/moneda, helpers de mes de cierre y el cartel de error.
 
    Lo que era exclusivo de Apple (margenes, nacionalizacion,
    IVA) se fue a apple/js/pricing.js. Poly no tiene equivalente.
 
    Depende de: brand.js (cevenK), safe.js (cevenLsSet), state.js
-   (_darkMode, _logo, _logoDark, editingManualId).
+   (editingManualId). Declara _darkMode/_logo/_logoDark, que antes
+   estaban duplicados en los dos state.js.
    Se carga DESPUES de state.js y ANTES de pricing.js.
    ============================================================ */
 
+// ── DARK MODE ──
+// 'cdark' va SIN prefijo a proposito: es una preferencia del navegador, no del
+// cotizador, y se comparte entre marcas (ver CEVEN_BACKUP_UNPREFIXED en backup.js).
+// Los re-render extra van con typeof: 'warranties' y 'target' existen solo en Apple.
+var _darkMode = (localStorage.getItem('cdark') === '1');
+(function(){ if(_darkMode) document.body.classList.add('dark'); })();
+
+function toggleDark(){
+  _darkMode = !_darkMode;
+  cevenLsSet('cdark', _darkMode ? '1' : '0');
+  document.body.classList.toggle('dark', _darkMode);
+  var icon = _darkMode ? '☀️' : '🌙';
+  document.querySelectorAll('.dark-btn').forEach(function(b){ b.textContent = icon; });
+  applyLogo();
+  renderQ();
+  if(typeof renderWarranties === 'function') renderWarranties();
+  var pp = document.getElementById('p-pipeline');
+  if(pp && pp.classList.contains('on')) renderPipeline();
+  var tm = document.getElementById('target-modal');
+  if(tm && tm.style.display !== 'none' && typeof renderTargetAnual === 'function') renderTargetAnual();
+}
+
 // ── LOGO ──
+var _logo = null;
+var _logoDark = null;
+
 function applyLogo(){
   var src = (_darkMode && _logoDark) ? _logoDark : _logo;
   var img = document.getElementById('logo-img');
@@ -92,6 +118,44 @@ function goTo(n) {
   if(v === 'quote') _navApply('quote');
   else window.addEventListener('DOMContentLoaded', function(){ _navApply(v); });
 })();
+
+/* ── DELEGACIÓN DE EVENTOS ──────────────────────────────────────────────
+   Reemplaza los handlers inline que interpolaban datos, tipo
+     onclick="fn('" + valor.replace(/'/g,"\\'") + "')"
+   Ese escapado NO es seguro: no cubre la barra invertida, así que un valor
+   como  \');alert(1);//  cierra el string JS y ejecuta lo que sigue. Y como
+   cliente / OPG / SKU / descripción llegan sincronizados desde Supabase, el
+   valor no lo controla quien mira la pantalla.
+   Con delegación el dato viaja en un data-* (escapado como atributo) y se lee
+   con getAttribute(): nunca se parsea como código.
+
+   cevenDelegate() ata el listener una sola vez por contenedor: los render()
+   pisan el innerHTML de los hijos, pero el contenedor sobrevive. Por eso se
+   llama DESDE el render y no desde una IIFE al cargar el archivo: si el
+   contenedor todavía no existe cuando corre el <script>, una IIFE se rinde en
+   silencio y la vista queda sin ningún handler para siempre. */
+function cevenDelegate(containerId, evName, handler){
+  var el = document.getElementById(containerId);
+  if(!el) return;
+  var flag = '_cevenDeleg_' + evName;
+  if(el[flag]) return;
+  el[flag] = true;
+  el.addEventListener(evName, handler);
+}
+/* Sube desde el target hasta el contenedor y devuelve el primer elemento que
+   declare data-act (o null si el clic no cayó sobre nada accionable).
+   Al devolver el elemento MÁS INTERNO, el clic sobre un botón dentro de una
+   fila accionable no dispara además el handler de la fila: no hace falta un
+   stopPropagation() en cada uno (y propagar deja que se sigan cerrando los
+   menús que escuchan en document). */
+function cevenActEl(ev, container){
+  var el = ev.target;
+  while(el && el !== container){
+    if(el.getAttribute && el.getAttribute('data-act')) return el;
+    el = el.parentNode;
+  }
+  return null;
+}
 
 // ── UTILS ──
 function fI(n) { return Math.round(n).toLocaleString('es-AR'); }

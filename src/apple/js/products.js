@@ -67,7 +67,7 @@ function deleteManualProduct(pid){
 
 function cancelEditManual(){
   editingManualId = null;
-  document.getElementById('addprod-title').textContent = 'Agregar artículo al price list';
+  document.getElementById('addprod-title').textContent = cevenAddProdTitle();
   // Si hay SKUs pendientes, preguntar si descartar
   if(_pendingNewSKUs.length){
     var remaining = _pendingNewSKUs.length;
@@ -102,7 +102,7 @@ function saveNewProd(){
       }
     }
     editingManualId = null;
-    document.getElementById('addprod-title').textContent = 'Agregar artículo al price list';
+    document.getElementById('addprod-title').textContent = cevenAddProdTitle();
   } else {
     // Date.now() solo colisiona si se crean dos productos en el mismo ms.
     newId = 'pm_' + Date.now() + '_' + (++_manualProdSeq);
@@ -128,7 +128,7 @@ function saveNewProd(){
       return;
     }
     // Cola vacía → volver al catálogo con todos los SKUs seleccionados
-    document.getElementById('addprod-title').textContent = 'Agregar artículo al price list';
+    document.getElementById('addprod-title').textContent = cevenAddProdTitle();
     showToast('✓ Todos los SKUs faltantes agregados y seleccionados');
   }
   goTo('catalog'); renderCat();

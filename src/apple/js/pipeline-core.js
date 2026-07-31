@@ -132,10 +132,6 @@ function clearPipelineFilters(){
   renderPipeline();
 }
 
-function clearCatalogFilters(){
-  var el = document.getElementById('fsearch'); if(el) el.value='';
-  var fm = document.getElementById('fmodel'); if(fm) fm.value='Todos';
-  var fc = document.getElementById('fcountry'); if(fc) fc.value='Todos';
-  renderCat();
-}
+// clearCatalogFilters() vive en shared/catalog-core.js (Poly tenia su propia
+// copia; los selects de modelo/pais se limpian solo si existen).
 

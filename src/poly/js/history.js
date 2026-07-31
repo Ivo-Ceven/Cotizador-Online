@@ -53,6 +53,19 @@ function clearHF(){ document.getElementById('hclient').value=''; document.getEle
 
 function parseARDate(s){ if(!s)return null; var p=s.split('/'); if(p.length===3)return new Date(p[2],p[1]-1,p[0]); return null; }
 
+// Los <input type="date"> devuelven "YYYY-MM-DD" y new Date() lo interpreta como
+// UTC medianoche, mientras que parseARDate() construye una fecha LOCAL. Al
+// compararlas, en Argentina (UTC-3) las cotizaciones del primer día del rango
+// quedaban afuera y las del último se colaban. Este parser también es local.
+function parseISODateLocal(s){
+  if(!s) return null;
+  var p = String(s).split('-');
+  if(p.length !== 3) return null;
+  var y = parseInt(p[0],10), m = parseInt(p[1],10), d = parseInt(p[2],10);
+  if(isNaN(y) || isNaN(m) || isNaN(d)) return null;
+  return new Date(y, m-1, d);
+}
+
 function renderHistory(){
   var db=getDB(), wrap=document.getElementById('histwrap');
 
@@ -73,14 +86,29 @@ function renderHistory(){
   if(!db.length){ wrap.innerHTML='<div style="text-align:center;padding:36px;color:#aeaeb2"><div style="font-size:26px;margin-bottom:6px">📭</div><p>No hay cotizaciones guardadas.</p></div>'; return; }
   var grouped={};
   for(var i=0;i<db.length;i++){var k=db[i]['N° Cotización']||'—';if(!grouped[k])grouped[k]=[];grouped[k].push(db[i]);}
-  var keys=Object.keys(grouped).reverse();
+  // Object.keys() devuelve primero las claves con forma de índice entero (en orden
+  // numérico) y después el resto en orden de inserción. '0001'..'0999' llevan cero
+  // a la izquierda y no son canónicas, pero '1000' sí: a partir de la cotización
+  // #1000 las nuevas saltaban al principio y .reverse() las mandaba al final.
+  // Se ordena explícitamente por número, descendente.
+  var keys=Object.keys(grouped).sort(function(a,b){
+    var na=parseInt(a,10), nb=parseInt(b,10);
+    var va=isNaN(na), vb=isNaN(nb);
+    if(va && vb) return String(b).localeCompare(String(a));
+    if(va) return 1;   // claves no numéricas ('—') al final
+    if(vb) return -1;
+    return nb-na;
+  });
+  var dFrom = parseISODateLocal(ff);
+  var dTo   = parseISODateLocal(ft);
+  if(dTo) dTo.setHours(23,59,59,999);
   var html='';
   for(var ki=0;ki<keys.length;ki++){
     var qn=keys[ki], rows=grouped[qn], first=rows[0];
     var searchHay = ((first['Cliente']||'')+' '+(first['OPG']||'')+' '+(first['Sala']||'')).toLowerCase();
     if(fc&&searchHay.indexOf(fc)===-1) continue;
     if(fe&&first['Ejecutivo']!==fe) continue;
-    if(ff||ft){ var d=parseARDate(first['Fecha']); if(d){if(ff&&d<new Date(ff))continue;if(ft&&d>new Date(ft+'T23:59:59'))continue;} }
+    if(dFrom||dTo){ var d=parseARDate(first['Fecha']); if(d){ if(dFrom&&d<dFrom)continue; if(dTo&&d>dTo)continue; } }
     // Filtrar filas corruptas (sin SKU o descripción válidos)
     rows = rows.filter(function(r){ return r['SKU'] && r['SKU'] !== 'undefined' && r['Descripción'] && r['Descripción'] !== 'undefined'; });
     if(!rows.length) continue;

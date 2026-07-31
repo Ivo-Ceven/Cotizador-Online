@@ -4,62 +4,9 @@ function togglePipeMonthlyView(){
   renderPipeline();
 }
 
-// Toggle del filtro por estado al tocar una pill
-window._pipeStatusFilters = window._pipeStatusFilters || [];
-window._pipeMonthFilter = window._pipeMonthFilter || '';
-function setPipeMonth(val){
-  window._pipeMonthFilter = (window._pipeMonthFilter === val) ? '' : val;
-  renderPipeline();
-}
-function setPipeClientFilter(cli){
-  var box = document.getElementById('pipe-search');
-  if(!box) return;
-  // Si ya está filtrado por ese cliente, limpiar; si no, filtrar
-  if((box.value||'').trim().toLowerCase() === cli.toLowerCase()) box.value = '';
-  else box.value = cli;
-  renderPipeline();
-}
-function togglePillFilter(status){
-  var idx = window._pipeStatusFilters.indexOf(status);
-  if(idx !== -1){
-    window._pipeStatusFilters.splice(idx, 1);
-  } else {
-    window._pipeStatusFilters.push(status);
-  }
-  // Sincronizar select (para compatibilidad con código que lee pipe-status)
-  var sel = document.getElementById('pipe-status');
-  if(sel) sel.value = window._pipeStatusFilters.length === 1 ? window._pipeStatusFilters[0] : '';
-  renderPipeline();
-}
-
-// Sort state global
-window._pipeSort = window._pipeSort || {col: 'fechaISO', dir: 'desc'};
-
-function setPipeSort(col){
-  if(window._pipeSort.col === col){
-    window._pipeSort.dir = window._pipeSort.dir === 'asc' ? 'desc' : 'asc';
-  } else {
-    window._pipeSort.col = col;
-    // Texto = asc por default, números/fechas = desc
-    var numericCols = ['monto','qMac','qIph','qIpad','qServ','qAcc','margenPond','fechaISO'];
-    window._pipeSort.dir = numericCols.indexOf(col) !== -1 ? 'desc' : 'asc';
-  }
-  renderPipeline();
-}
-
-function attachPipeSortHandlers(){
-  var ths = document.querySelectorAll('#p-pipeline th.srt');
-  ths.forEach(function(th){
-    th.classList.remove('asc','desc');
-    if(th.dataset.sort === window._pipeSort.col){
-      th.classList.add(window._pipeSort.dir);
-    }
-    if(!th._sortBound){
-      th._sortBound = true;
-      th.addEventListener('click', function(){ setPipeSort(this.dataset.sort); });
-    }
-  });
-}
+// Los filtros (mes/cliente/pills) y el sort de columnas viven en
+// shared/pipeline-ui.js: eran identicos salvo que columnas arrancan
+// descendentes, que ahora sale de brand.pipeSortDescCols.
 
 // Recalcula qMac/qIph/qIpad/qServ/qAcc de entradas del pipeline desde las líneas del DB.
 // Corrige cualquier categorización incorrecta guardada previamente (ej: MBAir detectada como acc).

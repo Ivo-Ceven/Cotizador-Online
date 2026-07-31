@@ -1,22 +1,4 @@
-function sortQBy(key){
-  if(_qSortKey === key) _qSortDir *= -1;
-  else { _qSortKey = key; _qSortDir = 1; }
-  renderQ();
-}
-
-function getSortedItems(){
-  var list = items.slice();
-  if(_qSortKey){
-    list.sort(function(a,b){
-      var va, vb;
-      if(_qSortKey==='desc'){ va=(a.description||'').toLowerCase(); vb=(b.description||'').toLowerCase(); return _qSortDir*(va<vb?-1:va>vb?1:0); }
-      if(_qSortKey==='sku'){  va=(a.sku||'').toLowerCase();         vb=(b.sku||'').toLowerCase();         return _qSortDir*(va<vb?-1:va>vb?1:0); }
-      if(_qSortKey==='price'){va=a.salePrice||0;                    vb=b.salePrice||0;                    return _qSortDir*(va-vb); }
-      return 0;
-    });
-  }
-  return list;
-}
+// _qSortKey/_qSortDir, sortQBy() y getSortedItems() viven en shared/quote-core.js.
 
 function renderQ() {
   var gt=0; for(var i=0;i<items.length;i++) gt+=(items[i].salePrice||0)*items[i].qty;
@@ -118,7 +100,6 @@ function upUnitPrice(id, v){
   }
   renderQ();
 }
-function upField(id,f,v){ for(var i=0;i<items.length;i++){if(String(items[i].id)===String(id)){items[i][f]=v;}} }
 
 // ── Edición de ítem desde la cotización (no toca el catálogo) ──
 var _qieEditId = null;
@@ -175,6 +156,4 @@ function saveQuoteItemEdit(){
   renderQ();
 }
 
-function rmItem(id){ items=items.filter(function(x){return String(x.id)!==String(id);}); renderQ(); }
-function editItem(id){ editId=id; selIds={}; goTo('catalog'); if(products.length) renderCat(); }
-function openCat(){ editId=null; selIds={}; goTo('catalog'); if(products.length) renderCat(); }
+// rmItem(), editItem(), openCat() y upField() viven en shared/quote-core.js.

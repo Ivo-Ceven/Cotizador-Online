@@ -4,3 +4,12 @@ Thumbs.db
 
 .vercel
 .env*
+
+# Datos de trabajo: price lists, cotizaciones de clientes, planillas sueltas.
+# El 24/07/2026 se colaron tres al repo y siguen en el historial de git
+# (ver docs/HISTORIAL.md). Si hace falta versionar un ejemplo, que sea con datos
+# ficticios, en docs/, y forzado con `git add -f`.
+*.xlsx
+*.xls
+*.csv
+*.pdf

@@ -1,10 +1,19 @@
 // ── DB ──
-function getDB(){ try{return JSON.parse(localStorage.getItem('poly_cquotes')||'[]');}catch(e){return[];} }
+// cevenLsJSON avisa por consola si el JSON esta corrupto en vez de devolver []
+// en silencio (que se veia igual que "nunca guardaste nada"). El chequeo de
+// Array es porque un valor guardado con otra forma tampoco sirve como DB.
+function getDB(){
+  var db = cevenLsJSON(cevenK('cquotes'), []);
+  return Object.prototype.toString.call(db) === '[object Array]' ? db : [];
+}
 function saveDB(db){
   // Limpiar filas corruptas antes de guardar
   db = db.filter(function(r){ return r['SKU'] && r['SKU'] !== 'undefined' && r['Descripción'] && r['Descripción'] !== 'undefined'; });
-  try{localStorage.setItem('poly_cquotes',JSON.stringify(db));}catch(e){}
+  // Devuelve false si no se pudo guardar (cuota llena). Antes el setItem crudo
+  // fallaba callado y la app seguia mostrando la cotizacion como guardada.
+  var ok = cevenLsSet(cevenK('cquotes'), JSON.stringify(db));
   autoSnapshot();
+  return ok;
 }
 
 // Guardar con el ejecutivo vacío deja la fila como Ejecutivo '—', y a partir de

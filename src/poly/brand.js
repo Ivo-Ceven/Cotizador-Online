@@ -45,6 +45,13 @@ window.CEVEN_BRAND = {
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   localOnlyCols: [],
 
+  /* --- Pipeline: vista (shared/pipeline-ui.js) ---------------------- */
+
+  // Columnas cuyo orden por defecto es DESCENDENTE al tocar el encabezado
+  // (numeros y fechas se leen "de mayor a menor"; el texto, alfabetico).
+  // Poly no tiene las columnas de unidades por familia ni margen.
+  pipeSortDescCols: ['monto','fechaISO'],
+
   /* --- Backup (shared/backup.js, shared/backup-folder.js) ----------- */
 
   idbKey:          'pipeFolder_poly',               // handle de carpeta en IndexedDB
