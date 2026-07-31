@@ -1,10 +1,7 @@
-/* ═══════════════════ COLOR TOKENS ═══════════════════ */
-:root{
-  --c0:#f5f5f7;--c1:#fff;--ch:#fafafa;--c3:#ebebed;
-  --ct1:#1d1d1f;--ct2:#6e6e73;--ct3:#aeaeb2;
-  --cb:#d2d2d7;--cb2:#f0f0f0;
-  --cblue:#0071e3;--cgreen:#34c759;--cred:#d70015;--corg:#ff9f0a
-}
+/* ═══════════════════ COLOR TOKENS ═══════════════════
+   Los valores del modo claro (:root) viven en base.css: es el único CSS que
+   carga el shell, y la navbar los necesita ahí también. Acá quedan solo los
+   del modo oscuro. */
 body.dark{
   --c0:#1c1c1e;--c1:#2c2c2e;--ch:#2c2c2e;--c3:#3a3a3c;
   --ct1:#f5f5f7;--ct2:#8e8e93;--ct3:#636366;
@@ -13,6 +10,13 @@ body.dark{
 }
 /* ═══════════════════ DARK MODE ═══════════════════ */
 body.dark{background:var(--c0);color:var(--ct1)}
+/* navbar (shared/navbar.js). La pastilla del ítem activo NO se repite acá:
+   usa var(--ct1)/var(--c0), que se dan vuelta solos con los tokens. */
+body.dark .cvnav{background:rgba(28,28,30,.78)!important;border-color:var(--cb)!important}
+body.dark .cvnav-brand:not([disabled]):hover{background:rgba(255,255,255,.09)!important}
+body.dark .cvnav-link:hover{background:rgba(255,255,255,.09)!important}
+body.dark .cvnav-btn:hover{background:rgba(255,255,255,.09)!important}
+body.dark .cvnav-user{background:rgba(255,255,255,.08)!important}
 /* estructura */
 body.dark .card{background:var(--c1)!important;border-color:var(--cb)!important}
 body.dark .tw{background:var(--c1)!important;border-color:var(--cb)!important}
@@ -23,8 +27,11 @@ body.dark .crow.sel td{background:rgba(10,132,255,.2)!important}
 /* inputs / selects */
 body.dark input:not([type=file]){background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark select{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
-body.dark input::placeholder{color:var(--ct3)!important}
-body.dark input:focus,body.dark select:focus{border-color:var(--cblue)!important}
+/* El buscador del catálogo es un <textarea> con background:#fff inline: sin
+   este !important quedaba blanco en modo oscuro. */
+body.dark textarea{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
+body.dark input::placeholder,body.dark textarea::placeholder{color:var(--ct3)!important}
+body.dark input:focus,body.dark select:focus,body.dark textarea:focus{border-color:var(--cblue)!important}
 /* botones */
 body.dark .bd{background:var(--ct1)!important;color:var(--c0)!important}
 body.dark .bd:hover{background:#e5e5e5!important}

@@ -173,19 +173,27 @@ function cevenShowApp(){
      esos módulos chequean la sesión ellos mismos al arrancar. */
   try{ window.dispatchEvent(new Event('ceven-session-ready')); }catch(e){}
 }
-/* La barra (Usuarios / Salir) se ve en la página principal (cotización)
-   o en el shell (panel selector de marcas, #brand-panel). */
+/* Estado de la UI que depende de quién sos. Corre en cada cambio de vista
+   (_navApply) y al mostrar la app después del login.
+
+   La barra flotante #ceven-account-bar es la forma vieja y ya no existe en
+   ninguna página: la cuenta vive en la navbar (shared/navbar.js), que se ve
+   en todas las vistas. Se conserva el bloque por si alguna página la vuelve a
+   usar, pero NADA acá abajo puede depender de que exista — antes un `return`
+   temprano dejaba sin aplicar los permisos de los botones. */
 function cevenUpdateAccountBar(){
   var bar = document.getElementById('ceven-account-bar');
-  if(!bar) return;
-  var quote = document.getElementById('p-quote');
-  var onMain = cevenIsValidSession() &&
-    ((quote && quote.classList.contains('on')) || !!document.getElementById('brand-panel'));
-  bar.style.display = onMain ? 'flex' : 'none';
+  if(bar){
+    var quote = document.getElementById('p-quote');
+    var onMain = cevenIsValidSession() &&
+      ((quote && quote.classList.contains('on')) || !!document.getElementById('brand-panel'));
+    bar.style.display = onMain ? 'flex' : 'none';
+  }
   var ubtn = document.getElementById('ceven-users-btn');
   if(ubtn) ubtn.style.display = cevenIsAdmin() ? '' : 'none';
   var pbtn = document.getElementById('btn-add-pipeline');
   if(pbtn) pbtn.style.display = cevenCanUsePipeline() ? '' : 'none';
+  if(typeof cevenNavbarSync === 'function') cevenNavbarSync();
 }
 
 /* ---- Permisos por rol ----

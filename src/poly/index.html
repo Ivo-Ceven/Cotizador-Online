@@ -26,15 +26,8 @@
 <!-- ============================================================
      El login y la gestión de usuarios viven en el shell (../index.html).
      Esta página exige sesión válida (guard más abajo, tras cargar auth.js).
+     La cuenta (marca, modo oscuro, contraseña, salir) vive en la navbar.
      ============================================================ -->
-<div id="ceven-account-bar" style="display:none;position:fixed;bottom:16px;right:16px;z-index:9000;gap:8px;font-family:-apple-system,BlinkMacSystemFont,sans-serif">
-  <button onclick="location.href='../index.html'" title="Volver al panel de marcas"
-          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">⌂ Panel</button>
-  <button onclick="cevenChangeMyPassword()" title="Cambiar mi contraseña"
-          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">🔑 Cambiar contraseña</button>
-  <button onclick="cevenLogout()" title="Cerrar sesión"
-          style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)">🚪 <span id="ceven-logout-label">Salir</span></button>
-</div>
 
 <!-- Configuración de esta marca: la leen todos los módulos de shared/ -->
 <script src="brand.js"></script>
@@ -44,6 +37,8 @@
 <script src="../shared/auth.js"></script>
 <script src="../shared/notify.js"></script>
 <script>if(!cevenIsValidSession()) location.replace('../index.html');</script>
+<!-- Barra superior: va acá, antes del markup, para que no salte al cargar -->
+<script src="../shared/navbar.js"></script>
 
 <!-- QUOTE -->
 <div id="p-quote" class="pg on">
@@ -54,16 +49,13 @@
   </div>
   <div class="tb">
     <div style="flex:1;min-width:140px">
-      <div id="qnum" style="font-size:11px;color:#6e6e73;font-weight:500">Cotización #—</div>
-      <div style="font-size:16px;font-weight:600;margin-top:2px">Poly · Audio y video conferencia</div>
+      <div id="qnum" class="lbl" style="margin-bottom:2px">Cotización #—</div>
+      <div class="h2">Poly · Audio y video conferencia</div>
     </div>
     <button class="bi" onclick="nuevaCotizacion()" title="Nueva cotización">＋</button>
     <button class="bi" onclick="copiarCotizacion()" title="Copiar cotización (crea una nueva con los mismos productos)">⧉</button>
     <button class="bi" onclick="saveQuote()" title="Guardar cotización">💾</button>
-    <button class="bi" onclick="goTo('history')" title="Historial de cotizaciones">📋</button>
     <button id="btn-add-pipeline" class="bi" onclick="addToPipeline()" title="Agregar al Pipeline" style="border-color:#34c759;color:#15863a;font-size:14px;font-weight:700;letter-spacing:-1px">+📊</button>
-    <button class="bi" onclick="goTo('pipeline')" title="Ver Pipeline">🎯</button>
-    <button class="bi dark-btn" onclick="toggleDark()" title="Modo oscuro / claro">🌙</button>
     <button class="bi" onclick="exportFullBackup()" title="Descargar backup completo (cotizaciones, pipeline, catálogo, logo)">⬇️</button>
     <button class="bi" onclick="document.getElementById('backup-import').click()" title="Restaurar desde un archivo de backup">⬆️</button>
     <input type="file" id="backup-import" accept=".json" style="display:none" onchange="importFullBackup(this)">
@@ -147,7 +139,7 @@
 <div id="p-catalog" class="pg">
   <div class="tb">
     <button class="bo" onclick="goTo('quote')">← Volver</button>
-    <h2 style="font-size:16px;font-weight:500;flex:1">Agregar productos</h2>
+    <h2 class="h2" style="flex:1">Agregar productos</h2>
     <button class="bo" onclick="clearCatalogFilters()" title="Limpiar búsqueda">✕ Filtros</button>
     <button class="bo" onclick="goTo('addprod')">+ Nuevo artículo</button>
   </div>
@@ -201,7 +193,7 @@
 
 <!-- ADD PRODUCT -->
 <div id="p-addprod" class="pg">
-  <div class="tb"><button class="bo" onclick="cancelEditManual()">← Volver</button><h2 id="addprod-title" style="font-size:16px;font-weight:500">Agregar artículo al catálogo</h2></div>
+  <div class="tb"><button class="bo" onclick="cancelEditManual()">← Volver</button><h2 id="addprod-title" class="h2">Agregar artículo al catálogo</h2></div>
   <div class="card">
     <div class="g2">
       <div><label class="lbl">SKU *</label><input id="np-sku" type="text" placeholder="Ej: A4LZ8AA#ABM"></div>
@@ -218,7 +210,7 @@
 <div id="p-history" class="pg">
   <div class="tb">
     <button class="bo" onclick="goTo('quote')">← Volver</button>
-    <h2 style="font-size:16px;font-weight:500;flex:1">Historial</h2>
+    <h2 class="h2" style="flex:1">Historial</h2>
     <button class="bo" onclick="exportDB()">⬇ Excel</button>
     <button class="bo red" id="hist-del-btn" onclick="deleteSelected()" style="display:none">✕ Eliminar</button>
     <button class="bd" id="hist-pdf-btn" onclick="exportSelectedPDF()" style="display:none">PDF seleccionadas</button>
@@ -240,12 +232,11 @@
   <div class="tb">
     <button class="bo" onclick="goTo('quote')">← Volver</button>
     <button class="bo" onclick="nuevaCotizacion();goTo('quote')" style="border-color:#34c759;color:#15863a">+ Nueva cotización</button>
-    <h2 style="font-size:16px;font-weight:500;flex:1">🎯 Pipeline</h2>
+    <h2 class="h2" style="flex:1">🎯 Pipeline</h2>
     <select id="archive-month-sel" onchange="renderPipeline()" title="Ver meses archivados" style="padding:4px 8px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;max-width:160px">
       <option value="">Pipeline actual</option>
     </select>
     <button class="bo" onclick="clearPipelineFilters()" title="Limpiar todos los filtros">✕ Filtros</button>
-    <button class="bi dark-btn" onclick="toggleDark()" title="Modo oscuro / claro">🌙</button>
     <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer último cambio de estado o fecha" disabled>↩</button>
     <button class="bo" id="pipe-backup-btn" onclick="pickBackupFolder()" title="Elegí una carpeta donde guardar backups automáticos">📂 Elegir carpeta backup</button>
     <button class="bo" onclick="exportPipeline()">⬇ Excel</button>

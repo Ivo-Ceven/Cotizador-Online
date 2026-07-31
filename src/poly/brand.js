@@ -45,6 +45,19 @@ window.CEVEN_BRAND = {
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   localOnlyCols: [],
 
+  /* --- Navegacion (shared/navbar.js) -------------------------------- */
+
+  // Vistas que aparecen en la barra superior, en orden. `alsoFor` son las
+  // vistas que NO tienen item propio y marcan a esta como activa (se llega a
+  // ellas desde adentro). `needsPipeline` esconde el item para el rol lector,
+  // que no usa pipeline. Poly no tiene nacionalizacion: un item menos.
+  navItems: [
+    { view: 'quote',    label: 'Cotización' },
+    { view: 'catalog',  label: 'Catálogo', alsoFor: ['addprod'] },
+    { view: 'history',  label: 'Historial' },
+    { view: 'pipeline', label: 'Pipeline', needsPipeline: true }
+  ],
+
   /* --- Pipeline: vista (shared/pipeline-ui.js) ---------------------- */
 
   // Columnas cuyo orden por defecto es DESCENDENTE al tocar el encabezado

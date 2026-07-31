@@ -15,40 +15,84 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Ceven">
+
+<!-- El shell comparte tipografía, tokens de color y la navbar con los
+     cotizadores. dark.css no: el panel de marcas es siempre claro. -->
+<link rel="stylesheet" href="shared/css/base.css">
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f7;color:#1d1d1f;font-size:13px;min-height:100vh}
-  .lbl{font-size:11px;color:#6e6e73;font-weight:500;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:3px}
-  .inp{border:0.5px solid #d2d2d7;border-radius:8px;padding:9px 11px;font-size:14px;width:100%;outline:none;margin-bottom:13px;font-family:inherit}
-  .err{display:none;background:#fff0f0;color:#d70015;font-size:12px;padding:8px 11px;border-radius:8px;margin-bottom:13px}
-  .btn-dark{border:none;border-radius:980px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;background:#1d1d1f;color:#fff;font-family:inherit}
-  .btn-bar{border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.08)}
-  .brand-card{background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:30px 26px;width:220px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.05);transition:transform .15s ease, box-shadow .15s ease}
-  .brand-card.active{cursor:pointer}
-  .brand-card.active:hover{transform:translateY(-3px);box-shadow:0 10px 30px rgba(0,0,0,.10)}
-  .brand-card.soon{opacity:.45;pointer-events:none}
-  .brand-badge{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#6e6e73;background:#ebebed;border-radius:980px;padding:3px 10px;margin-top:10px}
+  body{min-height:100vh;padding-bottom:0}   /* acá no hay zócalo de versión */
+
+  /* ── Panel de marcas ── */
+  #brand-panel{min-height:calc(100vh - 52px);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:44px 20px 60px}
+  .hero{text-align:center;margin-bottom:32px}
+  .hero h1{font-family:var(--f-disp);font-size:30px;font-weight:600;letter-spacing:-.026em;line-height:1.12}
+  .hero p{font-size:14px;color:var(--ct2);margin-top:6px}
+
+  .marcas{display:flex;gap:18px;flex-wrap:wrap;justify-content:center}
+  /* Una tarjeta por marca. Es un <a> y no un <div onclick>: se abre con el
+     teclado, con el botón del medio y con "abrir en pestaña nueva". */
+  .mcard{
+    display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;
+    background:#fff;border:0.5px solid var(--cb);border-radius:16px;
+    padding:20px 22px;width:268px;box-shadow:var(--sh2);
+    transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+  }
+  .mcard:hover{transform:translateY(-3px);box-shadow:var(--sh3);border-color:#c7c7cc}
+  .mcard:active{transform:translateY(-1px)}
+  .mcard-mark{font-size:34px;line-height:1;flex-shrink:0}
+  .mcard-body{flex:1;min-width:0}
+  .mcard-body b{display:block;font-family:var(--f-disp);font-size:17px;font-weight:600;letter-spacing:-.014em}
+  .mcard-body span{display:block;font-size:12px;color:var(--ct2);margin-top:2px}
+  .mcard-go{font-size:16px;color:var(--ct3);flex-shrink:0;transition:transform .18s ease,color .18s ease}
+  .mcard:hover .mcard-go{transform:translateX(3px);color:var(--ct1)}
+  .mcard.soon{opacity:.5;pointer-events:none;box-shadow:none}
+  .badge{display:inline-block;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--ct2);background:var(--c3);border-radius:980px;padding:3px 9px;margin-top:6px}
+
+  /* ── Tareas del equipo ── */
+  #todos-panel{width:100%;max-width:520px;margin-top:34px;background:#fff;border:0.5px solid var(--cb);border-radius:16px;padding:18px 20px 14px;box-shadow:var(--sh2)}
+  #todos-panel .hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+
+  /* ── Formularios y botones propios del shell ── */
+  .inp{border:0.5px solid var(--cb);border-radius:9px;padding:9px 11px;font-size:14px;width:100%;outline:none;margin-bottom:13px;font-family:inherit;background:#fff}
+  .inp:focus{border-color:var(--ct1);box-shadow:0 0 0 3px rgba(0,113,227,.15)}
+  .err{display:none;background:#fff0f0;color:var(--cred);font-size:12px;padding:8px 11px;border-radius:8px;margin-bottom:13px}
+  .btn-dark{border:none;border-radius:980px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;background:var(--ct1);color:#fff;font-family:inherit;transition:background .15s ease,transform .08s ease}
+  .btn-dark:hover{background:#3a3a3c}
+  .btn-dark:active{transform:scale(.98)}
+
+  /* ── Login ── */
+  #ceven-login{position:fixed;inset:0;z-index:99999;background:var(--c0);display:flex;align-items:center;justify-content:center;padding:20px}
+  .login-card{background:#fff;border:0.5px solid var(--cb);border-radius:18px;padding:34px 32px;width:352px;max-width:100%;box-shadow:var(--sh3)}
+  .login-card h1{font-family:var(--f-disp);font-size:20px;font-weight:600;letter-spacing:-.018em;margin-top:10px}
+
+  /* ── Modales (usuarios / editar perfil) ── */
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.32);align-items:center;justify-content:center;padding:20px;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+  .modal-card{background:#fff;border:0.5px solid var(--cb);border-radius:18px;padding:24px 26px;max-width:100%;box-shadow:var(--sh3)}
+  .modal-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .modal-x{border:none;background:var(--c0);width:28px;height:28px;border-radius:50%;font-size:17px;cursor:pointer;color:var(--ct2);line-height:1;font-family:inherit}
+  .modal-x:hover{background:var(--c3)}
 </style>
 </head>
 <body>
 
 <!-- ============================================================
      LOGIN  ·  Acceso a los cotizadores (Supabase Auth)
-     Usuarios se gestionan desde el botón "👤 Usuarios" (solo admin@ceven.com).
+     Usuarios se gestionan desde el botón 👤 de la barra superior
+     (solo admin@ceven.com).
      ============================================================ -->
-<div id="ceven-login" style="position:fixed;inset:0;z-index:99999;background:#f5f5f7;display:flex;align-items:center;justify-content:center">
-  <div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:34px 32px;width:340px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.08)">
+<div id="ceven-login">
+  <div class="login-card">
     <div style="text-align:center;margin-bottom:22px">
       <div style="font-size:30px;line-height:1">🔐</div>
-      <div style="font-size:19px;font-weight:600;color:#1d1d1f;margin-top:8px">Cotizadores Ceven</div>
-      <div style="font-size:13px;color:#6e6e73;margin-top:2px">Inicia sesión para continuar</div>
+      <h1>Cotizadores Ceven</h1>
+      <div class="sub" style="margin-top:3px">Iniciá sesión para continuar</div>
     </div>
     <form id="ceven-login-form" onsubmit="return cevenDoLogin(event)">
       <label class="lbl">Usuario (email @ceven.com)</label>
       <input id="ceven-user" type="email" autocomplete="username" autofocus placeholder="nombre@ceven.com" class="inp">
       <label class="lbl">Contraseña</label>
       <input id="ceven-pass" type="password" autocomplete="current-password" class="inp">
-      <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#1d1d1f;margin-bottom:16px;cursor:pointer">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#1d1d1f;margin-bottom:16px;cursor:pointer">
         <input id="ceven-remember" type="checkbox" checked style="width:auto;margin:0"> Mantener sesión iniciada
       </label>
       <div id="ceven-login-err" class="err"></div>
@@ -60,27 +104,25 @@
 <!-- ============================================================
      PANEL SELECTOR DE MARCAS
      ============================================================ -->
-<div id="brand-panel" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px">
-  <div style="text-align:center;margin-bottom:34px">
-    <div style="font-size:26px;font-weight:600;color:#1d1d1f">Cotizadores Ceven</div>
-    <div style="font-size:14px;color:#6e6e73;margin-top:4px">Elegí la marca con la que vas a trabajar</div>
+<div id="brand-panel">
+  <div class="hero">
+    <h1>Cotizadores Ceven</h1>
+    <p>Elegí la marca con la que vas a trabajar</p>
   </div>
-  <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center">
-    <div class="brand-card active" onclick="location.href='apple/'" title="Abrir cotizador Apple">
-      <div style="font-size:44px;line-height:1">🍎</div>
-      <div style="font-size:17px;font-weight:600;margin-top:12px">Apple</div>
-      <div style="font-size:12px;color:#6e6e73;margin-top:3px">Mac · iPhone · iPad · CevenCare</div>
-    </div>
-    <div class="brand-card" onclick="location.href='poly/'" title="Abrir cotizador Poly">
-      <div style="font-size:44px;line-height:1">🎧</div>
-      <div style="font-size:17px;font-weight:600;margin-top:12px">Poly</div>
-      <div style="font-size:12px;color:#6e6e73;margin-top:3px">Audio y video conferencia</div>
-    </div>
-    <div class="brand-card soon">
-      <div style="font-size:44px;line-height:1">💻</div>
-      <div style="font-size:17px;font-weight:600;margin-top:12px">HP</div>
-      <div style="font-size:12px;color:#6e6e73;margin-top:3px">Notebooks e impresión</div>
-      <div class="brand-badge">Próximamente</div>
+  <div class="marcas">
+    <a class="mcard" href="apple/" title="Abrir cotizador Apple">
+      <span class="mcard-mark">🍎</span>
+      <span class="mcard-body"><b>Apple</b><span>Mac · iPhone · iPad · CevenCare</span></span>
+      <span class="mcard-go" aria-hidden="true">→</span>
+    </a>
+    <a class="mcard" href="poly/" title="Abrir cotizador Poly">
+      <span class="mcard-mark">🎧</span>
+      <span class="mcard-body"><b>Poly</b><span>Audio y video conferencia</span></span>
+      <span class="mcard-go" aria-hidden="true">→</span>
+    </a>
+    <div class="mcard soon">
+      <span class="mcard-mark">💻</span>
+      <span class="mcard-body"><b>HP</b><span>Notebooks e impresión</span><span class="badge">Próximamente</span></span>
     </div>
   </div>
 
@@ -89,32 +131,28 @@
        marcas (ver shared/todos.js). Checklist simple: texto + quién
        la creó + hecha/pendiente.
        ============================================================ -->
-  <div id="todos-panel" style="width:100%;max-width:480px;margin-top:36px;background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:20px 22px;box-shadow:0 4px 20px rgba(0,0,0,.05)">
-    <div style="font-size:15px;font-weight:600;color:#1d1d1f;margin-bottom:12px">✅ Tareas del equipo</div>
+  <div id="todos-panel">
+    <div class="hd">
+      <div class="h3">✅ Tareas del equipo</div>
+      <div class="sub">Compartidas entre todas las marcas</div>
+    </div>
     <form onsubmit="return addTodo(event)" style="display:flex;gap:8px;margin-bottom:6px">
       <input id="todo-input" type="text" placeholder="Agregar una tarea..." class="inp" style="margin-bottom:0;flex:1">
-      <button type="submit" class="btn-dark" style="padding:9px 16px;white-space:nowrap">+ Agregar</button>
+      <button type="submit" class="btn-dark" style="padding:9px 16px;white-space:nowrap">Agregar</button>
     </form>
     <div id="todo-list"></div>
   </div>
 </div>
 
-<!-- Barra de cuenta (abajo a la derecha) -->
-<div id="ceven-account-bar" style="display:none;position:fixed;bottom:16px;right:16px;z-index:9000;gap:8px">
-  <button id="ceven-users-btn" onclick="cevenOpenUsers()" title="Gestionar usuarios" class="btn-bar">👤 Usuarios</button>
-  <button onclick="cevenChangeMyPassword()" title="Cambiar mi contraseña" class="btn-bar">🔑 Cambiar contraseña</button>
-  <button onclick="cevenLogout()" title="Cerrar sesión" class="btn-bar">🚪 <span id="ceven-logout-label">Salir</span></button>
-</div>
-
 <!-- Modal: gestión de usuarios -->
-<div id="ceven-users-modal" onclick="if(event.target===this)cevenCloseUsers()" style="display:none;position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.3);align-items:center;justify-content:center">
-  <div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:26px 26px;width:400px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-size:17px;font-weight:600;color:#1d1d1f">👤 Usuarios</div>
-      <button onclick="cevenCloseUsers()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#6e6e73;line-height:1">×</button>
+<div id="ceven-users-modal" class="modal" onclick="if(event.target===this)cevenCloseUsers()" style="z-index:99998">
+  <div class="modal-card" style="width:400px">
+    <div class="modal-hd">
+      <div class="h3">👤 Usuarios</div>
+      <button onclick="cevenCloseUsers()" class="modal-x" title="Cerrar">×</button>
     </div>
     <form onsubmit="return cevenCreateUser(event)" style="border:0.5px solid #d2d2d7;border-radius:12px;padding:14px;margin-bottom:16px">
-      <div style="font-size:13px;font-weight:600;color:#1d1d1f;margin-bottom:10px">Crear usuario nuevo</div>
+      <div class="h3" style="font-size:13px;margin-bottom:10px">Crear usuario nuevo</div>
       <input id="ceven-new-user" type="email" placeholder="nombre@ceven.com" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
       <input id="ceven-new-pass" type="password" autocomplete="new-password" placeholder="Contraseña (mínimo 6 caracteres)" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
       <input id="ceven-new-nombre" type="text" placeholder="Nombre (vendedor), ej: Fer Castro" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
@@ -132,14 +170,14 @@
 </div>
 
 <!-- Modal: editar perfil (nombre + rol) de un usuario existente -->
-<div id="ceven-edit-profile-modal" onclick="if(event.target===this)cevenCloseEditProfile()" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.3);align-items:center;justify-content:center">
-  <div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:26px 26px;width:360px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-size:17px;font-weight:600;color:#1d1d1f">Editar usuario</div>
-      <button onclick="cevenCloseEditProfile()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#6e6e73;line-height:1">×</button>
+<div id="ceven-edit-profile-modal" class="modal" onclick="if(event.target===this)cevenCloseEditProfile()" style="z-index:99999">
+  <div class="modal-card" style="width:360px">
+    <div class="modal-hd">
+      <div class="h3">Editar usuario</div>
+      <button onclick="cevenCloseEditProfile()" class="modal-x" title="Cerrar">×</button>
     </div>
     <form onsubmit="return cevenSubmitEditProfile(event)">
-      <div id="ceven-edit-profile-email" style="font-size:13px;color:#6e6e73;margin-bottom:10px"></div>
+      <div id="ceven-edit-profile-email" class="sub" style="margin-bottom:10px"></div>
       <input id="ceven-edit-profile-nombre" type="text" placeholder="Nombre (vendedor)" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
       <select id="ceven-edit-profile-role" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:10px;background:#fff">
         <option value="admin">Administrador</option>
@@ -156,6 +194,9 @@
 <script src="shared/safe.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
+<!-- navbar.js después de auth.js: lee el rol para decidir qué botones pinta.
+     Acá no hay CEVEN_BRAND, así que sale sin ítems de navegación. -->
+<script src="shared/navbar.js"></script>
 <script src="shared/nav.js"></script>
 <script src="shared/notify.js"></script>
 <script src="shared/todos.js"></script>

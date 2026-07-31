@@ -49,6 +49,20 @@ window.CEVEN_BRAND = {
   // El poll tiene que preservarlos al mergear las filas del servidor.
   localOnlyCols: ['skuOvLinks'],
 
+  /* --- Navegacion (shared/navbar.js) -------------------------------- */
+
+  // Vistas que aparecen en la barra superior, en orden. `alsoFor` son las
+  // vistas que NO tienen item propio y marcan a esta como activa (se llega a
+  // ellas desde adentro). `needsPipeline` esconde el item para el rol lector,
+  // que no usa pipeline.
+  navItems: [
+    { view: 'quote',    label: 'Cotización',      alsoFor: ['qnac'] },
+    { view: 'catalog',  label: 'Price list',      alsoFor: ['addprod'] },
+    { view: 'nac',      label: 'Nacionalización' },
+    { view: 'history',  label: 'Historial' },
+    { view: 'pipeline', label: 'Pipeline', needsPipeline: true }
+  ],
+
   /* --- Pipeline: vista (shared/pipeline-ui.js) ---------------------- */
 
   // Columnas cuyo orden por defecto es DESCENDENTE al tocar el encabezado
