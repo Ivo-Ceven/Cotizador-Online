@@ -15,7 +15,13 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `auth.js` | Login GoTrue por REST, sesión con refresh, roles y permisos, gestión de usuarios. Rol y vencimiento se derivan **del JWT** |
 | `sync.js` | Sincronización con Supabase para cualquier marca, parametrizada por `brand.js` |
 | `backup.js` / `backup-folder.js` | Snapshot, export/import JSON y backup automático a carpeta (File System Access API + IndexedDB) |
-| `ui-core.js` | Logo, navegación (`_navApply`/`goTo`), formateo (`fI`/`fD`/`dp`/`getTC`), mes de cierre, `showErr` |
+| `recovery.js` | `_checkRecovery()`: detecta que los datos están vacíos y ofrece restaurar el snapshot. Delega en `_applyBackupRestore()` de `backup.js` — **carga después que él** |
+| `ui-core.js` | Logo, navegación (`_navApply`/`goTo`), formateo (`fI`/`fD`/`dp`/`getTC`), mes de cierre, dark mode, `showErr`, y los helpers de delegación `cevenDelegate`/`cevenActEl` |
+| `quote-core.js` | Orden de la cotización (`sortQBy`, `getSortedItems`), `rmItem`, `upField`, `openCat` |
+| `catalog-core.js` | `parseCSV`, `fk`, búsqueda y pegado masivo de SKUs, selección de filas, limpieza de filtros |
+| `pipeline-store.js` | `getPipeline`/`savePipeline`/`getArchive`/`saveArchive`/`currentMonthKey` |
+| `pipeline-ui.js` | Filtros de mes/cliente/pills y orden de la tabla del pipeline |
+| `pdf-core.js` | `downloadQuotePDF()` (html2canvas + jsPDF) y las hojas de estilo del documento |
 | `undo.js` | Deshacer cambios del pipeline, incluidas inserciones y borrados de fila |
 | `nav.js` | `window.cevenNav`: integra el botón Atrás del navegador/celular y la tecla Escape (una sola pila de overlays, un solo listener `popstate`) |
 | `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos |
@@ -207,7 +213,10 @@ No hay tests. Lo mínimo que conviene correr:
 
 ```bash
 node scripts/check-precache.js       # rutas del service worker vs. archivos reales
+node scripts/check-globals.js        # una misma función definida dos veces en un bundle
 node --check src/<archivo>.js        # sintaxis de lo que tocaste
 ```
 
-Y al mover código entre archivos o agregar módulos, chequear que no haya quedado una función definida dos veces en el bundle de una marca (es lo que pasó con `openSkuOvLink`/`editSkuOvLink`, duplicadas desde el corte del monolito hasta 07/2026). El orden de carga de los `<script>` de cada `index.html` es la fuente de verdad de qué entra en cada bundle.
+`check-globals.js` existe porque acá todos los `<script>` comparten scope: si dos archivos definen la misma función, **el que carga después pisa al anterior sin ningún error**. Pasó con `openSkuOvLink`/`editSkuOvLink`, duplicadas en `pipeline-detail.js` desde el corte del monolito hasta que un review las encontró; la que corría era la de abajo y la otra era código muerto que alguien podía leer y creer vigente. El riesgo creció con `shared/`: una función movida a compartido puede chocar con una copia que quedó en la marca.
+
+**Lo que ningún script cubre**: que la app efectivamente abra y funcione. No hay tests ni verificación automática de comportamiento — hay que abrir las dos marcas a mano.
