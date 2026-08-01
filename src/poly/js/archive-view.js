@@ -43,19 +43,26 @@ function renderArchiveMonth(monthKey, entries){
   window._pipeRows = entries;
   var html = '';
   entries.forEach(function(r, i){
-    var salasCount = (r.salas||[]).length;
+    // Mismo criterio que el pipeline activo: se ve el nombre del proyecto, no
+    // solo cuántos hay.
+    var proyNames = (r.salas||[]).map(function(s){ return (s.sala||'').trim(); }).filter(Boolean);
+    var proyCell = proyNames.length
+      ? cevenEsc(proyNames[0]) + (proyNames.length > 1
+          ? ' <span style="color:#6e6e73;font-size:11px">+'+(proyNames.length-1)+'</span>'
+          : '')
+      : '—';
     var expandKey = 'arch__'+monthKey+'__'+r.id;
     var expanded = window._pipeExpanded && window._pipeExpanded[expandKey];
     var estado = r.estado || 'Cotizado';
     html += '<tr class="'+cevenEsc(_rowStClass(estado))+'">'
       +'<td style="font-size:12px;white-space:nowrap">'
-        +'<button class="bs" data-act="exp" data-key="'+cevenEsc(expandKey)+'" title="Ver Salas" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
+        +'<button class="bs" data-act="exp" data-key="'+cevenEsc(expandKey)+'" title="Ver los proyectos de este OPG" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
         +cevenEsc(r.fecha)
       +'</td>'
       +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
       +'<td style="font-weight:500">'+cevenEsc(r.cliente||'—')+'</td>'
       +'<td>'+cevenEsc(r.opg||'—')+'</td>'
-      +'<td style="text-align:center">'+salasCount+' sala'+(salasCount===1?'':'s')+'</td>'
+      +'<td title="'+cevenEsc(proyNames.join(' · '))+'"><div style="max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+proyCell+'</div></td>'
       +'<td style="font-size:12px">'+cevenEsc(lbl)+'</td>'
       +'<td style="text-align:center"><span class="'+cevenEsc(_spillClass(estado))+'" style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+(estado==='Facturado'?'#0a5c30':'#a80011')+';background:'+(estado==='Facturado'?'#e0f5f1':'#fbbebe')+'">'+cevenEsc(estado)+'</span></td>'
       +'<td class="stk-monto" style="text-align:right;font-weight:500">USD '+fI(r.monto||0)+'</td>'

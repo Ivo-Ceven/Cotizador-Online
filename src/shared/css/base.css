@@ -13,6 +13,14 @@
   --cb:#d2d2d7;--cb2:#f0f0f0;
   --cblue:#0071e3;--cgreen:#34c759;--cred:#d70015;--corg:#ff9f0a;
 
+  /* Acento de marca. Los valores reales los escribe shared/theme.js leyendo
+     CEVEN_BRAND.theme; esto es el default del shell, que no tiene marca.
+     Existe porque Apple y Poly se ven casi iguales y sus datos NO se mezclan:
+     el color es la señal de en qué cotizador estás, junto con el chip de la
+     barra superior. --acc-dk es la variante para modo oscuro (dark.css la
+     activa), --acc-soft el fondo tenue para estados apagados. */
+  --acc:#0071e3;--acc-h:#0060c0;--acc-soft:#e8f4ff;--acc-dk:#0a84ff;
+
   /* Tipografía. Sin webfonts a propósito: la app es una PWA offline-first y
      la CSP no permite orígenes externos. La pila arranca por la cara variable
      de cada sistema — "Segoe UI Variable" en Windows 11, San Francisco en
@@ -41,7 +49,7 @@ table,input,select,textarea,.si,.kpi,.bk,.tgt-inp{font-variant-numeric:tabular-n
 
 /* Foco visible. Los inputs traen outline:none de antes (el borde alcanzaba como
    señal con mouse), pero navegando con teclado no se veía nada. */
-:focus-visible{outline:2px solid var(--cblue);outline-offset:2px}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
 }
@@ -66,6 +74,8 @@ table,input,select,textarea,.si,.kpi,.bk,.tgt-inp{font-variant-numeric:tabular-n
   background:rgba(255,255,255,.78);
   -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);
   border-bottom:0.5px solid var(--cb);
+  /* Filete del color de la marca: se ve incluso de reojo y no gasta altura. */
+  box-shadow:inset 0 3px 0 var(--acc);
 }
 .cvnav-in{display:flex;align-items:center;gap:10px;padding:0 16px;min-height:52px}
 .cvnav-brand{
@@ -90,10 +100,10 @@ table,input,select,textarea,.si,.kpi,.bk,.tgt-inp{font-variant-numeric:tabular-n
   transition:background .15s ease,color .15s ease;
 }
 .cvnav-link:hover{color:var(--ct1);background:rgba(0,0,0,.05)}
-/* Activo: la misma pastilla oscura que .bd, el idioma de "acción primaria"
-   que ya usa toda la app. En dark mode dark.css la invierte solo. */
-.cvnav-link.on{background:var(--ct1);color:var(--c0)}
-.cvnav-link.on:hover{background:var(--ct1)}
+/* Activo: pastilla del color de la marca. Junto con el filete de arriba y el
+   chip, son las tres señales de en qué cotizador estás. */
+.cvnav-link.on{background:var(--acc);color:#fff}
+.cvnav-link.on:hover{background:var(--acc-h)}
 
 .cvnav-acc{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .cvnav-btn{
@@ -188,7 +198,65 @@ input::placeholder,textarea::placeholder{color:#aeaeb2}
 .bi{border:0.5px solid #d2d2d7;border-radius:980px;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;font-family:inherit;background:#fff;color:#1d1d1f;padding:0;flex-shrink:0}
 .bi:hover{background:#f5f5f7}
 .bi:disabled{opacity:.35;cursor:default;transform:none}
-.al{display:flex;align-items:center;gap:5px;font-size:13px;color:#0071e3;border:none;background:transparent;cursor:pointer;font-family:inherit}
+.al{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--acc);border:none;background:transparent;cursor:pointer;font-family:inherit}
+
+/* ═══════════════════ BARRA DE ACCIONES DE LA COTIZACIÓN ═══════════════════
+   Antes eran ocho o nueve botones de ícono suelto, todos del mismo tamaño y
+   sin etiqueta: "＋ ⧉ 💾 +📊 ⬇️ ⬆️ 📄 🛡️". Había que abrir el tooltip para
+   saber cuál era cuál, y "descargar backup" pesaba lo mismo que "guardar".
+   Ahora hay dos filas: arriba lo que se usa en cada cotización, con texto;
+   abajo lo ocasional, y el backup —que no es una acción de la cotización—
+   detrás del ⋯. */
+.qbar{display:flex;flex-direction:column;gap:9px;margin-bottom:16px;padding-bottom:13px;border-bottom:0.5px solid var(--c3)}
+.qbar-top{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.qbar-ttl{flex:1;min-width:150px}
+.qbar-main{display:flex;gap:8px;flex-wrap:wrap}
+.qbar-sub{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.qbar-sep{flex:1}
+
+/* Acción con ícono + texto. `em` en el ícono para que acompañe al texto. */
+.act{
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+  border:0.5px solid var(--cb);border-radius:980px;background:#fff;color:var(--ct1);
+  font-family:inherit;font-size:13px;font-weight:500;padding:8px 16px;cursor:pointer;
+  transition:background .15s ease,border-color .15s ease,transform .08s ease,box-shadow .15s ease;
+}
+.act:hover{background:var(--c0);border-color:#c7c7cc}
+.act:active{transform:scale(.97)}
+.act-i{font-size:1.15em;line-height:1}
+/* Guardar: la acción primaria, en el color de la marca. */
+.act-pri{background:var(--acc);border-color:transparent;color:#fff;box-shadow:var(--sh1)}
+.act-pri:hover{background:var(--acc-h);border-color:transparent}
+/* Agregar al pipeline: verde porque suma al embudo, no porque sea "ok". */
+.act-go{background:#15863a;border-color:transparent;color:#fff;box-shadow:var(--sh1)}
+.act-go:hover{background:#127330;border-color:transparent}
+/* Secundarias: más chicas y sin peso, para que no compitan con las de arriba. */
+.act-sm{font-size:12px;padding:5px 12px;font-weight:500;color:var(--ct2)}
+.act-sm:hover{color:var(--ct1)}
+
+/* Menú ⋯ — <details> nativo: abre con teclado y sin JS. Lo único que agrega
+   ui-core.js es cerrarlo al hacer click afuera o con Escape. */
+.ovf{position:relative}
+.ovf>summary{
+  list-style:none;display:inline-flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border-radius:50%;cursor:pointer;color:var(--ct2);
+  font-size:15px;line-height:1;user-select:none;
+}
+.ovf>summary::-webkit-details-marker{display:none}
+.ovf>summary:hover{background:rgba(0,0,0,.06);color:var(--ct1)}
+.ovf[open]>summary{background:rgba(0,0,0,.08);color:var(--ct1)}
+.ovf-menu{
+  position:absolute;right:0;top:calc(100% + 6px);z-index:8500;min-width:212px;
+  background:#fff;border:0.5px solid var(--cb);border-radius:12px;
+  box-shadow:var(--sh3);padding:5px;
+}
+.ovf-menu button{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  border:none;background:none;font-family:inherit;font-size:13px;color:var(--ct1);
+  padding:8px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;
+}
+.ovf-menu button:hover{background:var(--c0)}
+.ovf-menu .ovf-hd{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--ct3);padding:6px 10px 3px}
 
 /* ═══════════════════ SUPERFICIES ═══════════════════ */
 .card{background:#fff;border-radius:12px;border:0.5px solid #d2d2d7;padding:14px 16px;margin-bottom:13px;box-shadow:var(--sh1)}

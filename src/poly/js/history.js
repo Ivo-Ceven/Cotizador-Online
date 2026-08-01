@@ -138,7 +138,7 @@ function renderHistory(){
       +'<div class="hist-card-info" style="display:flex;gap:16px;flex-wrap:wrap;padding:9px 14px;border-bottom:0.5px solid #f0f0f0;font-size:13px">'
         +'<div><span class="lbl">Cliente</span><strong>'+cevenEsc(first['Cliente']||'—')+'</strong></div>'
         +'<div><span class="lbl">OPG</span>'+cevenEsc(first['OPG']||'—')+'</div>'
-        +'<div><span class="lbl">Sala</span>'+cevenEsc(first['Sala']||'—')+'</div>'
+        +'<div><span class="lbl">Proyecto</span>'+cevenEsc(first['Sala']||'—')+'</div>'
         +'<div><span class="lbl">Ejecutivo</span>'+cevenEsc(first['Ejecutivo']||'—')+'</div>'
         +'<div style="margin-left:auto;text-align:right"><span class="lbl">Total</span><strong style="font-size:15px">USD '+fI(gt)+'</strong></div>'
       +'</div>'

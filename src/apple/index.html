@@ -31,6 +31,9 @@
 
 <!-- Configuración de esta marca: la leen todos los módulos de shared/ -->
 <script src="brand.js"></script>
+<!-- Color de marca: va acá, pegado a brand.js, para que la primera pintura ya
+     salga con el acento correcto y no arranque con el azul por defecto -->
+<script src="../shared/theme.js"></script>
 <script src="../shared/safe.js"></script>
 <!-- Config de Supabase + auth compartidos con el shell -->
 <script src="../shared/config.js"></script>
@@ -47,20 +50,34 @@
     <div id="logo-ph" onclick="document.getElementById('logo-up').click()" style="display:inline-block;border:1.5px dashed #d2d2d7;border-radius:10px;padding:11px 26px;cursor:pointer;color:#6e6e73">+ Subir logo</div>
     <input type="file" id="logo-up" accept="image/*" style="display:none" onchange="handleLogo(this.files[0])">
   </div>
-  <div class="tb">
-    <div style="flex:1;min-width:140px">
-      <div id="qnum" class="lbl" style="margin-bottom:2px">Cotización #—</div>
-      <div class="h2">Productos recomendados para su operación</div>
+  <div class="qbar">
+    <div class="qbar-top">
+      <div class="qbar-ttl">
+        <div id="qnum" class="lbl" style="margin-bottom:2px">Cotización #—</div>
+        <div class="h2">Productos recomendados para su operación</div>
+      </div>
+      <div class="qbar-main">
+        <button class="act act-pri" onclick="saveQuote()" title="Guardar la cotización en el historial"><span class="act-i">💾</span>Guardar</button>
+        <button id="btn-add-pipeline" class="act act-go" onclick="addToPipeline()" title="Sumar esta cotización al pipeline de ventas"><span class="act-i">📊</span>Agregar al pipeline</button>
+        <button class="act" onclick="buildPDF()" title="Exportar la cotización a PDF"><span class="act-i">📄</span>PDF</button>
+      </div>
     </div>
-    <button class="bi" onclick="nuevaCotizacion()" title="Nueva cotización">＋</button>
-    <button class="bi" onclick="copiarCotizacion()" title="Copiar cotización (crea una nueva con los mismos productos)">⧉</button>
-    <button class="bi" onclick="saveQuote()" title="Guardar cotización">💾</button>
-    <button id="btn-add-pipeline" class="bi" onclick="addToPipeline()" title="Agregar al Pipeline" style="border-color:#34c759;color:#15863a;font-size:14px;font-weight:700;letter-spacing:-1px">+📊</button>
-    <button class="bi" onclick="openCevenCare()" title="Garantías CevenCare" style="border-color:#0071e3;color:#0071e3">🛡️</button>
-    <button class="bi" onclick="exportFullBackup()" title="Descargar backup completo (cotizaciones, pipeline, price list, NAC, logo)">⬇️</button>
-    <button class="bi" onclick="document.getElementById('backup-import').click()" title="Restaurar desde un archivo de backup">⬆️</button>
-    <input type="file" id="backup-import" accept=".json" style="display:none" onchange="importFullBackup(this)">
-    <button class="bi" onclick="buildPDF()" title="Exportar PDF">📄</button>
+    <div class="qbar-sub">
+      <button class="act act-sm" onclick="nuevaCotizacion()" title="Vaciar todo y empezar una cotización nueva"><span class="act-i">＋</span>Nueva</button>
+      <button class="act act-sm" onclick="copiarCotizacion()" title="Crear una cotización nueva con los mismos productos"><span class="act-i">⧉</span>Copiar</button>
+      <button class="act act-sm" onclick="openCevenCare()" title="Agregar garantías CevenCare a la cotización"><span class="act-i">🛡️</span>CevenCare</button>
+      <span class="qbar-sep"></span>
+      <!-- El backup no es una acción de esta cotización: es de todos los datos -->
+      <details class="ovf">
+        <summary title="Más acciones" aria-label="Más acciones">⋯</summary>
+        <div class="ovf-menu">
+          <div class="ovf-hd">Copia de seguridad</div>
+          <button onclick="exportFullBackup()"><span class="act-i">⬇️</span>Descargar backup completo</button>
+          <button onclick="document.getElementById('backup-import').click()"><span class="act-i">⬆️</span>Restaurar desde un archivo</button>
+        </div>
+      </details>
+      <input type="file" id="backup-import" accept=".json" style="display:none" onchange="importFullBackup(this)">
+    </div>
   </div>
   <div class="card">
     <div class="g2">

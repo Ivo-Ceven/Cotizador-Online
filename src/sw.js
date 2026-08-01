@@ -47,6 +47,7 @@ var ASSETS = [
   './shared/safe.js',
   './shared/config.js',
   './shared/nav.js',
+  './shared/theme.js',
   './shared/navbar.js',
   './shared/monthpicker.js',
   './shared/auth.js',

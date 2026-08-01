@@ -23,6 +23,74 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 31/07/2026 · Color por marca, barra de acciones nueva y "Proyecto" en Poly
+
+Módulo nuevo `src/shared/theme.js`. `APP_VERSION` 4.6 → 4.7.
+
+### Cada cotizador tiene su color
+
+El problema de fondo es el de siempre: Apple y Poly comparten hasta la última
+hoja de estilos, sus datos **no se mezclan**, y cargar una cotización en el
+cotizador equivocado es un error fácil y silencioso. El chip de la barra ya lo
+decía con palabras; ahora lo dice con color, que se ve sin leer.
+
+Los valores van en `CEVEN_BRAND.theme` —declarativo por marca, como el resto del
+contrato— y `theme.js` los copia a `--acc` / `--acc-h` / `--acc-soft` /
+`--acc-dk` en `:root`. Pinta el filete de la barra superior, la vista activa, el
+botón Guardar, los links y el foco. `base.css` define los cuatro con el azul por
+defecto, así que el shell —que no tiene marca— y cualquier página que no cargue
+el módulo siguen andando.
+
+**El criterio del color es distinguirse entre marcas, no imitar el logo**: Apple
+azul `#0071e3`, Poly violeta `#6d3fd4`, HP naranja `#ff6b00` (reservado). Usar
+los colores reales dejaba a Apple y HP los dos azules, que es justo lo que hay
+que evitar. Las tarjetas del panel de marcas llevan el mismo acento, repetido a
+mano en el `<style>` del shell porque ahí no hay ningún `brand.js`.
+
+`theme.js` **no toca** el `<meta name="theme-color">` aunque sea lo obvio: ese
+meta ya lo maneja `pwa.js`, que lo sincroniza con el modo oscuro en
+`DOMContentLoaded`. Con dos dueños ganaba el último y el color de marca duraba
+un parpadeo.
+
+### La barra de acciones de la cotización
+
+Eran ocho o nueve botones de ícono suelto, todos del mismo tamaño y sin
+etiqueta: `＋ ⧉ 💾 +📊 ⬇️ ⬆️ 📄 🛡️`. Había que abrir el tooltip para saber
+cuál era cuál, y "descargar backup completo" pesaba visualmente lo mismo que
+"guardar". Ahora son dos filas:
+
+- arriba, con ícono **y texto**, lo que se usa en cada cotización: **Guardar**
+  (en el color de la marca), **Agregar al pipeline** (verde, porque suma al
+  embudo) y **PDF**;
+- abajo, apagadas, las ocasionales (Nueva, Copiar, y CevenCare en Apple);
+- el backup pasó detrás de un `⋯`, porque no es una acción de esta cotización
+  sino de todos los datos.
+
+El menú es un `<details>` nativo: abre con click y con teclado sin una línea de
+JS. Lo único que agrega `ui-core.js` es cerrarlo al hacer click afuera, al
+elegir una opción o con Escape — eso `<details>` no lo hace. Ese Escape no choca
+con `nav.js`, cuyo handler solo actúa si hay un modal registrado en su pila.
+
+### Poly: "Sala / Ubicación" pasó a ser "Proyecto (cliente final)"
+
+Cambió **solo lo que se lee en pantalla**: label, placeholder, buscadores,
+KPI, encabezados de tabla, detalle por OPG, avisos, PDF e historial. Las claves
+de datos siguen como estaban (`#sala`, `salas[]`, `.sala`, la columna `salas` de
+Supabase y `'Sala'` dentro de `cquotes`): renombrarlas obligaba a migrar el
+historial guardado, los backups JSON y la base, y no era eso lo que se pidió. El
+único lugar donde se traduce el nombre para afuera es el encabezado del Excel,
+con un mapa en `exportDB()`.
+
+De paso, **la columna del pipeline ahora muestra el nombre**. Decía "2 salas": el
+dato que importa —de qué proyecto se trata— quedaba escondido detrás de expandir
+la fila. Ahora se lee el nombre y un `+N` cuando el OPG agrupa varios, con el
+listado completo en el tooltip. Lo mismo en los meses archivados.
+
+**Verificación**: estática (`node --check`, `check-precache` 67 rutas,
+`check-globals` sin colisiones). Sin navegador.
+
+---
+
 ## 31/07/2026 · Pipeline: el dashboard ya no desaparece, y el mes de cierre se elige
 
 Módulo nuevo `src/shared/monthpicker.js`. `APP_VERSION` 4.5 → 4.6.
@@ -400,6 +468,10 @@ validaciones server-side.
 - **Nada de lo hecho el 28–31/07 se probó en un navegador**: la verificación fue
   estática (sintaxis, precache, globales duplicadas, y bancos de prueba en Node
   para sync y auth). Falta abrir las dos marcas y recorrer los flujos.
+- **La barra de acciones nueva y el color de marca, tampoco** (31/07): que el
+  menú ⋯ abra y cierre bien (afuera, Escape, al elegir), que "Agregar al
+  pipeline" siga escondiéndose para el rol lector (`#btn-add-pipeline`), y que
+  el acento se vea correcto en las dos marcas, en claro y en oscuro.
 - **El picker de mes nunca se vio en pantalla** (31/07): abrir/cerrar, elegir con
   el popover cerca del borde de la ventana (tiene que darse vuelta hacia arriba),
   que el `change` llegue al pipeline y guarde, "Sin fecha", y que una fila con

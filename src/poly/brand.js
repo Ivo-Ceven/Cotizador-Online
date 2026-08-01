@@ -45,6 +45,13 @@ window.CEVEN_BRAND = {
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   localOnlyCols: [],
 
+  /* --- Color de marca (shared/theme.js) ----------------------------- */
+
+  // Violeta: no se parece al azul de Apple ni al naranja que va a llevar HP.
+  // El criterio es distinguirse entre marcas, no imitar el logo: los datos de
+  // Apple y Poly no se mezclan y equivocarse de cotizador es facil.
+  theme: { accent:'#6d3fd4', hover:'#5c33bb', soft:'#f1ebff', dk:'#9a72ff' },
+
   /* --- Navegacion (shared/navbar.js) -------------------------------- */
 
   // Vistas que aparecen en la barra superior, en orden. `alsoFor` son las

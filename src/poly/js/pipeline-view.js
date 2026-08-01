@@ -226,7 +226,18 @@ function renderPipeline(){
   for(var i=0;i<filtered.length;i++){
     var r = filtered[i];
     var expanded = window._pipeExpanded && window._pipeExpanded[r.id];
-    var salasCount = (r.salas||[]).length;
+    /* La columna mostraba solo "2 salas": el dato que importa —de qué proyecto
+       se trata— quedaba escondido detrás de expandir la fila. Ahora se ve el
+       nombre, y el "+N" avisa que el OPG tiene más de uno. */
+    var proyNames = (r.salas||[]).map(function(s){ return (s.sala||'').trim(); }).filter(Boolean);
+    var proyCell = proyNames.length
+      ? cevenEsc(proyNames[0]) + (proyNames.length > 1
+          ? ' <span style="color:#6e6e73;font-size:11px">+'+(proyNames.length-1)+'</span>'
+          : '')
+      : '—';
+    var proyTitle = proyNames.length
+      ? proyNames.join(' · ') + ' · clic para ver el detalle'
+      : 'Sin proyecto cargado';
     // Cierre estimado (shared/monthpicker.js)
     var mesSel = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-i="'+i+'"', {cls:'mpk-sm'});
     var estado = r.estado || 'Cotizado';
@@ -244,13 +255,13 @@ function renderPipeline(){
     // se re-aplica el color en cada celda, igual que hace Apple.
     html += '<tr class="'+cevenEsc(_rowStClass(estado))+'"'+(rowStyle?' style="'+rowStyle+'"':'')+'>'
       +'<td style="font-size:12px;white-space:nowrap">'
-        +'<button class="bs" data-act="exp" data-i="'+i+'" title="Ver Salas" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
+        +'<button class="bs" data-act="exp" data-i="'+i+'" title="Ver los proyectos de este OPG" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
         +cevenEsc(r.fecha)
       +'</td>'
       +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
       +'<td style="font-weight:500"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div></td>'
       +'<td><div title="'+cevenEsc(r.opg||'')+'" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.opg||'—')+'</div></td>'
-      +'<td style="text-align:center;cursor:pointer" data-act="exp" data-i="'+i+'" title="Ver Salas">'+salasCount+' sala'+(salasCount===1?'':'s')+'</td>'
+      +'<td style="cursor:pointer" data-act="exp" data-i="'+i+'" title="'+cevenEsc(proyTitle)+'"><div style="max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+proyCell+'</div></td>'
       +'<td style="font-size:12px;white-space:nowrap">'+mesSel+'</td>'
       +'<td style="text-align:center">'+statusSel+'</td>'
       +'<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px'+(rowTint?';background:'+rowTint:'')+(rowFg?';color:'+rowFg:'')+'">USD '+fI(r.monto||0)+'</td>'

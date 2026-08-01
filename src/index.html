@@ -37,9 +37,19 @@
     padding:20px 22px;width:268px;box-shadow:var(--sh2);
     transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
   }
-  .mcard:hover{transform:translateY(-3px);box-shadow:var(--sh3);border-color:#c7c7cc}
+  /* Cada tarjeta lleva el acento de su marca — el mismo que va a pintar la barra
+     superior del cotizador (ver shared/theme.js y el campo `theme` de brand.js).
+     Acá está repetido a mano porque el shell no carga ningún brand.js: si se
+     cambia un color allá, hay que cambiarlo acá. */
+  .mcard[data-brand="apple"]{--acc:#0071e3}
+  .mcard[data-brand="poly"]{--acc:#6d3fd4}
+  .mcard[data-brand="hp"]{--acc:#ff6b00}
+  .mcard:hover{transform:translateY(-3px);box-shadow:var(--sh3);border-color:var(--acc)}
   .mcard:active{transform:translateY(-1px)}
   .mcard-mark{font-size:34px;line-height:1;flex-shrink:0}
+  /* Filete lateral del color de la marca: la misma señal que el cotizador */
+  .mcard{border-left:3px solid var(--acc)}
+  .mcard:hover .mcard-go{color:var(--acc)}
   .mcard-body{flex:1;min-width:0}
   .mcard-body b{display:block;font-family:var(--f-disp);font-size:17px;font-weight:600;letter-spacing:-.014em}
   .mcard-body span{display:block;font-size:12px;color:var(--ct2);margin-top:2px}
@@ -110,17 +120,17 @@
     <p>Elegí la marca con la que vas a trabajar</p>
   </div>
   <div class="marcas">
-    <a class="mcard" href="apple/" title="Abrir cotizador Apple">
+    <a class="mcard" data-brand="apple" href="apple/" title="Abrir cotizador Apple">
       <span class="mcard-mark">🍎</span>
       <span class="mcard-body"><b>Apple</b><span>Mac · iPhone · iPad · CevenCare</span></span>
       <span class="mcard-go" aria-hidden="true">→</span>
     </a>
-    <a class="mcard" href="poly/" title="Abrir cotizador Poly">
+    <a class="mcard" data-brand="poly" href="poly/" title="Abrir cotizador Poly">
       <span class="mcard-mark">🎧</span>
       <span class="mcard-body"><b>Poly</b><span>Audio y video conferencia</span></span>
       <span class="mcard-go" aria-hidden="true">→</span>
     </a>
-    <div class="mcard soon">
+    <div class="mcard soon" data-brand="hp">
       <span class="mcard-mark">💻</span>
       <span class="mcard-body"><b>HP</b><span>Notebooks e impresión</span><span class="badge">Próximamente</span></span>
     </div>

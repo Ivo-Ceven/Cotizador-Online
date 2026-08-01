@@ -49,6 +49,13 @@ window.CEVEN_BRAND = {
   // El poll tiene que preservarlos al mergear las filas del servidor.
   localOnlyCols: ['skuOvLinks'],
 
+  /* --- Color de marca (shared/theme.js) ----------------------------- */
+
+  // Acento: filete de la barra superior, vista activa, boton Guardar, links y
+  // foco. Es la senal de en que cotizador estas. `dk` es la variante para modo
+  // oscuro y `soft` el fondo tenue.
+  theme: { accent:'#0071e3', hover:'#0060c0', soft:'#e8f4ff', dk:'#0a84ff' },
+
   /* --- Navegacion (shared/navbar.js) -------------------------------- */
 
   // Vistas que aparecen en la barra superior, en orden. `alsoFor` son las

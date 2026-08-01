@@ -53,7 +53,7 @@ function removePipeline(id){
   pipe = pipe.filter(function(r){ return r.id !== id; });
   savePipeline(pipe);
   renderPipeline();
-  notifyUndo('OPG eliminado del pipeline ('+((row.salas||[]).length)+' Sala(s)).', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
+  notifyUndo('OPG eliminado del pipeline ('+((row.salas||[]).length)+' proyecto/s).', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
 }
 
 // Quita una Sala puntual de un OPG. Si era la última, se borra el OPG entero.
@@ -75,7 +75,7 @@ function removeSalaFromPipeline(pipeId, qn){
   }
   savePipeline(pipe);
   renderPipeline();
-  notifyUndo('Quitaste la Sala "'+salaName+'" (cotización #'+qn+')'+(willRemoveRow?' — el OPG se eliminó por quedar sin Salas.':'.'), function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
+  notifyUndo('Quitaste el proyecto "'+salaName+'" (cotización #'+qn+')'+(willRemoveRow?' — el OPG se eliminó por quedar sin proyectos.':'.'), function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
 }
 
 function openPipelineQuote(qn){
@@ -85,7 +85,7 @@ function openPipelineQuote(qn){
   editQuoteFromHistory(qn);
 }
 
-// Fila expandible: lista las Salas agrupadas bajo este OPG.
+// Fila expandible: lista los proyectos agrupados bajo este OPG.
 // `idx` es la posición de `r` dentro de window._pipeRows (el array que se está
 // renderizando: pipeline activo o mes archivado). Los botones lo emiten en data-i
 // y el delegado de pipeline-view.js lo resuelve al objeto original — así el id de
@@ -93,14 +93,14 @@ function openPipelineQuote(qn){
 function renderPipelineDetailRow(r, idx){
   var salas = r.salas || [];
   if(!salas.length){
-    return '<tr class="pipe-detail"><td colspan="9" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">Sin Salas cargadas.</td></tr>';
+    return '<tr class="pipe-detail"><td colspan="9" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">Sin proyectos cargados.</td></tr>';
   }
   var iA = cevenEsc(idx);
   var inner = '<div style="padding:10px 14px 14px;background:#fafafa">'
-    +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Salas · OPG '+cevenEsc(r.opg||'—')+'</div>'
+    +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Proyectos · OPG '+cevenEsc(r.opg||'—')+'</div>'
     +'<table style="width:100%;font-size:12px;border-collapse:collapse;background:#fff;border:0.5px solid #e5e5e7;border-radius:8px;overflow:hidden">'
     +'<thead><tr style="background:#f5f5f7">'
-      +'<th style="text-align:left;padding:6px 10px;font-size:11px;color:#6e6e73">Sala</th>'
+      +'<th style="text-align:left;padding:6px 10px;font-size:11px;color:#6e6e73">Proyecto</th>'
       +'<th style="text-align:center;padding:6px 10px;font-size:11px;color:#6e6e73">Cotización</th>'
       +'<th style="text-align:right;padding:6px 10px;font-size:11px;color:#6e6e73">Monto</th>'
       +'<th style="text-align:center;padding:6px 10px;font-size:11px;color:#6e6e73"></th>'
@@ -111,7 +111,7 @@ function renderPipelineDetailRow(r, idx){
       +'<td style="padding:6px 10px">'+cevenEsc(s.sala||'—')+'</td>'
       +'<td style="padding:6px 10px;text-align:center"><span data-act="openq" data-qn="'+qnA+'" style="color:#0071e3;text-decoration:none;font-weight:600;cursor:pointer">#'+qnA+'</span></td>'
       +'<td style="padding:6px 10px;text-align:right;font-weight:500">USD '+fI(s.monto||0)+'</td>'
-      +'<td style="padding:6px 10px;text-align:center">'+(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rmsala" data-i="'+iA+'" data-qn="'+qnA+'" title="Quitar esta Sala">×</button>' : '')+'</td>'
+      +'<td style="padding:6px 10px;text-align:center">'+(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rmsala" data-i="'+iA+'" data-qn="'+qnA+'" title="Quitar este proyecto">×</button>' : '')+'</td>'
       +'</tr>';
   });
   inner += '</tbody></table></div>';
@@ -138,7 +138,7 @@ function buildPipelineWorkbook(){
       'Ejecutivo': r.ejecutivo,
       'Cliente': r.cliente,
       'Cierre estimado': mesLabel,
-      'Cantidad de Salas': (r.salas||[]).length,
+      'Proyectos': (r.salas||[]).length,
       'Monto USD': r.monto,
       'Factura': r.factura || ''
     };

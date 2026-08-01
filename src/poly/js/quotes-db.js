@@ -249,8 +249,13 @@ function editQuoteFromHistory(qn, skipUndoToast){
 
 function exportDB(){
   var db=getDB(); if(!db.length){showToast('No hay cotizaciones guardadas.');return;}
-  var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++)o[COLS[i]]=r[COLS[i]]!==undefined?r[COLS[i]]:'';return o;});
-  var ws=XLSX.utils.json_to_sheet(data,{header:COLS});
+  // El Excel dice "Proyecto" donde el dato se guarda con la clave 'Sala'. La
+  // clave viaja en `cquotes` y en los backups desde el día uno: renombrarla
+  // obligaría a migrar todo lo guardado, así que se traduce solo el encabezado.
+  var XLS_HD={'Sala':'Proyecto'};
+  var heads=COLS.map(function(k){return XLS_HD[k]||k;});
+  var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++){var k=COLS[i];o[XLS_HD[k]||k]=r[k]!==undefined?r[k]:'';}return o;});
+  var ws=XLSX.utils.json_to_sheet(data,{header:heads});
   ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:14},{wch:20},{wch:18},{wch:28},{wch:12},{wch:16},{wch:36},{wch:10},{wch:16},{wch:14},{wch:14}];
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cotizaciones');
   XLSX.writeFile(wb,'Ceven_Poly_Cotizaciones.xlsx');

@@ -119,6 +119,32 @@ function goTo(n) {
   else window.addEventListener('DOMContentLoaded', function(){ _navApply(v); });
 })();
 
+/* ── MENÚ ⋯ DE LA BARRA DE ACCIONES ─────────────────────────────────────
+   Es un <details class="ovf"> nativo: abre y cierra con el click en el ⋯, se
+   enfoca con Tab y no necesita ni una línea de JS para eso. Lo único que le
+   falta es lo que <details> no hace: cerrarse al hacer click en otra cosa, al
+   elegir una opción, o con Escape.
+
+   Escape acá no choca con nav.js: el de nav.js solo actúa si hay un modal
+   registrado en su pila, y este menú no es un modal. */
+(function(){
+  function cerrarSalvo(salvo){
+    var abiertos = document.querySelectorAll('details.ovf[open]');
+    for(var i = 0; i < abiertos.length; i++){
+      if(abiertos[i] !== salvo) abiertos[i].removeAttribute('open');
+    }
+  }
+  document.addEventListener('click', function(e){
+    if(!e.target || !e.target.closest) return;
+    var d = e.target.closest('details.ovf');
+    cerrarSalvo(d);
+    if(d && e.target.closest('.ovf-menu button')) d.removeAttribute('open');
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' || e.key === 'Esc') cerrarSalvo(null);
+  });
+})();
+
 /* ── DELEGACIÓN DE EVENTOS ──────────────────────────────────────────────
    Reemplaza los handlers inline que interpolaban datos, tipo
      onclick="fn('" + valor.replace(/'/g,"\\'") + "')"

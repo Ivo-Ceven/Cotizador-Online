@@ -26,7 +26,7 @@ function addToPipeline(){
   var opg    = (document.getElementById('opg').value||'').trim();
   var sala   = (document.getElementById('sala').value||'').trim();
   if(!client){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
-  if(!sala){ showToast('Cargá la Sala/ubicación antes de agregar al pipeline.'); return; }
+  if(!sala){ showToast('Cargá el proyecto (cliente final) antes de agregar al pipeline.'); return; }
   // Sin ejecutivo la fila queda con ejecutivo '—' y cevenCanEditPipelineRow('—')
   // le niega la edición al propio autor. Se corta antes de tocar el pipeline.
   if(!cevenRequireExec()) return;
@@ -86,14 +86,14 @@ function addToPipeline(){
         // que se agregó — lo más probable es que se haya empezado una Sala nueva
         // SIN tocar "➕ Nueva cotización" primero. Se actualiza igual (nunca se
         // pierde el clic), pero se avisa con opción de deshacer.
-        warnMsg = 'Actualizaste la cotización #'+qn+': la Sala pasó de "'+prevSala.sala+'" a "'+sala+'". Si en realidad es una Sala nueva, deshacé y usá "➕ Nueva cotización" antes de cargarla.';
+        warnMsg = 'Actualizaste la cotización #'+qn+': el proyecto pasó de "'+prevSala.sala+'" a "'+sala+'". Si en realidad es un proyecto nuevo, deshacé y usá "＋ Nueva" antes de cargarlo.';
       }
       row.salas[salaIdxByQn] = salaEntry;
     } else if(salaIdxByName >= 0){
       // Nombre de Sala repetido pero cotización distinta: se agrega igual como
       // entrada aparte (nunca se descarta un clic) — solo se avisa por las dudas.
       var otherQn = row.salas[salaIdxByName].qNum;
-      warnMsg = 'Ojo: ya había una Sala llamada "'+sala+'" en este OPG (cotización #'+otherQn+') — se agregó como entrada aparte.';
+      warnMsg = 'Ojo: ya había un proyecto llamado "'+sala+'" en este OPG (cotización #'+otherQn+') — se agregó como entrada aparte.';
       row.salas.push(salaEntry);
     } else {
       row.salas.push(salaEntry);

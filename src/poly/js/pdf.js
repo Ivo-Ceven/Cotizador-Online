@@ -30,7 +30,7 @@ function exportSelectedPDF(){
       +'<div class="cb">'
         +(first['Cliente']&&first['Cliente']!=='—'?'<p class="cn">'+cevenEsc(first['Cliente'])+'</p>':'')
         +(first['OPG']&&first['OPG']!=='—'?'<p class="cm">OPG: '+cevenEsc(first['OPG'])+'</p>':'')
-        +(first['Sala']&&first['Sala']!=='—'?'<p class="cm">Sala: '+cevenEsc(first['Sala'])+'</p>':'')
+        +(first['Sala']&&first['Sala']!=='—'?'<p class="cm">Proyecto: '+cevenEsc(first['Sala'])+'</p>':'')
         +(first['Ejecutivo']&&first['Ejecutivo']!=='—'?'<p class="cm">Ejecutivo: '+cevenEsc(first['Ejecutivo'])+'</p>':'')
         +(first['Observaciones']&&first['Observaciones']!=='—'?'<p class="cm">'+cevenEsc(first['Observaciones'])+'</p>':'')
       +'</div>'
@@ -123,7 +123,7 @@ function buildPDF(){
     +logoTag
     +'<p class="qn">Cotización #'+cevenEsc(qn)+'</p>'
     +'<h1>Poly · Audio y video conferencia</h1>'
-    +'<div class="cb">'+(client?'<p class="cn">'+cevenEsc(client)+'</p>':'')+(opg?'<p class="cm">OPG: '+cevenEsc(opg)+'</p>':'')+(sala?'<p class="cm">Sala: '+cevenEsc(sala)+'</p>':'')+(exec?'<p class="cm">Ejecutivo: '+cevenEsc(exec)+'</p>':'')+(ob?'<p class="cm">'+cevenEsc(ob)+'</p>':'')+'</div>'
+    +'<div class="cb">'+(client?'<p class="cn">'+cevenEsc(client)+'</p>':'')+(opg?'<p class="cm">OPG: '+cevenEsc(opg)+'</p>':'')+(sala?'<p class="cm">Proyecto: '+cevenEsc(sala)+'</p>':'')+(exec?'<p class="cm">Ejecutivo: '+cevenEsc(exec)+'</p>':'')+(ob?'<p class="cm">'+cevenEsc(ob)+'</p>':'')+'</div>'
     +'<table><colgroup><col class="col-sku"><col class="col-desc"><col class="col-qty"><col class="col-pv"><col class="col-tot"><col class="col-nota"></colgroup><thead><tr>'
       +'<th>SKU</th><th>Descripción</th>'
       +'<th style="text-align:center">Qty</th>'
