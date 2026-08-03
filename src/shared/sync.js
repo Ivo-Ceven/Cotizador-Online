@@ -93,6 +93,11 @@
   var OBJ_COLS   = B.objCols       || [];
   var NULL_COLS  = B.nullableCols  || [];   // escalares que la app puede vaciar
   var LOCAL_ONLY = B.localOnlyCols || [];   // sin columna en Supabase: el merge los preserva
+  /* Claves cuyo valor solo puede subir (el contador de cotizaciones). Se
+     resuelven con Math.max en vez de "gana el ultimo que escribio": ver
+     _mergeMonotona(). Los nombres son BASE, sin prefijo, igual que settingKeys. */
+  var MONOTONIC  = {};
+  (B.monotonicKeys || []).forEach(function(base){ MONOTONIC[window.cevenK(base)] = 1; });
   var PAD_COLS   = B.padCols       || {};   // col -> ancho: numérica en la base, string con ceros acá
 
   var POLL_MS       = 15000;
@@ -688,6 +693,16 @@
         if(keyBusy(k)) return;             // cambio propio sin confirmar: no pisarlo
         var v = String(row.value);
         if(lsGet(k) === v) return;
+        /* Las claves monótonas NO se pisan: se quedan con el mayor de los dos.
+           Sin esto, un equipo con el contador atrasado se lo bajaba a todos y
+           las próximas cotizaciones reusaban números ya emitidos. Si el nuestro
+           es el que gana, hay que marcarlo sucio para que suba. */
+        if(MONOTONIC[k]){
+          var mayor = _mergeMonotona(k, v);
+          if(mayor === null) return;       // gana el servidor y ya está aplicado
+          markDirty(k);
+          return;
+        }
         if(rawSet(k, v)) changed[k] = 1;
       });
       applyChanged(changed);
@@ -837,9 +852,32 @@
   // Decide quién gana clave por clave, pero NO pushea: se limita a dejar sucias
   // las que tiene que subir. finishBoot() llama a flushDirty() y las manda por
   // el único camino de subida que hay (flush), sin duplicar requests.
+  /* Resuelve una clave monótona quedándose con el mayor de los dos valores.
+     Devuelve null si gana el servidor (y lo escribe), o el valor local si el
+     que gana es el nuestro — en ese caso el que llama tiene que markDirty()
+     para que suba. Un valor no numérico de cualquiera de los dos lados hace
+     que gane el servidor, que es el comportamiento de siempre. */
+  function _mergeMonotona(k, serverVal){
+    var loc = parseInt(lsGet(k), 10);
+    var srv = parseInt(serverVal, 10);
+    if(isNaN(srv)) return null;
+    if(isNaN(loc) || srv >= loc){ rawSet(k, String(srv)); return null; }
+    return String(loc);
+  }
+
   function mergeSettings(serverSets){
     SETTING_KEYS.forEach(function(k){
       var local = lsGet(k);
+      /* Las monótonas se resuelven ANTES del corte por "sucia": el contador de
+         cotizaciones queda sucio en cuanto alguien guarda, y con la regla de
+         abajo el local ganaba siempre — que es exactamente cómo un navegador
+         con localStorage limpio le imponía `cqc = 1` a todo el equipo. */
+      if(MONOTONIC[k]){
+        var sv0 = serverSets[k];
+        if(sv0 === undefined || sv0 === null){ if(local !== null) markDirty(k); return; }
+        if(_mergeMonotona(k, sv0) !== null) markDirty(k);
+        return;
+      }
       // Clave sucia = cambio local sin confirmar: manda lo local, no se pisa.
       if(_dirty[k] !== undefined){
         if(local === null) retryDone(k);   // ya no existe: nada que subir

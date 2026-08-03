@@ -25,6 +25,9 @@ function renderQ() {
       +'<td style="font-weight:500">'+cevenEsc(it.sku)+'</td>'
       +'<td class="wrap">'+cevenEsc(it.description)+'</td>'
       +'<td style="text-align:right"><input class="si" type="number" min="1" value="'+cevenEsc(it.qty)+'" style="width:48px" data-act="qty" data-id="'+idA+'"></td>'
+      // Nivel de precio de esta línea (poly/js/tiers.js). Cada opción muestra su
+      // precio: el orden de los niveles NO implica cuál es más caro.
+      +'<td style="overflow:visible">'+tierSelectHTML(it)+'</td>'
       +'<td style="text-align:right;white-space:nowrap;overflow:visible">'
         +'<div style="display:inline-flex;align-items:center;gap:4px">'
           +'<span style="font-size:11px;color:#6e6e73">'+pricePfx+'</span>'
@@ -39,15 +42,16 @@ function renderQ() {
       +'</td>'
       +'</tr>';
   }
-  html+='<tr><td colspan="7" style="padding:9px 10px"><button class="al" onclick="openCat()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
+  html+='<tr><td colspan="8" style="padding:9px 10px"><button class="al" onclick="openCat()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
   if(items.length){
     html+='<tr>'
-      +'<td colspan="4" style="text-align:right;color:#6e6e73;font-size:13px;font-weight:500;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">Total</td>'
+      +'<td colspan="5" style="text-align:right;color:#6e6e73;font-size:13px;font-weight:500;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">Total</td>'
       +'<td style="text-align:right;font-size:15px;font-weight:600;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">'+dp(gt)+'</td>'
       +'<td colspan="2" style="background:#f5f5f7;border-top:1px solid #d2d2d7"></td>'
       +'</tr>';
   }
   document.getElementById('qbody').innerHTML=html;
+  pintarTierGlobal();
   _qBindDelegation();
 }
 
@@ -67,6 +71,7 @@ function _qBindDelegation(){
     var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
     if(act === 'qty')        upQty(id, el.value);
     else if(act === 'price') upUnitPrice(id, el.value);
+    else if(act === 'tier')  onTierLineaChange(id, el.value);
     else if(act === 'nota')  upField(id, 'stock', el.value);
   });
 }
@@ -98,6 +103,10 @@ function upUnitPrice(id, v){
   for(var i=0;i<items.length;i++){
     if(String(items[i].id)===String(id)) items[i].salePrice = Math.round(priceUSD * 100) / 100;
   }
+  /* Escribir un precio a mano saca a la línea de cualquier nivel: si no, el
+     próximo cambio del selector global le pisaría el número recién escrito.
+     Ver poly/js/tiers.js. */
+  if(typeof marcarManual === 'function') marcarManual(id);
   renderQ();
 }
 

@@ -6,7 +6,7 @@
 
    Lo que NO esta aca es el ARMADO del HTML: Apple imprime margen,
    IVA/Imp.Int., disponibilidad, separadores por familia y una
-   tabla aparte de garantias CevenCare; Poly imprime OPG, Sala y
+   tabla aparte de garantias CevenCare; Poly imprime OPG, Proyecto y
    una columna de Nota. Son documentos distintos para clientes
    distintos, no un template con banderitas.
 

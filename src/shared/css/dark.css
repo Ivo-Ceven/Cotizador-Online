@@ -17,6 +17,10 @@ body.dark{background:var(--c0);color:var(--ct1)}
    usa var(--ct1)/var(--c0), que se dan vuelta solos con los tokens. */
 body.dark .cvnav{background:rgba(28,28,30,.78)!important;border-color:var(--cb)!important}
 body.dark .cvnav-brand:not([disabled]):hover{background:rgba(255,255,255,.09)!important}
+/* Logos de un solo color oscuro (Apple): sobre el fondo oscuro no se verían.
+   invert() sobre negro puro y transparente da blanco puro. Los de color (HP,
+   Poly) no llevan data-mono y quedan como son. */
+body.dark img.cvnav-mark[data-mono]{filter:invert(1)}
 body.dark .cvnav-link:hover{background:rgba(255,255,255,.09)!important}
 body.dark .cvnav-btn:hover{background:rgba(255,255,255,.09)!important}
 body.dark .cvnav-user{background:rgba(255,255,255,.08)!important}

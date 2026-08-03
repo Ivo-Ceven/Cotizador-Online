@@ -12,49 +12,27 @@ function _pipeExecList(pipe){
   return out;
 }
 
-var rowStatusColors = {
-  'Proyecto':    {bg:'', fg:''},
-  'Cotizado':    {bg:'', fg:''},
-  'Negociacion': {bg:'', fg:''},
-  'Commit':      {bg:'#fff8e1', fg:''},
-  'Con OC':      {bg:'#e8f6ee', fg:''},
-  'Autorizando': {bg:'#d4f0de', fg:''},
-  'Facturado':   {bg:'#b8e8cc', fg:''},
-  'Perdido':     {bg:'#fbbebe', fg:''}
-};
-var statusColorsPill = {
-  'Proyecto':    {bg:'#f2e8ff', fg:'#6e36c8'},
-  'Cotizado':    {bg:'#e8f4ff', fg:'#0071e3'},
-  'Negociacion': {bg:'#fff3e0', fg:'#c84e00'},
-  'Commit':      {bg:'#fff8e1', fg:'#7a5800'},
-  'Con OC':      {bg:'#e8f6ee', fg:'#15863a'},
-  'Autorizando': {bg:'#d4f0de', fg:'#0e7a52'},
-  'Facturado':   {bg:'#b8e8cc', fg:'#0a5c30'},
-  'Perdido':     {bg:'#fbbebe', fg:'#a80011'}
-};
-var statusOrderPipe = ['Proyecto','Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
+/* El orden del embudo, las etiquetas visibles, los colores y las clases de dark
+   mode salen de shared/pipeline-status.js — antes estaban acá y en otros cinco
+   lugares, y ya habían divergido ('Negociacion' sin tilde en la tabla y con
+   tilde en los <select> del HTML). Ver el encabezado de ese archivo. */
+var statusOrderPipe = cevenEstadoValores();
 
-// El CSS de dark mode matchea por CLASE, no por el style inline: las reglas
-// `body.dark tr.row-st-*` y `body.dark .spill-*` de shared/css/dark.css no
-// tocaban nada porque Poly emitía sólo el color inline y un `.spill` pelado —
-// en oscuro quedaba texto casi blanco sobre pasteles claros. Apple ya emitía
-// estas clases; ojo que NO usan la misma normalización:
-//   fila:     'Con OC' -> row-st-Con_OC   (espacio -> _)
-//   pastilla: 'Con OC' -> spill-ConOC     (espacio -> nada)
-function _rowStClass(estado){ return 'row-st-' + String(estado||'').replace(/ /g,'_'); }
-function _spillClass(estado){ return 'spill spill-' + String(estado||'').replace(/ /g,''); }
-
-// Filas realmente pintadas en la última pasada (pipeline activo o mes archivado).
-// Los handlers referencian la fila por ÍNDICE: el id viene sincronizado desde
-// Supabase, así que interpolarlo en un onclick era inyección directa, y pasarlo
-// por un data-* lo convertiría en string (updatePipelineStatus y compañía
-// comparan con === contra el id original).
-window._pipeRows = window._pipeRows || [];
-function _pipeRowAt(i){
-  var n = parseInt(i, 10);
-  var a = window._pipeRows || [];
-  return (isNaN(n) || !a[n]) ? null : a[n];
+/* Escribe el texto de un rótulo del dashboard si el elemento existe.
+   Los rótulos que cambian (Total, Forecast) los repinta también
+   renderArchiveMonth() con los del mes archivado, así que renderPipeline()
+   tiene que volver a poner los suyos en cada pasada — si no, al volver del
+   archivo la tarjeta muestra un número del pipeline con el rótulo del mes. */
+function _pipeSetLbl(id, txt){
+  var el = document.getElementById(id);
+  if(el) el.textContent = txt;
 }
+
+/* El direccionamiento por ÍNDICE (`window._pipeRows` + `data-i` + `_pipeRowAt`)
+   se fue con la tabla agrupada: con filas de cliente intercaladas, el índice de
+   un array plano ya no identifica una fila. Lo reemplaza el registro de nodos de
+   shared/pipeline-group.js, que devuelve el objeto original —con su id numérico
+   intacto— a partir de una clave opaca. */
 
 function renderPipeline(){
   // El archivado automático NO va acá: lo hace _navApply('pipeline') en
@@ -94,9 +72,10 @@ function renderPipeline(){
 
   var q = (document.getElementById('pipe-search').value||'').toLowerCase().trim();
   var ex = document.getElementById('pipe-exec').value || '';
+  /* Única fuente del filtro de estado. El <select> #pipe-status ya escribe acá
+     en su onchange y togglePillFilter() lo sincroniza de vuelta, así que leerlo
+     aparte solo servía para que las dos versiones se contradijeran. */
   var _stFilters = window._pipeStatusFilters || [];
-  var st  = _stFilters.length === 1 ? _stFilters[0]
-          : (_stFilters.length === 0 ? ((document.getElementById('pipe-status')||{}).value || '') : '');
   var monthFilter = window._pipeMonthFilter || '';
 
   // Pastillas de Cierre estimado
@@ -126,8 +105,15 @@ function renderPipeline(){
   // Top 3-5 clientes
   var topClientsBox = document.getElementById('pipe-topclients-pills');
   if(topClientsBox){
+    /* Cuenta PROYECTOS. La pastilla decía "3 OPG" contando filas, incluidas
+       las que no tienen ningún OPG (el campo es opcional), y dos líneas más
+       abajo el estado vacío las llamaba "cotizaciones". Ahora cada fila ES un
+       proyecto, así que la cuenta es directa. */
     var cliCount = {};
-    pipe.forEach(function(r){ var cl=(r.cliente||'').trim(); if(!cl || cl==='—') return; cliCount[cl]=(cliCount[cl]||0)+1; });
+    pipe.forEach(function(r){
+      var cl=(r.cliente||'').trim(); if(!cl || cl==='—') return;
+      cliCount[cl]=(cliCount[cl]||0)+1;
+    });
     var topCli = Object.keys(cliCount).map(function(c){ return {cli:c, n:cliCount[c]}; });
     topCli.sort(function(a,b){ return b.n - a.n; });
     topCli = topCli.slice(0,5);
@@ -143,16 +129,15 @@ function renderPipeline(){
       // llamado  \');alert(1);//  cerraba el string del onclick y ejecutaba código
       // en la pantalla de todo el que abriera el pipeline.
       tcH += '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-act="client" data-cli="'+cevenEsc(t.cli)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap">'
-        +medals[i]+' '+cevenEsc(t.cli)+' <span style="opacity:.7;font-weight:400">· '+cevenEsc(t.n)+' OPG</span></div>';
+        +medals[i]+' '+cevenEsc(t.cli)+' <span style="opacity:.7;font-weight:400">· '+cevenEsc(t.n)+(t.n===1?' proyecto':' proyectos')+'</span></div>';
     });
-    topClientsBox.innerHTML = tcH || '<span style="font-size:12px;color:#aeaeb2">Sin cotizaciones</span>';
+    topClientsBox.innerHTML = tcH || '<span style="font-size:12px;color:#aeaeb2">Sin clientes cargados</span>';
   }
 
   var filtered = pipe.filter(function(r){
     if(ex && r.ejecutivo !== ex) return false;
     if(q){
-      var salasTxt = (r.salas||[]).map(function(s){ return s.sala||''; }).join(' ');
-      var hay = ((r.cliente||'')+' '+(r.opg||'')+' '+salasTxt).toLowerCase();
+      var hay = ((r.cliente||'')+' '+(r.opg||'')+' '+(r.proyecto||'')+' '+(r.qNum||'')).toLowerCase();
       if(hay.indexOf(q) === -1) return false;
     }
     if(_stFilters.length > 0 && _stFilters.indexOf(r.estado||'Cotizado') === -1) return false;
@@ -174,21 +159,31 @@ function renderPipeline(){
   });
 
   // ── DASHBOARD ──
-  var sumMonto = 0, sumSalas = 0;
+  var sumMonto = 0;
   var byStatus = {};
+  /* Clientes distintos, sin distinguir mayúsculas ni espacios: "ACME" y "acme "
+     son el mismo cliente y contarlos dos veces sería peor que no contarlos. */
+  var cliVistos = {}, nClientes = 0;
   statusOrderPipe.forEach(function(s){ byStatus[s] = {count:0, monto:0}; });
   filtered.forEach(function(r){
     var estado = r.estado || 'Cotizado';
     var monto = r.monto || 0;
     sumMonto += monto;
-    sumSalas += (r.salas||[]).length;
+    var ck = (r.cliente||'').trim().toLowerCase();
+    if(ck && ck !== '—' && !cliVistos[ck]){ cliVistos[ck] = 1; nClientes++; }
     if(!byStatus[estado]) byStatus[estado] = {count:0, monto:0};
     byStatus[estado].count++;
     byStatus[estado].monto += monto;
   });
   var facturadoData = byStatus['Facturado'] || {count:0, monto:0};
   var perdidoData   = byStatus['Perdido']   || {count:0, monto:0};
-  var sumPipeline = st ? sumMonto : (sumMonto - facturadoData.monto - perdidoData.monto);
+
+  /* La condición era `st`, que solo se completa con UN estado elegido. Con dos
+     pastillas activas quedaba vacía y se restaban Facturado y Perdido de una
+     suma que ya solo tenía eso: la tarjeta mostraba USD 0 sin explicación.
+     Lo que se quería preguntar es "¿hay algún filtro de estado?". */
+  var hayFiltroEstado = _stFilters.length > 0;
+  var sumPipeline = hayFiltroEstado ? sumMonto : (sumMonto - facturadoData.monto - perdidoData.monto);
 
   var dash = document.getElementById('pipe-dashboard');
   /* Se pinta SIEMPRE, aunque el filtro no deje ninguna fila: antes se escondía
@@ -196,95 +191,184 @@ function renderPipeline(){
      una respuesta ambigua. Los acumuladores ya arrancan en 0. */
   if(dash){
     dash.style.display = 'block';
-    document.getElementById('dash-count').textContent = filtered.length;
-    document.getElementById('dash-salas').textContent  = sumSalas;
+    /* El KPI decía "OPGs" y contaba FILAS, incluidas las que no tienen ningún
+       OPG (el campo siempre fue opcional). Ahora cada fila es un proyecto, así
+       que las dos tarjetas dicen lo que cuentan: clientes y proyectos. */
+    document.getElementById('dash-count').textContent = nClientes;
+    document.getElementById('dash-proyectos').textContent = filtered.length;
     document.getElementById('dash-facturado').textContent = 'USD ' + fI(facturadoData.monto);
+
+    /* Los rótulos se escriben en CADA pasada, no solo cuando cambian:
+       renderArchiveMonth() los repinta para el mes archivado, y si acá no se
+       restauran, al volver al pipeline activo quedan pegados los del archivo. */
+    _pipeSetLbl('dash-facturado-lbl', 'Facturado');
+
+    // Forecast = lo comprometido de acá al cierre. INCLUYE lo ya facturado: la
+    // sub-línea lo dice para que nadie sume esta tarjeta con la de al lado.
     var proySt = ['Facturado','Autorizando','Con OC','Commit'];
     var pMonto = 0;
     proySt.forEach(function(ps){ pMonto += (byStatus[ps]||{monto:0}).monto; });
+    _pipeSetLbl('dash-proy-lbl', 'Forecast del mes');
     document.getElementById('dash-proy').textContent = 'USD ' + fI(pMonto);
+    _pipeSetLbl('dash-proy-sub', facturadoData.monto > 0
+      ? ('incluye USD ' + fI(facturadoData.monto) + ' ya facturado')
+      : 'Commit + Con OC + Autorizando + Facturado');
+
+    // El Total cambia de fórmula según el filtro, así que también de rótulo.
+    _pipeSetLbl('dash-total-lbl', hayFiltroEstado ? 'Total filtrado' : 'Total pipeline');
     document.getElementById('dash-total').textContent = 'USD ' + fI(sumPipeline);
+    _pipeSetLbl('dash-total-sub', hayFiltroEstado
+      ? _stFilters.map(cevenEstadoLabel).join(' + ')
+      : 'sin Facturado ni Perdido');
 
     var pillsHtml = '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Por estado</div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">';
     statusOrderPipe.forEach(function(s){
       var data = byStatus[s] || {count:0, monto:0};
-      var c = statusColorsPill[s] || {bg:'#f2f2f7', fg:'#1d1d1f'};
+      var c = cevenEstadoPill(s);
       var dim = data.count === 0 ? ';opacity:.45' : '';
       var isActive = window._pipeStatusFilters && window._pipeStatusFilters.indexOf(s) !== -1;
       var activeBorder = isActive ? ';outline:2px solid '+c.fg+';outline-offset:1px' : '';
-      pillsHtml += '<div class="'+_spillClass(s)+'" data-act="status" data-st="'+cevenEsc(s)+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer'+activeBorder+dim+'">'
-        +'<strong>'+cevenEsc(s)+'</strong><span style="opacity:.85">· '+data.count+' · USD '+fI(data.monto)+'</span></div>';
+      pillsHtml += '<div class="'+cevenSpillClass(s)+'" data-act="status" data-st="'+cevenEsc(s)+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer'+activeBorder+dim+'">'
+        +'<strong>'+cevenEsc(cevenEstadoLabel(s))+'</strong><span style="opacity:.85">· '+data.count+' proy · USD '+fI(data.monto)+'</span></div>';
     });
     pillsHtml += '</div>';
     document.getElementById('dash-by-status').innerHTML = pillsHtml;
   }
 
   // ── TABLA ──
-  window._pipeRows = filtered;
-  var html = '';
-  for(var i=0;i<filtered.length;i++){
-    var r = filtered[i];
-    var expanded = window._pipeExpanded && window._pipeExpanded[r.id];
-    /* La columna mostraba solo "2 salas": el dato que importa —de qué proyecto
-       se trata— quedaba escondido detrás de expandir la fila. Ahora se ve el
-       nombre, y el "+N" avisa que el OPG tiene más de uno. */
-    var proyNames = (r.salas||[]).map(function(s){ return (s.sala||'').trim(); }).filter(Boolean);
-    var proyCell = proyNames.length
-      ? cevenEsc(proyNames[0]) + (proyNames.length > 1
-          ? ' <span style="color:#6e6e73;font-size:11px">+'+(proyNames.length-1)+'</span>'
-          : '')
-      : '—';
-    var proyTitle = proyNames.length
-      ? proyNames.join(' · ') + ' · clic para ver el detalle'
-      : 'Sin proyecto cargado';
-    // Cierre estimado (shared/monthpicker.js)
-    var mesSel = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-i="'+i+'"', {cls:'mpk-sm'});
-    var estado = r.estado || 'Cotizado';
-    var statusSel = '<select data-act="est" data-i="'+i+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">';
-    statusOrderPipe.forEach(function(s){ statusSel += '<option value="'+s+'"'+(s===estado?' selected':'')+'>'+s+'</option>'; });
-    statusSel += '</select>';
-    var rowTintInfo = rowStatusColors[estado] || {bg:'', fg:''};
-    var rowTint = rowTintInfo.bg, rowFg = rowTintInfo.fg;
-    var rowStyle = '';
-    if(rowTint) rowStyle += 'background:'+rowTint;
-    if(rowFg)   rowStyle += (rowStyle?';':'') + 'color:'+rowFg;
-
-    // .stk-monto / .stk-act traen su propio background:#fff (lo necesitan para
-    // quedar pegadas al hacer scroll horizontal) y tapaban el tinte del <tr>:
-    // se re-aplica el color en cada celda, igual que hace Apple.
-    html += '<tr class="'+cevenEsc(_rowStClass(estado))+'"'+(rowStyle?' style="'+rowStyle+'"':'')+'>'
-      +'<td style="font-size:12px;white-space:nowrap">'
-        +'<button class="bs" data-act="exp" data-i="'+i+'" title="Ver los proyectos de este OPG" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
-        +cevenEsc(r.fecha)
-      +'</td>'
-      +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
-      +'<td style="font-weight:500"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div></td>'
-      +'<td><div title="'+cevenEsc(r.opg||'')+'" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.opg||'—')+'</div></td>'
-      +'<td style="cursor:pointer" data-act="exp" data-i="'+i+'" title="'+cevenEsc(proyTitle)+'"><div style="max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+proyCell+'</div></td>'
-      +'<td style="font-size:12px;white-space:nowrap">'+mesSel+'</td>'
-      +'<td style="text-align:center">'+statusSel+'</td>'
-      +'<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px'+(rowTint?';background:'+rowTint:'')+(rowFg?';color:'+rowFg:'')+'">USD '+fI(r.monto||0)+'</td>'
-      +'<td class="stk-act" style="text-align:center;white-space:nowrap'+(rowTint?';background:'+rowTint:'')+'">'
-        +(r.factura
-          ? '<button class="bs" data-act="fact" data-i="'+i+'" title="Factura: '+cevenEsc(r.factura)+' · clic para editar" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">Fact.</button> '
-          : '<button class="bs" data-act="fact" data-i="'+i+'" title="Cargar número de factura" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">Fact.</button> ')
-        +(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rm" data-i="'+i+'" title="Eliminar OPG del pipeline">×</button>' : '')
-      +'</td>'
-      +'</tr>';
-    if(expanded) html += renderPipelineDetailRow(r, i);
-  }
+  var html = _pipeTablaHTML(filtered, '', {
+    /* Buscar un proyecto y ver el cliente colapsado no sirve de nada, así que el
+       grupo se abre solo cuando el match NO fue por el nombre del cliente.
+       Es un set derivado del render: NO se escribe en _pipeExpanded, para que al
+       limpiar la búsqueda todo se vuelva a plegar sin dejar residuo. */
+    abrirSiMatchea: q
+  });
 
   // Vacío por filtro y vacío de verdad son dos cosas distintas: decir "cargá una
   // cotización" cuando el pipeline tiene filas y el filtro no matchea ninguna
   // manda a buscar el problema donde no está.
-  var _hayFiltros = !!(q || ex || monthFilter || _stFilters.length || st);
+  var _hayFiltros = !!(q || ex || monthFilter || _stFilters.length);
+  /* Las citas tienen que coincidir LETRA POR LETRA con los botones reales
+     ("✕ Limpiar filtros" en la barra de acá, "Agregar al pipeline" en la vista
+     de cotización): mandar a buscar un botón que no existe con ese nombre es
+     peor que no nombrarlo. */
   var _vacio = _hayFiltros
-    ? 'Ningún registro coincide con los filtros. Tocá "✕ Filtros" para limpiarlos.'
-    : 'Sin entradas en pipeline. Cargá una cotización y tocá "Agregar a Pipeline".';
+    ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Limpiar filtros".'
+    : 'El pipeline está vacío. Cargá una cotización y tocá "Agregar al pipeline".';
   document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
   pipeBindDelegation();
+}
+
+/* Arma el cuerpo de la tabla agrupado por cliente. Lo usan renderPipeline() y
+   renderArchiveMonth(), que solo se diferencian en el `scope` de las claves y en
+   qué botón lleva la última columna.
+
+   `scope` es '' para el pipeline activo y 'a:<mes>' para un mes archivado: eso
+   mantiene separada la expansión de las dos vistas, que es lo que ya hacía la
+   clave compuesta 'arch__<mes>__<id>'. */
+function _pipeTablaHTML(filas, scope, opts){
+  opts = opts || {};
+  var esArchivo = !!scope;
+  cevenPipeNodeReset();
+
+  var grupos = cevenPipeSortGroups(
+    cevenPipeGroupBy(filas),
+    window._pipeSort.col, window._pipeSort.dir
+  );
+
+  /* getDB() hace JSON.parse de varios MB y el poll redibuja cada 15 s: se
+     parsea UNA sola vez por render, y solo si hay alguna fila abierta. */
+  var _db = null;
+  var q = (opts.abrirSiMatchea || '').toLowerCase().trim();
+  var html = '';
+
+  grupos.forEach(function(g, gi){
+    var kGrupo = cevenPipeKey(scope, 'c', gi);
+    cevenPipeNodeAdd(kGrupo, {kind:'c', grupo:g});
+
+    /* Si la búsqueda matcheó algo que NO es el nombre del cliente, el grupo se
+       abre solo: si no, el usuario busca un proyecto y ve una fila colapsada
+       sin ninguna evidencia de que adentro está lo que pidió. */
+    var abierto = cevenPipeAbierto(kGrupo);
+    if(!abierto && q && g.clave.indexOf(q) === -1){
+      abierto = g.rows.some(function(r){
+        return ((r.proyecto||'') + ' ' + (r.opg||'') + ' ' + (r.qNum||'')).toLowerCase().indexOf(q) !== -1;
+      });
+    }
+
+    html += cevenPipeGroupRow(g, kGrupo, abierto);
+    if(!abierto) return;
+
+    g.rows.forEach(function(r){
+      var kFila = cevenPipeKey(scope, 'r', r.id);
+      cevenPipeNodeAdd(kFila, {kind:'r', row:r});
+      var kA = cevenEsc(kFila);
+      var abiertaFila = cevenPipeAbierto(kFila);
+      var estado = r.estado || 'Cotizado';
+      var tint = cevenEstadoRow(estado);
+      var rowStyle = '';
+      if(tint.bg) rowStyle += 'background:'+tint.bg;
+      if(tint.fg) rowStyle += (rowStyle?';':'') + 'color:'+tint.fg;
+
+      /* El estado y el cierre se editan en el pipeline activo; en un mes ya
+         cerrado se muestran de solo lectura (para cambiarlos hay que restaurar
+         el proyecto primero, que es lo que hace el botón ↩). */
+      var celdaMes, celdaEstado, celdaAcc;
+      if(esArchivo){
+        celdaMes = '<span style="font-size:12px">' + cevenEsc(opts.mesLabel || '—') + '</span>';
+        var cSt = cevenEstadoPill(estado);
+        celdaEstado = '<span class="'+cevenEsc(cevenSpillClass(estado))+'" style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+cSt.fg+';background:'+cSt.bg+'">'+cevenEsc(cevenEstadoLabel(estado))+'</span>';
+        celdaAcc = '<button class="bs" data-act="restore" data-k="'+kA+'" data-mk="'+cevenEsc(opts.monthKey||'')+'" title="Devolver este proyecto al pipeline actual" style="font-size:11px;padding:2px 8px">↩ Restaurar</button>';
+      } else {
+        celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'});
+        celdaEstado = '<select data-act="est" data-k="'+kA+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
+          + cevenEstadoOptions(estado, false) + '</select>';
+        /* El número de factura vivía SOLO en el title del botón: en un celular
+           no hay hover, así que una fila con factura y otra sin factura se veían
+           idénticas salvo por el color. Ahora el número está en la etiqueta. */
+        var factTxt = r.factura ? ('Fact. ' + cevenEsc(r.factura)) : 'Fact. —';
+        celdaAcc = (r.factura
+            ? '<button class="bs" data-act="fact" data-k="'+kA+'" title="Clic para editar el número de factura" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">'+factTxt+'</button> '
+            : '<button class="bs" data-act="fact" data-k="'+kA+'" title="Cargar número de factura" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">'+factTxt+'</button> ')
+          + (cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rm" data-k="'+kA+'" title="Quitar este proyecto del pipeline">×</button>' : '');
+      }
+
+      // .stk-monto / .stk-act traen su propio background:#fff (lo necesitan para
+      // quedar pegadas al hacer scroll horizontal) y tapaban el tinte del <tr>:
+      // se re-aplica el color en cada celda, igual que hace Apple.
+      html += '<tr class="'+cevenEsc(cevenRowStClass(estado))+'"'+(rowStyle?' style="'+rowStyle+'"':'')+'>'
+        +'<td style="font-size:12px;white-space:nowrap;padding-left:22px">'
+          +'<button class="bs" data-act="exp" data-k="'+kA+'" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(abiertaFila?'▼':'▶')+'</button>'
+          +cevenEsc(r.fecha)
+        +'</td>'
+        +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
+        // El cliente ya está en el encabezado del grupo, con una fila entera de
+        // ancho: acá se repetía truncado y con el nombre completo solo en un
+        // tooltip, que en touch no existe. Se usa la columna para el OPG.
+        +'<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.opg||'—')+'</td>'
+        +'<td style="text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:11px">'
+          +(r.qNum ? '<span data-act="openq" data-qn="'+cevenEsc(r.qNum)+'" style="color:var(--acc,#0071e3);font-weight:600;cursor:pointer">#'+cevenEsc(r.qNum)+'</span>' : '—')
+        +'</td>'
+        +'<td style="cursor:pointer" data-act="exp" data-k="'+kA+'"><div style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+          +cevenEsc(r.proyecto||'—')
+          +' <span style="color:#6e6e73;font-size:11px;white-space:nowrap">▸</span>'
+        +'</div></td>'
+        +'<td style="font-size:12px;white-space:nowrap">'+celdaMes+'</td>'
+        +'<td style="text-align:center">'+celdaEstado+'</td>'
+        +'<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px'+(tint.bg?';background:'+tint.bg:'')+(tint.fg?';color:'+tint.fg:'')+'">USD '+fI(r.monto||0)+'</td>'
+        +'<td class="stk-act" style="text-align:center;white-space:nowrap'+(tint.bg?';background:'+tint.bg:'')+'">'+celdaAcc+'</td>'
+      +'</tr>';
+
+      if(abiertaFila){
+        if(_db === null) _db = getDB();
+        html += renderPipelineDetailRow(r, kFila, _db);
+      }
+    });
+  });
+
+  return html;
 }
 
 /* Un solo listener por contenedor, atado una vez (cevenDelegate se encarga).
@@ -295,29 +379,31 @@ function pipeBindDelegation(){
     var el = cevenActEl(ev, this);
     if(!el) return;
     var act = el.getAttribute('data-act');
-    // El archivo expande por clave compuesta ('arch__<mes>__<id>'), el pipeline
-    // activo por el id de la fila.
-    if(act === 'exp'){
-      var key = el.getAttribute('data-key');
-      if(key !== null){ togglePipelineRow(key); return; }
-    }
-    var r = _pipeRowAt(el.getAttribute('data-i'));
-    if(!r) return;
-    if(act === 'exp')          togglePipelineRow(r.id);
-    else if(act === 'fact')    editFactura(r.id);
-    else if(act === 'rm')      removePipeline(r.id);
-    else if(act === 'restore') restoreFromArchive(el.getAttribute('data-mk'), r.id);
-    else if(act === 'openq')   openPipelineQuote(el.getAttribute('data-qn'));
-    else if(act === 'rmsala')  removeSalaFromPipeline(r.id, el.getAttribute('data-qn'));
+
+    // Abrir la cotización no necesita nodo: el número va en el propio data-*.
+    if(act === 'openq'){ openPipelineQuote(el.getAttribute('data-qn')); return; }
+
+    /* Todo lo demás resuelve la CLAVE contra el registro de nodos, que devuelve
+       el objeto original: el id nunca se reconstruye desde un atributo (sería
+       string y los === contra el id numérico fallarían en silencio). */
+    var n = cevenPipeNodeAt(el.getAttribute('data-k'));
+    if(!n) return;
+    if(act === 'expcli'){ togglePipeNode(el.getAttribute('data-k')); return; }
+    if(n.kind !== 'r') return;
+
+    if(act === 'exp')          togglePipeNode(el.getAttribute('data-k'));
+    else if(act === 'fact')    editFactura(n.row.id);
+    else if(act === 'rm')      removePipeline(n.row.id);
+    else if(act === 'restore') restoreFromArchive(el.getAttribute('data-mk'), n.row.id);
   });
   cevenDelegate('pipe-body', 'change', function(ev){
     var el = cevenActEl(ev, this);
     if(!el) return;
-    var r = _pipeRowAt(el.getAttribute('data-i'));
-    if(!r) return;
+    var n = cevenPipeNodeAt(el.getAttribute('data-k'));
+    if(!n || n.kind !== 'r') return;
     var act = el.getAttribute('data-act');
-    if(act === 'mes')      updatePipelineMesCierreValue(r.id, el.value);
-    else if(act === 'est') updatePipelineStatus(r.id, el.value);
+    if(act === 'mes')      updatePipelineMesCierreValue(n.row.id, el.value);
+    else if(act === 'est') updatePipelineStatus(n.row.id, el.value);
   });
   cevenDelegate('pipe-month-pills', 'click', function(ev){
     var el = cevenActEl(ev, this);

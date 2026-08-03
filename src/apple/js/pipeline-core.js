@@ -20,8 +20,7 @@ function addToPipeline(){
   if(!items.length && !warrantyItems.length){ alert('La cotización está vacía.'); return; }
   var client = (document.getElementById('client').value||'').trim();
   if(!client){ alert('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
-  // El proyecto del pipeline = lo que esté en Observaciones de la cotización
-  var proyecto = (document.getElementById('obs').value||'').trim();
+  var proyecto = (document.getElementById('proyecto').value||'').trim();
   var exec = document.getElementById('exec').value || '';
   var mesCierre = getMesCierre();
   var qn = String(qNum).padStart(4,'0');
@@ -66,7 +65,10 @@ function addToPipeline(){
   var fecha = now.toLocaleDateString('es-AR');
 
   var entry = {
-    id: Date.now(),
+    /* `Date.now()` a secas colisiona entre dos usuarios que agregan en el mismo
+       milisegundo, y la PK en Supabase es (brand, id): el upsert pisa una fila
+       con la otra. Tiene que quedar ENTERO — la columna es bigint. */
+    id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
     fecha: fecha,
     fechaISO: now.toISOString(),
     qNum: qn,
@@ -87,7 +89,11 @@ function addToPipeline(){
     montoServ: Math.round(montoServ),
     monto: Math.round(total),
     margenPond: margenPonderado,
-    moneda: 'USD'
+    moneda: 'USD',
+    /* El marcador FOB se escribe en Observaciones, que NO viaja al pipeline:
+       antes se detectaba de rebote porque `proyecto` era el mismo texto. Ahora
+       el flag se guarda acá y se sincroniza (está en pipeCols). Ver esFOBEntry(). */
+    esFOB: (typeof isCotizacionFOB === 'function') ? isCotizacionFOB() : false
   };
 
   var pipe = getPipeline();
@@ -111,10 +117,16 @@ function addToPipeline(){
   showToast('✓ Agregada al pipeline: ' + client + (proyecto?' / '+proyecto:''));
 }
 
-// Detecta si una entrada del pipeline es FOB (busca "FOB" como palabra en el proyecto)
-// Se chequea en tiempo real para cubrir entradas viejas sin el flag esFOB
+/* Detecta si una entrada del pipeline es FOB.
+
+   Antes esto leía `r.proyecto`, que era literalmente el campo Observaciones —y
+   ahí es donde se escribe "FOB"—. Al separar los dos campos (08/2026) esa
+   detección se caía, y con ella la nacionalización al 0%: por eso la fila ahora
+   guarda el flag `esFOB`, que addToPipeline() toma de isCotizacionFOB().
+
+   El fallback por texto se conserva por si el flag falta. */
 function esFOBEntry(r){
-  if(r.esFOB) return true; // flag guardado en entradas nuevas
+  if(r.esFOB) return true;
   return /\bfob\b/i.test(r.proyecto || '');
 }
 

@@ -20,37 +20,69 @@ window.CEVEN_BRAND = {
 
   // Nombres BASE, sin prefijo: sync.js les antepone `prefix`.
   // Poly no tiene nacionalizacion ni target anual.
-  settingKeys: ['cquotes','cpl','carchive','cqc','clogo','clogo_dark'],
+  settingKeys: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark'],
 
-  // Fila de pipeline por OPG (no por qNum — ver pipeline-core.js): sin familias
-  // Apple (qMac/qIph/...), con opg/salas/factura en su lugar.
-  pipeCols: ['id','fecha','fechaISO','cliente','ejecutivo','mesCierre','estado',
-    'monto','moneda','opg','salas','factura'],
+  /* Fila de pipeline = UN PROYECTO = UNA COTIZACION (08/2026). Antes era un OPG
+     con un array `salas[]` adentro y el estado a nivel OPG; ahora el OPG es un
+     dato informativo del proyecto y cada proyecto lleva su propio estado, mes de
+     cierre y factura. `salas` ya no existe.
 
-  numCols: ['id','monto'],
+     Sin familias Apple (qMac/qIph/...) ni margen: eso sigue siendo de Apple. */
+  pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','opg',
+    'ejecutivo','mesCierre','estado','monto','moneda','factura'],
 
-  // Columnas jsonb: viajan como objeto/array nativo, no como string.
-  objCols: ['salas'],
+  numCols: ['id','qNum','monto'],
 
-  // Columnas numericas en Supabase que la app guarda como string con ceros a la
-  // izquierda (col -> ancho). Poly numera por OPG, que es texto libre: ninguna.
-  padCols: {},
+  // Columnas jsonb: ninguna desde que se fue `salas`.
+  objCols: [],
+
+  /* Columnas numericas en Supabase que la app guarda como string con ceros a la
+     izquierda (col -> ancho). `qNum` se guarda '0071' y la columna es bigint:
+     SIN esto, coerce() devuelve 71, normPipe() compara '0071' !== 71, la fila
+     queda marcada como cambiada PARA SIEMPRE y el poll re-renderiza la tabla
+     cada 15s. Es la misma trampa documentada en apple/brand.js. */
+  padCols: { qNum: 4 },
 
   // Escalares que aceptan NULL: hay que emitirlos explicitamente como null.
   // `factura` es el caso que motivo esto: al vaciar el campo se seteaba null,
   // el upsert omitia la columna, PostgREST conservaba el numero viejo y el poll
   // lo revertia — re-renderizando la tabla cada 15s para siempre.
-  nullableCols: ['opg','factura','mesCierre'],
+  nullableCols: ['opg','factura','mesCierre','proyecto'],
 
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   localOnlyCols: [],
 
+  /* Claves cuyo valor solo puede SUBIR. El contador de cotizaciones es una:
+     el poll escribia el valor del servidor sin comparar magnitud, asi que si
+     otro equipo estaba atrasado el contador local RETROCEDIA y las proximas
+     cotizaciones reusaban numeros ya emitidos. sync.js las resuelve con
+     Math.max en vez de pisar, en el poll y en el bootstrap. */
+  monotonicKeys: ['cqc'],
+
   /* --- Color de marca (shared/theme.js) ----------------------------- */
 
-  // Violeta: no se parece al azul de Apple ni al naranja que va a llevar HP.
-  // El criterio es distinguirse entre marcas, no imitar el logo: los datos de
-  // Apple y Poly no se mezclan y equivocarse de cotizador es facil.
-  theme: { accent:'#6d3fd4', hover:'#5c33bb', soft:'#f1ebff', dk:'#9a72ff' },
+  // Naranja pizarra: el naranja del logo (#ff3900) bajado y desaturado. El puro
+  // es un color de senal —sobre blanco da 3,6:1 y como texto no se lee—; este
+  // llega a 5:1 y sigue siendo el naranja de Poly de reojo.
+  //
+  // `dk` no es el mismo tono sino uno mas claro: sobre el fondo #1c1c1e del modo
+  // oscuro el pizarra queda apagado (ver shared/theme.js y dark.css).
+  theme: { accent:'#b35333', hover:'#94422a', soft:'#f7ede9', dk:'#e08560' },
+
+  /* --- Niveles de precio (catalogo con tiers) ----------------------- */
+
+  /* El export del ERP trae 4 precios por SKU. `v` es el valor tal cual viene en
+     la columna "Nivel de precio" del archivo y es lo que se guarda; `lbl` es lo
+     que se lee en pantalla. El ORDEN de esta lista es el de presentacion, NO
+     implica que uno sea mas caro que otro: hay 16 SKUs donde Tier 2 sale mas
+     que Tier 1, o donde Negocios Especiales no es el mas barato. Por eso el
+     selector muestra el precio al lado de cada nivel. */
+  priceTiers: [
+    { v: 'Ceven - Tier 1',      lbl: 'Tier 1' },
+    { v: 'Ceven - Tier 2',      lbl: 'Tier 2' },
+    { v: 'Ceven - Tier 3',      lbl: 'Tier 3' },
+    { v: 'Negocios Especiales', lbl: 'Neg. Especiales' }
+  ],
 
   /* --- Navegacion (shared/navbar.js) -------------------------------- */
 
@@ -70,6 +102,10 @@ window.CEVEN_BRAND = {
   // Columnas cuyo orden por defecto es DESCENDENTE al tocar el encabezado
   // (numeros y fechas se leen "de mayor a menor"; el texto, alfabetico).
   // Poly no tiene las columnas de unidades por familia ni margen.
+  // Cuantas columnas tiene la tabla: el <tr> de encabezado de cada cliente lo
+  // necesita para el colspan (shared/pipeline-group.js).
+  pipeColCount: 9,
+
   pipeSortDescCols: ['monto','fechaISO'],
 
   /* --- Backup (shared/backup.js, shared/backup-folder.js) ----------- */

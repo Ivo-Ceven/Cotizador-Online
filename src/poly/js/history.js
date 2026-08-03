@@ -105,7 +105,7 @@ function renderHistory(){
   var html='';
   for(var ki=0;ki<keys.length;ki++){
     var qn=keys[ki], rows=grouped[qn], first=rows[0];
-    var searchHay = ((first['Cliente']||'')+' '+(first['OPG']||'')+' '+(first['Sala']||'')).toLowerCase();
+    var searchHay = ((first['Cliente']||'')+' '+(first['OPG']||'')+' '+(first['Proyecto']||'')).toLowerCase();
     if(fc&&searchHay.indexOf(fc)===-1) continue;
     if(fe&&first['Ejecutivo']!==fe) continue;
     if(dFrom||dTo){ var d=parseARDate(first['Fecha']); if(d){ if(dFrom&&d<dFrom)continue; if(dTo&&d>dTo)continue; } }
@@ -138,7 +138,7 @@ function renderHistory(){
       +'<div class="hist-card-info" style="display:flex;gap:16px;flex-wrap:wrap;padding:9px 14px;border-bottom:0.5px solid #f0f0f0;font-size:13px">'
         +'<div><span class="lbl">Cliente</span><strong>'+cevenEsc(first['Cliente']||'—')+'</strong></div>'
         +'<div><span class="lbl">OPG</span>'+cevenEsc(first['OPG']||'—')+'</div>'
-        +'<div><span class="lbl">Proyecto</span>'+cevenEsc(first['Sala']||'—')+'</div>'
+        +'<div><span class="lbl">Proyecto</span>'+cevenEsc(first['Proyecto']||'—')+'</div>'
         +'<div><span class="lbl">Ejecutivo</span>'+cevenEsc(first['Ejecutivo']||'—')+'</div>'
         +'<div style="margin-left:auto;text-align:right"><span class="lbl">Total</span><strong style="font-size:15px">USD '+fI(gt)+'</strong></div>'
       +'</div>'

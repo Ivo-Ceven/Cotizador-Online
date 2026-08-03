@@ -133,6 +133,11 @@ function renderPipeline(){
   var _stFilters = window._pipeStatusFilters || [];
   var st  = _stFilters.length === 1 ? _stFilters[0]
           : (_stFilters.length === 0 ? ((document.getElementById('pipe-status')||{}).value || '') : '');
+  /* `st` sirve para "¿QUÉ estado está filtrado?" (rótulo, color de la tarjeta) y
+     queda vacío con 2+ pastillas activas. Para "¿HAY algún filtro de estado?"
+     hace falta esta otra: usar `st` restaba Facturado y Perdido de una suma que
+     ya solo tenía eso, y el Total mostraba USD 0 sin explicación. */
+  var hayFiltroEstado = _stFilters.length > 0;
   var monthFilter = window._pipeMonthFilter || '';
 
   // Poblar el dropdown de meses dinámicamente con todos los meses presentes
@@ -415,7 +420,7 @@ function renderPipeline(){
     if(estado === 'Facturado' && r.mesCierre && r.mesCierre < _dashCurMonth) continue;
     var monto = r.monto || 0;
     sumMonto += monto;
-    var isFactPerd = !st && (estado === 'Facturado' || estado === 'Perdido');
+    var isFactPerd = !hayFiltroEstado && (estado === 'Facturado' || estado === 'Perdido');
     sumMac += r.qMac || 0;
     sumIph += r.qIph || 0;
     sumIpad += r.qIpad || 0;
@@ -467,9 +472,9 @@ function renderPipeline(){
   // Total pipeline = Total − Facturado − Perdido (solo cuando no hay filtro de estado activo)
   var facturadoData = byStatus['Facturado'] || {count:0, monto:0, marW:0, marM:0};
   var perdidoData   = byStatus['Perdido']   || {count:0, monto:0, marW:0, marM:0};
-  var sumPipeline   = st ? sumMonto : (sumMonto - facturadoData.monto - perdidoData.monto);
-  var pipelineMargenW = st ? sumMargenMontoG : (sumMargenMontoG - (facturadoData.marW||0) - (perdidoData.marW||0));
-  var pipelineMargenM = st ? sumMontoMargenG : (sumMontoMargenG - (facturadoData.marM||0) - (perdidoData.marM||0));
+  var sumPipeline   = hayFiltroEstado ? sumMonto : (sumMonto - facturadoData.monto - perdidoData.monto);
+  var pipelineMargenW = hayFiltroEstado ? sumMargenMontoG : (sumMargenMontoG - (facturadoData.marW||0) - (perdidoData.marW||0));
+  var pipelineMargenM = hayFiltroEstado ? sumMontoMargenG : (sumMontoMargenG - (facturadoData.marM||0) - (perdidoData.marM||0));
   var margenPipelineGlobal = pipelineMargenM > 0 ? (pipelineMargenW / pipelineMargenM) : 0;
 
   var dash = document.getElementById('pipe-dashboard');
@@ -529,7 +534,9 @@ function renderPipeline(){
     var _tl = document.getElementById('dash-total-lbl');
     var _tm = document.getElementById('dash-margen');
     if(_tc) { _tc.style.background = '#1d1d1f'; _tc.style.color = '#fff'; }
-    if(_tl) { _tl.style.color = '#aeaeb2'; _tl.textContent = st ? ('Total ' + st) : 'Total pipeline'; }
+    if(_tl) { _tl.style.color = '#aeaeb2'; _tl.textContent = hayFiltroEstado
+      ? ('Total ' + _stFilters.map(cevenEstadoLabel).join(' + '))
+      : 'Total pipeline'; }
     var _tv = document.getElementById('dash-total');
     if(_tv) _tv.style.color = '';
     if(_tm) _tm.style.color = '#aeaeb2';
@@ -538,23 +545,15 @@ function renderPipeline(){
     // Cuando no hay filtro, mostrar solo el Facturado de la sesión
     var cardFactData = st ? (byStatus[st] || {qMac:0,qIph:0,qIpad:0,qServ:0,qAcc:0,monto:0,count:0,marW:0,marM:0}) : fD;
     var cardFactLbl  = st || 'Facturado';
-    var cardFactColors = {
-      'Proyecto':    {card:'#6e36c8', sub:'#c9a9f0'},
-      'Cotizado':    {card:'#0071e3', sub:'#80b8f5'},
-      'Negociacion': {card:'#c84e00', sub:'#f0a070'},
-      'Commit':      {card:'#7a5800', sub:'#c8a050'},
-      'Con OC':      {card:'#15863a', sub:'#70c890'},
-      'Autorizando': {card:'#169670', sub:'#8ccdb0'},
-      'Facturado':   {card:'#17a589', sub:'#a5d6a7'},
-      'Perdido':     {card:'#a80011', sub:'#f09090'}
-    };
     var fcCard = document.getElementById('dash-facturado-card');
     var fcLbl  = document.getElementById('dash-facturado-lbl');
     var fcMgPd = document.getElementById('dash-facturado-mgpd');
-    var fcColor = cardFactColors[cardFactLbl] || cardFactColors['Facturado'];
-    if(fcCard) fcCard.style.background = fcColor.card;
+    // Colores y etiqueta desde shared/pipeline-status.js: el rótulo mostraba el
+    // valor crudo, así que decía 'Negociacion' sin tilde.
+    var fcColor = cevenEstadoCard(cardFactLbl);
+    if(fcCard) fcCard.style.background = fcColor.bg;
     if(fcLbl)  fcLbl.style.color = fcColor.sub;
-    if(fcLbl)  fcLbl.textContent = cardFactLbl;
+    if(fcLbl)  fcLbl.textContent = cevenEstadoLabel(cardFactLbl);
     if(fcMgPd) fcMgPd.style.color = fcColor.sub;
     document.getElementById('dash-facturado').textContent = 'USD ' + fI(cardFactData.monto);
     var factMgPdTxt = cardFactData.marM > 0 ? ('MgPd ' + (cardFactData.marW / cardFactData.marM).toFixed(2) + '%') : 'MgPd —';
@@ -567,18 +566,9 @@ function renderPipeline(){
     if(fcMgPd) fcMgPd.innerHTML = factMgPdTxt
       + (factUnits.length ? '<br><span style="font-size:10px;opacity:.75">'+factUnits.join(' · ')+'</span>' : '');
 
-    // Pills por estado — mostrar siempre TODOS, incluso los que están en 0
-    var statusOrder = ['Proyecto','Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
-    var statusColors = {
-      'Proyecto':    {bg:'#f2e8ff', fg:'#6e36c8'},
-      'Cotizado':    {bg:'#e8f4ff', fg:'#0071e3'},
-      'Negociacion': {bg:'#fff3e0', fg:'#c84e00'},
-      'Commit':      {bg:'#fff8e1', fg:'#7a5800'},
-      'Con OC':      {bg:'#e8f6ee', fg:'#15863a'},
-      'Autorizando': {bg:'#d4f0de', fg:'#0e7a52'},
-      'Facturado':   {bg:'#b8e8cc', fg:'#0a5c30'},
-      'Perdido':     {bg:'#fbbebe', fg:'#a80011'}
-    };
+    // Pills por estado — mostrar siempre TODOS, incluso los que están en 0.
+    // El orden y los colores salen de shared/pipeline-status.js.
+    var statusOrder = cevenEstadoValores();
     // ── BLOQUE POR ESTADO + APERTURA POR MES ──
     var pillsHtml = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;width:100%">'
       +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px">Por estado</div>'
@@ -590,7 +580,7 @@ function renderPipeline(){
       pillsHtml += '<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">';
       statusOrder.forEach(function(s){
         var data = byStatus[s] || {count:0, monto:0, marW:0, marM:0};
-        var c = statusColors[s] || {bg:'#f2f2f7', fg:'#1d1d1f'};
+        var c = cevenEstadoPill(s);
         var dim = data.count === 0 ? ';opacity:.45' : '';
         var isActive = window._pipeStatusFilters && window._pipeStatusFilters.indexOf(s) !== -1;
         var activeBorder = isActive ? ';outline:2px solid '+c.fg+';outline-offset:1px' : '';
@@ -600,14 +590,14 @@ function renderPipeline(){
           pondTxt = ' · MgPd ' + pond.toFixed(2) + '%';
         }
         pillsHtml += '<div class="spill spill-'+s.replace(/ /g,'')+'" data-pill="status" data-st="'+cevenEsc(s)+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;transition:transform .1s'+activeBorder+dim+'">'
-          +'<strong>'+cevenEsc(s)+'</strong>'
+          +'<strong>'+cevenEsc(cevenEstadoLabel(s))+'</strong>'
           +'<span style="opacity:.85">· '+data.count+' cot. · USD '+fI(data.monto)+pondTxt+'</span>'
           +'</div>';
       });
       pillsHtml += '</div>';
     } else if(!filtered.length){
       // La matriz Estado × Mes sin filas sería un encabezado vacío: mejor decirlo.
-      pillsHtml += '<div style="font-size:12px;color:#aeaeb2;padding:10px 2px;width:100%">Ningún registro coincide con los filtros.</div>';
+      pillsHtml += '<div style="font-size:12px;color:#aeaeb2;padding:10px 2px;width:100%">Ningún proyecto coincide con los filtros.</div>';
     } else {
       // Vista expandida: matriz Estado × Mes
       // Ordenar meses cronológicamente, "sin-fecha" al final
@@ -637,10 +627,10 @@ function renderPipeline(){
       statusOrder.forEach(function(s){
         var sData = byStatus[s] || {count:0, monto:0, marW:0, marM:0};
         if(sData.count === 0) return; // ocultar estados vacíos en matriz
-        var c = statusColors[s] || {bg:'#f2f2f7', fg:'#1d1d1f'};
+        var c = cevenEstadoPill(s);
         pillsHtml += '<tr>'
           +'<td style="padding:8px 12px;border-bottom:0.5px solid #f0f0f0;position:sticky;left:0;background:#fff;z-index:1">'
-            +'<span class="spill spill-'+s.replace(/ /g,'')+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700">'+cevenEsc(s)+'</span>'
+            +'<span class="spill spill-'+s.replace(/ /g,'')+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700">'+cevenEsc(cevenEstadoLabel(s))+'</span>'
           +'</td>';
         monthList.forEach(function(m){
           var d = (byStatusMonth[s]||{})[m] || {count:0, monto:0, marW:0, marM:0};
@@ -710,9 +700,40 @@ function renderPipeline(){
     return '<td style="text-align:center'+bold+'">'+cevenEsc(val||'—')+'</td>';
   }
 
+  /* La tabla se agrupa por CLIENTE. Para no reescribir el cuerpo de la fila
+     —que acá tiene filas virtuales por override de SKU y facturación parcial—
+     se arma primero el PLAN de lo que hay que pintar (encabezados de grupo y
+     filas, en orden) y el loop de abajo queda igual, salvo el `continue` que
+     despacha los encabezados. */
+  cevenPipeNodeReset();
+  var _grupos = cevenPipeSortGroups(
+    cevenPipeGroupBy(filtered), window._pipeSort.col, window._pipeSort.dir
+  );
+  var _plan = [];
+  _grupos.forEach(function(g, gi){
+    var kG = cevenPipeKey('', 'c', gi);
+    cevenPipeNodeAdd(kG, {kind:'c', grupo:g});
+    /* Si la búsqueda matcheó algo que NO es el nombre del cliente, el grupo se
+       abre solo: si no, buscás una cotización y ves un cliente colapsado sin
+       ninguna evidencia de que adentro está lo que pediste. Es derivado del
+       render, no se escribe en _pipeExpanded. */
+    var abierto = cevenPipeAbierto(kG);
+    if(!abierto && q && g.clave.indexOf(q) === -1){
+      abierto = g.rows.some(function(x){
+        return ((x.proyecto||'') + ' ' + (x.qNum||'')).toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    _plan.push({grupo:g, key:kG, abierto:abierto});
+    if(abierto) g.rows.forEach(function(x){ _plan.push({row:x}); });
+  });
+
   var html = '';
-  for(var i=0;i<filtered.length;i++){
-    var r = filtered[i];
+  for(var i=0;i<_plan.length;i++){
+    if(_plan[i].grupo){
+      html += cevenPipeGroupRow(_plan[i].grupo, _plan[i].key, _plan[i].abierto);
+      continue;
+    }
+    var r = _plan[i].row;
     // Mes/año actual de la entrada (puede estar vacío)
     var mYear = '', mMonth = '';
     if(r.mesCierre){
@@ -737,32 +758,17 @@ function renderPipeline(){
     var mesSel = cevenMonthField(curMC, ' data-pact="mes"'+rowA, {cls:'mpk-sm'});
 
     var estado = r.estado || 'Cotizado';
-    var statusOpts = ['Proyecto','Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
-    var statusSel = '<select data-pact="status"'+rowA+' style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">';
-    // El estado guardado puede no estar en la lista (dato viejo o corrupto): se
-    // agrega como opción propia para no cambiarlo en silencio al re-renderizar.
-    if(statusOpts.indexOf(estado) === -1) statusOpts = statusOpts.concat([estado]);
-    statusOpts.forEach(function(s){
-      statusSel += '<option value="'+cevenEsc(s)+'"'+(s===estado?' selected':'')+'>'+cevenEsc(s)+'</option>';
-    });
-    statusSel += '</select>';
+    // Opciones desde shared/pipeline-status.js, que también conserva un estado
+    // guardado fuera de la lista en vez de cambiarlo en silencio.
+    var statusSel = '<select data-pact="status"'+rowA+' style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
+      + cevenEstadoOptions(estado, false) + '</select>';
 
     var expanded = window._pipeExpanded && window._pipeExpanded[expandKey];
     // Badge para identificar filas virtuales
     var _hasArchived = r.skuArchivedQty && Object.keys(r.skuArchivedQty).length > 0;
     var virtualBadge = ((isVirtual && r._isPartial) || _hasArchived) ? '<span style="background:#f0f0f3;color:#6e6e73;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Facturación parcial: parte de esta cotización fue facturada en un mes anterior">parcial</span>' : '';
     // Tinte de fila según estado (mismo color de la pill)
-    var rowStatusColors = {
-      'Proyecto':    {bg:'', fg:''},
-      'Cotizado':    {bg:'', fg:''},
-      'Negociacion': {bg:'', fg:''},
-      'Commit':      {bg:'#fff8e1', fg:''},
-      'Con OC':      {bg:'#e8f6ee', fg:''},
-      'Autorizando': {bg:'#d4f0de', fg:''},
-      'Facturado':   {bg:'#b8e8cc', fg:''},
-      'Perdido':     {bg:'#fbbebe', fg:''}
-    };
-    var rowTintInfo = rowStatusColors[estado] || {bg:'', fg:''};
+    var rowTintInfo = cevenEstadoRow(estado);
     var rowTint = rowTintInfo.bg;
     var rowFg = rowTintInfo.fg;
     if(!rowTint && isVirtual) rowTint = '#fafbfc';
@@ -821,8 +827,8 @@ function renderPipeline(){
   // manda a buscar el problema donde no está.
   var _hayFiltros = !!(q || ex || fam || monthFilter || _stFilters.length || st);
   var _vacio = _hayFiltros
-    ? 'Ningún registro coincide con los filtros. Tocá "✕ Filtros" para limpiarlos.'
-    : 'Sin entradas en pipeline. Cargá una cotización y tocá "Agregar a Pipeline".';
+    ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Filtros" para limpiarlos.'
+    : 'El pipeline está vacío. Cargá una cotización y tocá "Agregar al pipeline".';
   document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="14" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
 }
@@ -849,6 +855,13 @@ function renderPipeline(){
       var el = e.target.closest ? e.target.closest('[data-pact],[data-pctx]') : null;
       return (el && body.contains(el)) ? el : null;
     };
+    /* Los encabezados de cliente los emite shared/pipeline-group.js, que no
+       conoce el esquema data-p* de Apple: se atienden aparte, antes de pickRow
+       (que solo mira data-pact/data-pctx y no los encontraría). */
+    body.addEventListener('click', function(e){
+      var g = e.target.closest ? e.target.closest('[data-act="expcli"]') : null;
+      if(g && body.contains(g)){ e.stopPropagation(); togglePipeNode(g.getAttribute('data-k')); }
+    });
     body.addEventListener('change', function(e){
       var el = pickRow(e); if(!el) return;
       var c = ctx(el);

@@ -44,6 +44,11 @@ var ASSETS = [
   './icons/apple-touch-icon.png',
   './icons/favicon-32.png',
 
+  // Logos de marca: los usa el panel del shell y el chip de la navbar.
+  './icons/brands/apple.png',
+  './icons/brands/poly.png',
+  './icons/brands/hp.png',
+
   './shared/safe.js',
   './shared/config.js',
   './shared/nav.js',
@@ -63,7 +68,11 @@ var ASSETS = [
   './shared/recovery.js',
   './shared/quote-core.js',
   './shared/catalog-core.js',
+  './shared/quote-num.js',
+  './shared/clientes.js',
   './shared/pipeline-store.js',
+  './shared/pipeline-status.js',
+  './shared/pipeline-group.js',
   './shared/pipeline-ui.js',
   './shared/pdf-core.js',
   './shared/css/base.css',
@@ -99,6 +108,7 @@ var ASSETS = [
   './poly/js/state.js',
   './poly/js/catalog.js',
   './poly/js/quote.js',
+  './poly/js/tiers.js',
   './poly/js/products.js',
   './poly/js/quotes-db.js',
   './poly/js/pipeline-data.js',

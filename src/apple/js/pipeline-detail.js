@@ -341,16 +341,11 @@ function renderPipelineDetailRow(r, db, pipe){
   }
   // skuStatus por línea (se guarda en pipe entry)
   var skuStatus = pipeEntry.skuStatus || {};
-  var statusOpts = ['Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
-  var statusColorsMini = {
-    'Cotizado':    '#0071e3',
-    'Negociacion': '#c84e00',
-    'Commit':      '#7a5800',
-    'Con OC':      '#15863a',
-    'Autorizando': '#169670',
-    'Facturado':   '#17a589',
-    'Perdido':     '#d70015'
-  };
+  /* Los estados por LÍNEA no incluyen 'Proyecto': ese es un estado de la
+     cotización entera, no de un SKU suelto. El resto sale de
+     shared/pipeline-status.js, igual que la tabla y las pastillas. */
+  var statusOpts = cevenEstadoValores().filter(function(s){ return s !== 'Proyecto'; });
+  function statusColorMini(s){ return cevenEstadoCard(s).bg; }
   var ovLinks = pipeEntry.skuOvLinks || {}; // links de OC parcial por línea
   var skuMesCierre = pipeEntry.skuMesCierre || {}; // mes/año de cierre por línea (YYYY-MM)
   var inner = '<div style="padding:10px 14px 14px;background:#fafafa">'
@@ -407,13 +402,13 @@ function renderPipelineDetailRow(r, db, pipe){
     // Selector de estado: para fila de resto parcial, no modificar (es de solo lectura visual)
     var statusSel;
     if(ln._isPartialRem){
-      statusSel = '<span class="spill spill-'+String(lnStatus).replace(/ /g,'')+'" style="font-size:10px;padding:2px 8px;border-radius:980px;background:'+(statusColorsMini[lnStatus]||'#e5e5e7')+';color:#fff;font-weight:600">'+cevenEsc(lnStatus)+'</span>';
+      statusSel = '<span class="'+cevenSpillClass(lnStatus)+'" style="font-size:10px;padding:2px 8px;border-radius:980px;background:'+statusColorMini(lnStatus)+';color:#fff;font-weight:600">'+cevenEsc(cevenEstadoLabel(lnStatus))+'</span>';
     } else {
-      statusSel = '<select data-dact="status"'+lineA+' style="padding:2px 6px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:10px;font-family:inherit;background:#fff;color:'+(statusColorsMini[lnStatus]||'#1d1d1f')+';font-weight:600">';
+      statusSel = '<select data-dact="status"'+lineA+' style="padding:2px 6px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:10px;font-family:inherit;background:#fff;color:'+statusColorMini(lnStatus)+';font-weight:600">';
       // El estado guardado puede no estar en la lista (dato viejo/corrupto): se
       // agrega para no pisarlo en silencio al re-renderizar.
       var stOptsLn = statusOpts.indexOf(lnStatus) === -1 ? statusOpts.concat([lnStatus]) : statusOpts;
-      stOptsLn.forEach(function(s){ statusSel += '<option value="'+cevenEsc(s)+'"'+(s===lnStatus?' selected':'')+'>'+cevenEsc(s)+'</option>'; });
+      stOptsLn.forEach(function(s){ statusSel += '<option value="'+cevenEsc(s)+'"'+(s===lnStatus?' selected':'')+'>'+cevenEsc(cevenEstadoLabel(s))+'</option>'; });
       statusSel += '</select>';
     }
 
@@ -453,9 +448,9 @@ function renderPipelineDetailRow(r, db, pipe){
           + '<span style="font-size:9px;color:#aeaeb2">/'+lnQty+'</span>';
         var remStSel = '<select data-dact="partial-rem"'+lineA+' '
           + 'title="Estado de las unidades restantes" '
-          + 'style="padding:2px 3px;border:0.5px solid #d2d2d7;border-radius:4px;font-size:10px;margin-top:2px;width:100%;color:'+(statusColorsMini[curRemSt]||'#1d1d1f')+';font-weight:600">';
+          + 'style="padding:2px 3px;border:0.5px solid #d2d2d7;border-radius:4px;font-size:10px;margin-top:2px;width:100%;color:'+statusColorMini(curRemSt)+';font-weight:600">';
         statusOpts.filter(function(s){ return s !== 'Facturado'; }).forEach(function(s){
-          remStSel += '<option value="'+cevenEsc(s)+'"'+(s===curRemSt?' selected':'')+'>'+cevenEsc(s)+'</option>';
+          remStSel += '<option value="'+cevenEsc(s)+'"'+(s===curRemSt?' selected':'')+'>'+cevenEsc(cevenEstadoLabel(s))+'</option>';
         });
         remStSel += '</select>';
         qtyCell = '<div style="display:flex;flex-direction:column;gap:2px;align-items:center">'+pInput+remStSel+'</div>';
@@ -809,7 +804,9 @@ function removePipeline(id){
 }
 
 function buildPipelineWorkbook(){
-  var pipe = getPipeline();
+  /* Exporta LO QUE ESTÁ EN PANTALLA: antes bajaba `getPipeline()` entero,
+     ignorando los filtros activos. */
+  var pipe = cevenPipeFilasVisibles();
   if(!pipe.length) return null;
   var data = pipe.map(function(r){
     var mesLabel = '';

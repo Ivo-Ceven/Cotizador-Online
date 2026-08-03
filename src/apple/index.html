@@ -96,7 +96,7 @@
       <div>
         <label class="lbl">Estado</label>
         <select id="quote-estado" style="width:100%">
-          <option value="Proyecto">Proyecto</option>
+          <option value="Proyecto">En proyecto</option>
           <option value="Cotizado" selected>Cotizado</option>
           <option value="Negociacion">Negociación</option>
           <option value="Commit">Commit</option>
@@ -106,7 +106,13 @@
           <option value="Perdido">Perdido</option>
         </select>
       </div>
-      <div><label class="lbl">Observaciones / Proyecto</label><input id="obs" type="text" placeholder="Nombre o referencia del proyecto..." oninput="onObsChange()"></div>
+      <!-- Eran UN solo campo: `Proyecto` en cquotes se guardaba con el mismo
+           texto que `Observaciones`, así que el pipeline agrupado por proyecto
+           mostraba notas sueltas. Ahora son dos.
+           OJO: el marcador FOB (que pone la nacionalización en 0%) se sigue
+           leyendo de Observaciones — ver isCotizacionFOB() en catalog.js. -->
+      <div><label class="lbl">Proyecto</label><input id="proyecto" type="text" placeholder="Nombre o referencia del proyecto..."></div>
+      <div><label class="lbl">Observaciones <span style="color:#6e6e73;font-weight:400">— escribí FOB acá si la cotización lo es</span></label><input id="obs" type="text" placeholder="Notas de la cotización..." oninput="onObsChange()"></div>
     </div>
   </div>
   <div id="qbody-wrap" class="tw" style="margin-bottom:18px">
@@ -402,7 +408,7 @@
       <div><label class="lbl">Estado</label>
         <select id="pipe-status" onchange="window._pipeStatusFilters=this.value?[this.value]:[];renderPipeline()">
           <option value="">Todos</option>
-          <option value="Proyecto">Proyecto</option>
+          <option value="Proyecto">En proyecto</option>
           <option value="Cotizado">Cotizado</option>
           <option value="Negociacion">Negociación</option>
           <option value="Commit">Commit</option>
@@ -453,7 +459,10 @@
         <div id="dash-facturado-mgpd" style="font-size:11px;color:#a5d6a7;margin-top:2px">MgPd —</div>
       </div>
       <div id="dash-proy-card" class="kpi" style="background:#0a7d52;color:#fff;border-radius:12px;padding:12px 14px">
-        <div id="dash-proy-lbl" style="font-size:11px;color:#9ad9bc;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Proyectado</div>
+        <!-- "Proyectado" incluía lo ya facturado, así que sumarlo con la tarjeta
+             de al lado contaba la misma plata dos veces. La fórmula no cambió
+             (Commit + Con OC + Autorizando + Facturado); el rótulo sí. -->
+        <div id="dash-proy-lbl" style="font-size:11px;color:#9ad9bc;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Forecast del mes</div>
         <div id="dash-proy" style="font-size:22px;font-weight:600">USD 0</div>
         <div id="dash-proy-mgpd" style="font-size:11px;color:#9ad9bc;margin-top:2px">MgPd —</div>
       </div>
@@ -566,6 +575,7 @@
 <script src="../shared/sync.js"></script>
 
 <!-- Lógica de la app (el orden de carga importa: replica el orden del monolito original) -->
+<script src="../shared/quote-num.js"></script>
 <script src="js/state.js"></script>
 <script src="../shared/ui-core.js"></script>
 <script src="js/pricing.js"></script>
@@ -583,6 +593,8 @@
 <script src="../shared/recovery.js"></script>
 <script src="js/pipeline-core.js"></script>
 <script src="js/archive-view.js"></script>
+<script src="../shared/pipeline-status.js"></script>
+<script src="../shared/pipeline-group.js"></script>
 <script src="../shared/pipeline-ui.js"></script>
 <script src="js/pipeline-view.js"></script>
 <script src="js/pipeline-detail.js"></script>

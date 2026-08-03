@@ -75,6 +75,14 @@ var COLS = ['N° Cotización','Fecha','Hora','Cliente','Proyecto','Ejecutivo','O
 // marcas, con la lista de claves a restaurar escrita a mano y desincronizada de
 // backup.js. Ver el comentario de ese modulo.
 
-try { qNum = parseInt(localStorage.getItem('cqc')||'0') + 1; localStorage.setItem('cqc', qNum); } catch(e) {}
-document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
+/* El numero SE MUESTRA, no se reserva: reservarlo acá quemaba un número en cada
+   F5 y, peor, dejaba la clave `cqc` sucia antes de que terminara el bootstrap de
+   sync, con lo cual el contador local le ganaba al del equipo en cada carga.
+   Se reserva recién al guardar. Ver shared/quote-num.js.
+
+   Acá solo se puede leer el contador: getDB()/getPipeline() todavía no existen
+   (este archivo se carga antes que quotes-db.js). shared/init.js llama después a
+   cevenRefrescarQNum(), que ya mira todas las fuentes. */
+qNum = cevenLeerContador() + 1;
+cevenPintarQNum();
 

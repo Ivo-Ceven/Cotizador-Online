@@ -7,7 +7,7 @@
    en qué vista ni en qué marca estabas. Acá está todo en un solo lugar.
 
    Qué pinta:
-     · el chip de marca (🍎 Ceven · Apple) — click = volver al panel de marcas.
+     · el chip de marca (logo + Ceven · Apple) — click = volver al panel de marcas.
        Es la única señal permanente de en qué cotizador estás: Apple y Poly se
        ven casi iguales y sus datos NO se mezclan;
      · un ítem por vista, según CEVEN_BRAND.navItems (declarativo por marca,
@@ -26,9 +26,23 @@
 (function(){
   var B = window.CEVEN_BRAND || null;
 
-  /* Cara visible de cada marca. Vive acá y no en brand.js porque es la misma
-     tarjeta que muestra el panel del shell: si se duplicara, se despegarían. */
-  var MARKS = { apple: '🍎', poly: '🎧', hp: '💻' };
+  /* Cara visible de cada marca: el logo oficial, en icons/brands/. Vive acá y no
+     en brand.js porque es la misma tarjeta que muestra el panel del shell: si se
+     duplicara, se despegarían.
+
+     `mono` marca los logos de un solo color oscuro (el de Apple es negro puro):
+     sobre la navbar en modo oscuro desaparecerían, así que dark.css los invierte
+     — ver la regla de img.cvnav-mark[data-mono]. Los de HP (azul) y Poly
+     (naranja) se leen igual en los dos modos y no la necesitan.
+
+     La ruta es relativa a la PÁGINA, no a este archivo: todo cotizador cuelga un
+     nivel abajo de la raíz (apple/index.html, apple/cevencare.html, poly/…), el
+     mismo supuesto del botón "volver al panel" de más abajo. */
+  var MARKS = {
+    apple: { img: 'apple.png', mono: true },
+    poly:  { img: 'poly.png' },
+    hp:    { img: 'hp.png' }
+  };
 
   var ROLES = { admin: 'Administrador', ventas: 'Ventas', lector: 'Lector' };
 
@@ -57,9 +71,16 @@
     var h = '<header class="cvnav"><div class="cvnav-in">';
 
     // Chip de marca. En el cotizador vuelve al panel; en el shell ya estás ahí.
+    // alt="" a propósito: el nombre de la marca ya va escrito al lado.
+    var mk = esMarca ? MARKS[B.id] : null;
+    var mark = mk
+      ? '<img class="cvnav-mark" src="../icons/brands/' + mk.img + '" alt="" width="18" height="18"' +
+        (mk.mono ? ' data-mono="1"' : '') + '>'
+      : '<span class="cvnav-mark">' + (esMarca ? '📄' : '📊') + '</span>';
+
     h += '<button class="cvnav-brand" id="cvnav-home"' +
          (esMarca ? ' title="Volver al panel de marcas"' : ' disabled') + '>' +
-         '<span class="cvnav-mark">' + (esMarca ? (MARKS[B.id] || '📄') : '📊') + '</span>' +
+         mark +
          '<span class="cvnav-name">Ceven' +
            (esMarca ? '<i>·</i><b>' + esc(B.label) + '</b>' : '<i>·</i><b>Cotizadores</b>') +
          '</span></button>';

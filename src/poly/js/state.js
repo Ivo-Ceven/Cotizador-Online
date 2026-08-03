@@ -10,11 +10,19 @@ function _nextSel(){ return ++_selSeq; }
 var histSel = {};
 var editId = null;
 
-var COLS = ['N° Cotización','Fecha','Hora','Cliente','OPG','Sala','Ejecutivo','Observaciones',
-            'Mes Cierre','SKU','Descripción','Cantidad','Nota','P. Venta Unitario','Total'];
+var COLS = ['N° Cotización','Fecha','Hora','Cliente','OPG','Proyecto','Ejecutivo','Observaciones',
+            'Mes Cierre','Nivel de precio','SKU','Descripción','Cantidad','Nota','P. Venta Unitario','Total'];
 
 // cevenDelegate()/cevenActEl() viven en shared/ui-core.js y _checkRecovery() en
 // shared/recovery.js: los tres eran identicos (o casi) en las dos marcas.
 
-try { qNum = parseInt(localStorage.getItem('poly_cqc')||'0') + 1; localStorage.setItem('poly_cqc', qNum); } catch(e) {}
-document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
+/* El numero SE MUESTRA, no se reserva: reservarlo acá quemaba un número en cada
+   F5 y, peor, dejaba la clave `cqc` sucia antes de que terminara el bootstrap de
+   sync, con lo cual el contador local le ganaba al del equipo en cada carga.
+   Se reserva recién al guardar. Ver shared/quote-num.js.
+
+   Acá solo se puede leer el contador: getDB()/getPipeline() todavía no existen
+   (este archivo se carga antes que quotes-db.js). shared/init.js llama después a
+   cevenRefrescarQNum(), que ya mira todas las fuentes. */
+qNum = cevenLeerContador() + 1;
+cevenPintarQNum();

@@ -40,6 +40,28 @@
 <script src="../shared/auth.js"></script>
 <script src="../shared/notify.js"></script>
 <script>if(!cevenIsValidSession()) location.replace('../index.html');</script>
+
+<!-- ── Corte de modelo del pipeline (08/2026) ─────────────────────────────────
+     La fila de Poly dejó de ser un OPG con `salas[]` adentro y pasó a ser un
+     proyecto. Los datos viejos NO se migran (eran de prueba), pero borrarlos en
+     Supabase no alcanza: si un navegador abre la app con el `poly_cpipeline`
+     viejo en disco, el bootstrap lo trata como filas locales que el servidor no
+     tiene y las vuelve a subir.
+
+     Tiene que correr ACÁ, antes de `shared/sync.js`, y con `localStorage`
+     crudo: `cevenLsSet()` marcaría las claves como sucias y el flush las
+     subiría igual, que es exactamente lo que se quiere evitar. -->
+<script>
+(function(){
+  try{
+    if(localStorage.getItem('poly_model_v2')) return;
+    ['poly_cpipeline','poly_carchive','poly_cquotes','poly_cqc','poly__sync_dirty']
+      .forEach(function(k){ localStorage.removeItem(k); });
+    localStorage.setItem('poly_model_v2', '1');
+  }catch(e){ /* localStorage deshabilitado: no hay nada viejo que limpiar */ }
+})();
+</script>
+
 <!-- Barra superior: va acá, antes del markup, para que no salte al cargar -->
 <script src="../shared/navbar.js"></script>
 
@@ -80,11 +102,14 @@
   </div>
   <div class="card">
     <div class="g2">
-      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" style="font-size:14px;font-weight:500"></div>
+      <!-- Al salir del campo se propone el nivel de precio con el que se le
+           cotizó la última vez a ese cliente (shared/clientes.js). -->
+      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="aplicarTierDelCliente()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
       <div><label class="lbl">OPG <span style="color:#6e6e73;font-weight:400">— opcional, solo si la marca asignó precio especial</span></label><input id="opg" type="text" placeholder="Dejar vacío si no aplica" list="opg-datalist"><datalist id="opg-datalist"></datalist></div>
-      <!-- El id sigue siendo "sala" (y la columna `salas` en Supabase): renombrar
-           la clave obligaría a migrar los datos guardados. Cambia lo que se lee. -->
-      <div><label class="lbl">Proyecto <span style="color:#6e6e73;font-weight:400">(cliente final)</span></label><input id="sala" type="text" placeholder="Ej: Hospital Italiano — Sala Directorio"></div>
+      <!-- Sin datalist a propósito, al revés que OPG: dos proyectos distintos
+           pueden llamarse parecido y autocompletar invitaría a pisar uno con
+           otro. El OPG sí lo lleva porque un mismo OPG se repite entre proyectos. -->
+      <div><label class="lbl">Proyecto <span style="color:#6e6e73;font-weight:400">(cliente final)</span></label><input id="proyecto" type="text" placeholder="Ej: Hospital Italiano — Sala Directorio"></div>
       <div><label class="lbl">Ejecutivo</label>
         <select id="exec">
           <option value="">Seleccionar ejecutivo</option>
@@ -98,7 +123,7 @@
       <div>
         <label class="lbl">Estado</label>
         <select id="quote-estado" style="width:100%">
-          <option value="Proyecto">Proyecto</option>
+          <option value="Proyecto">En proyecto</option>
           <option value="Cotizado" selected>Cotizado</option>
           <option value="Negociacion">Negociación</option>
           <option value="Commit">Commit</option>
@@ -108,21 +133,31 @@
           <option value="Perdido">Perdido</option>
         </select>
       </div>
+      <!-- Nivel de precio con el que se cotiza. Es el DEFAULT: cada línea puede
+           tener el suyo, y cambiar este solo mueve las que siguen al global
+           (ver poly/js/tiers.js). -->
+      <div>
+        <label class="lbl">Nivel de precio <span style="color:#6e6e73;font-weight:400">— por defecto de toda la cotización</span></label>
+        <select id="tier-global" onchange="onTierGlobalChange()" style="width:100%">
+          <option value="">— Elegir nivel —</option>
+        </select>
+      </div>
       <div><label class="lbl">Observaciones</label><input id="obs" type="text" placeholder="Notas de la cotización..."></div>
     </div>
   </div>
   <div id="qbody-wrap" class="tw" style="margin-bottom:18px">
     <table style="table-layout:fixed;min-width:680px">
       <colgroup>
-        <col style="width:14%"><col style="width:38%"><col style="width:8%">
-        <col style="width:14%"><col style="width:12%"><col style="width:14%">
-        <col style="width:44px">
+        <col style="width:13%"><col style="width:31%"><col style="width:7%">
+        <col style="width:15%"><col style="width:13%"><col style="width:11%">
+        <col style="width:11%"><col style="width:44px">
       </colgroup>
       <thead>
         <tr>
           <th class="qsrt" onclick="sortQBy('sku')" title="Ordenar por SKU">SKU</th>
           <th class="qsrt" onclick="sortQBy('desc')" title="Ordenar por nombre">Descripción</th>
           <th style="text-align:right">Qty</th>
+          <th>Nivel</th>
           <th class="qsrt" onclick="sortQBy('price')" style="text-align:right" title="Ordenar por precio">P. Venta Unit.</th>
           <th style="text-align:right">Total</th>
           <th>Nota</th>
@@ -198,8 +233,8 @@
           <tr>
             <th><input type="checkbox" id="chkall" onchange="toggleAll(this)"></th>
             <th>SKU</th><th>Descripción</th>
-            <th style="text-align:right" title="Precio de lista — referencia, no se auto-completa en la cotización">Precio lista</th>
-            <th style="text-align:center">Stock</th>
+            <th style="text-align:right">Precios por nivel</th>
+            <th style="text-align:center" title="Disponible (LocAvailable), sumando todos los depósitos">Stock</th>
             <th></th>
           </tr>
         </thead>
@@ -251,22 +286,30 @@
     <button class="bo" onclick="goTo('quote')">← Volver</button>
     <button class="bo" onclick="nuevaCotizacion();goTo('quote')" style="border-color:#34c759;color:#15863a">+ Nueva cotización</button>
     <h2 class="h2" style="flex:1">🎯 Pipeline</h2>
-    <select id="archive-month-sel" onchange="renderPipeline()" title="Ver meses archivados" style="padding:4px 8px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;max-width:160px">
+    <span style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Vista</span>
+    <select id="archive-month-sel" onchange="renderPipeline()" style="padding:4px 8px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;max-width:180px">
       <option value="">Pipeline actual</option>
     </select>
-    <button class="bo" onclick="clearPipelineFilters()" title="Limpiar todos los filtros">✕ Filtros</button>
-    <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer último cambio de estado o fecha" disabled>↩</button>
+    <!-- El Cliente dejó de ser una columna (ahora es el encabezado del grupo),
+         así que perdió su <th> ordenable. Este botón lo repone: ordena los
+         GRUPOS alfabéticamente, y volver a tocarlo invierte. -->
+    <button class="bo" id="pipe-sort-cli" onclick="setPipeSort('cliente')" title="Ordenar los clientes de la A a la Z">A–Z Clientes</button>
+    <button class="bo" onclick="clearPipelineFilters()">✕ Limpiar filtros</button>
+    <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer el último cambio en el pipeline" disabled>↩</button>
     <button class="bo" id="pipe-backup-btn" onclick="pickBackupFolder()" title="Elegí una carpeta donde guardar backups automáticos">📂 Elegir carpeta backup</button>
     <button class="bo" onclick="exportPipeline()">⬇ Excel</button>
   </div>
   <div class="card" style="margin-bottom:12px">
     <div class="gf">
-      <div><label class="lbl">Buscar cliente / OPG / proyecto</label><input id="pipe-search" type="text" placeholder="..." oninput="renderPipeline()"></div>
+      <div><label class="lbl">Buscar cliente / OPG / proyecto</label><input id="pipe-search" type="text" placeholder="Nombre, OPG o proyecto..." oninput="renderPipeline()"></div>
       <div><label class="lbl">Ejecutivo</label><select id="pipe-exec" onchange="renderPipeline()"><option value="">Todos</option></select></div>
       <div><label class="lbl">Estado</label>
+        <!-- Los `value` son los que se guardan y NO se tocan; las etiquetas
+             visibles las manda shared/pipeline-status.js. Si se agrega un
+             estado, va allá y acá. -->
         <select id="pipe-status" onchange="window._pipeStatusFilters=this.value?[this.value]:[];renderPipeline()">
           <option value="">Todos</option>
-          <option value="Proyecto">Proyecto</option>
+          <option value="Proyecto">En proyecto</option>
           <option value="Cotizado">Cotizado</option>
           <option value="Negociacion">Negociación</option>
           <option value="Commit">Commit</option>
@@ -283,29 +326,35 @@
   <div id="pipe-dashboard" style="display:none;margin-bottom:14px">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
       <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
-        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">OPGs</div>
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Clientes</div>
         <div id="dash-count" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
       </div>
       <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
         <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Proyectos</div>
-        <div id="dash-salas" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
+        <div id="dash-proyectos" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
       </div>
       <div id="dash-facturado-card" class="kpi" style="background:#17a589;color:#fff;border-radius:12px;padding:12px 14px">
-        <div style="font-size:11px;color:#a5d6a7;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Facturado</div>
+        <div id="dash-facturado-lbl" style="font-size:11px;color:#a5d6a7;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Facturado</div>
         <div id="dash-facturado" style="font-size:22px;font-weight:600">USD 0</div>
       </div>
+      <!-- "Proyectado" incluía lo ya facturado, así que sumarlo con la tarjeta
+           de al lado contaba la misma plata dos veces. La fórmula no cambió
+           (Target Anual lee el mismo criterio); lo que cambió es que ahora lo
+           dice, en la sub-línea. -->
       <div id="dash-proy-card" class="kpi" style="background:#0a7d52;color:#fff;border-radius:12px;padding:12px 14px">
-        <div style="font-size:11px;color:#9ad9bc;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Proyectado</div>
+        <div id="dash-proy-lbl" style="font-size:11px;color:#9ad9bc;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Forecast del mes</div>
         <div id="dash-proy" style="font-size:22px;font-weight:600">USD 0</div>
+        <div id="dash-proy-sub" style="font-size:11px;color:#9ad9bc;margin-top:2px"></div>
       </div>
       <div id="dash-total-card" class="kpi" style="background:#1d1d1f;color:#fff;border-radius:12px;padding:12px 14px">
-        <div style="font-size:11px;color:#aeaeb2;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Total pipeline</div>
+        <div id="dash-total-lbl" style="font-size:11px;color:#aeaeb2;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Total pipeline</div>
         <div id="dash-total" style="font-size:22px;font-weight:600">USD 0</div>
+        <div id="dash-total-sub" style="font-size:11px;color:#aeaeb2;margin-top:2px"></div>
       </div>
     </div>
     <div id="pipe-pills-row" style="display:flex;flex-wrap:nowrap;gap:8px 20px;align-items:center;margin-bottom:10px;overflow:hidden">
       <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;flex-shrink:0">
-        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Cierre est.</span>
+        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Cierre estimado</span>
         <div id="pipe-month-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
       </div>
       <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;min-width:0">
@@ -321,10 +370,14 @@
       <thead><tr>
         <th class="srt" data-sort="fechaISO">Fecha</th>
         <th class="srt" data-sort="ejecutivo">Ejecutivo</th>
-        <th class="srt" data-sort="cliente">Cliente</th>
+        <!-- El cliente ya no es una columna: es el encabezado del grupo. Ordenar
+             por acá reordena los GRUPOS, no las filas de adentro. -->
         <th class="srt" data-sort="opg">OPG</th>
-        <th>Proyecto</th>
-        <th class="srt" data-sort="mesCierre" title="Mes estimado de cierre">Cierre est.</th>
+        <th style="text-align:center">Cotiz.</th>
+        <!-- Ordenable desde el corte de modelo: era un array (las salas del OPG)
+             y ahora es un texto. -->
+        <th class="srt" data-sort="proyecto">Proyecto</th>
+        <th class="srt" data-sort="mesCierre">Cierre estimado</th>
         <th class="srt" data-sort="estado" style="text-align:center">Estado</th>
         <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
         <th class="stk-act" style="width:150px;text-align:center">Acciones</th>
@@ -345,11 +398,14 @@
 <script src="../shared/sync.js"></script>
 
 <!-- Lógica de la app (el orden de carga importa) -->
+<script src="../shared/quote-num.js"></script>
 <script src="js/state.js"></script>
 <script src="../shared/ui-core.js"></script>
 <script src="../shared/quote-core.js"></script>
 <script src="../shared/catalog-core.js"></script>
 <script src="js/catalog.js"></script>
+<script src="../shared/clientes.js"></script>
+<script src="js/tiers.js"></script>
 <script src="js/quote.js"></script>
 <script src="js/products.js"></script>
 <script src="js/quotes-db.js"></script>
@@ -360,6 +416,8 @@
 <script src="../shared/recovery.js"></script>
 <script src="js/pipeline-core.js"></script>
 <script src="js/archive-view.js"></script>
+<script src="../shared/pipeline-status.js"></script>
+<script src="../shared/pipeline-group.js"></script>
 <script src="../shared/pipeline-ui.js"></script>
 <script src="js/pipeline-view.js"></script>
 <script src="js/pipeline-detail.js"></script>

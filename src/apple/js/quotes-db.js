@@ -12,13 +12,8 @@ function isQuoteMetaRow(r){
   return !!(r && typeof r['Tipo'] === 'string' && r['Tipo'].indexOf('meta') === 0);
 }
 
-// Contador de cotizaciones. Se lee crudo (no es JSON) y tolera cualquier formato
-// guardado; solo el getItem puede tirar excepción (localStorage deshabilitado).
-function _readQCounter(){
-  var raw = null;
-  try{ raw = localStorage.getItem('cqc'); }catch(e){}
-  return parseInt(raw || '0', 10) || 0;
-}
+// El contador de cotizaciones se fue a shared/quote-num.js, que además mira el
+// mayor número que existe de verdad: el contador solo ya no alcanzaba.
 
 // Devuelve true solo si se escribió de verdad en localStorage.
 function saveDB(db){
@@ -49,15 +44,33 @@ function doSave(overwrite){
   var payMode  = _el('pay-mode');
   var effDate  = _el('eff-date');
   var delivery = _el('delivery');
-  // Proyecto = observaciones (campo unificado)
-  var proyecto = ob;
-  var qn=String(qNum).padStart(4,'0');
+  /* Proyecto y Observaciones son dos campos distintos desde 08/2026. Antes acá
+     decía `var proyecto = ob`, con el comentario "campo unificado": las dos
+     claves de cquotes guardaban el MISMO texto, así que el pipeline agrupado
+     por proyecto mostraba notas sueltas de la cotización. */
+  var proyecto = document.getElementById('proyecto').value||'—';
+  var qn=cevenQNumFmt(qNum);
   var db=getDB();
   var already=false; for(var i=0;i<db.length;i++){if(db[i]['N° Cotización']===qn){already=true;break;}}
   if(already && !overwrite) return false;
-  if(already && overwrite){
-    db=db.filter(function(r){return r['N° Cotización']!==qn;});
+  if(already){
+    if(cevenEsEdicionDe(qn)){
+      // Es la cotización que se abrió del historial: re-guardarla es lo esperado.
+      db=db.filter(function(r){return r['N° Cotización']!==qn;});
+    } else {
+      /* El número ya existe y NO es el que se estaba editando: alguien del
+         equipo lo usó primero y llegó por la sync. Sobreescribir borraría su
+         cotización sin avisar, así que esta se guarda con el próximo libre. */
+      qNum = cevenReservarQNum();
+      var qnViejo = qn;
+      qn = cevenQNumFmt(qNum);
+      cevenPintarQNum();
+      showToast('El número #'+qnViejo+' ya lo usó otra cotización del equipo. Esta se guardó como #'+qn+'.');
+    }
   }
+  // El número se consume recién acá (state.js ya no lo reserva al cargar).
+  cevenAnotarQNum(qNum);
+  cevenEditandoQNum(qn);
   for(var j=0;j<items.length;j++){
     var it=items[j];
     db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin});
@@ -86,9 +99,9 @@ function nuevaCotizacion(){
   // buildPDF la aceptan): también hay que avisar antes de borrarla.
   if((items.length || warrantyItems.length) && !confirm('¿Empezar una cotización nueva? Se perderán los productos y las garantías actuales si no guardaste.')){return;}
   // Incrementar número
-  qNum = _readQCounter() + 1;
-  cevenLsSet('cqc', qNum);
-  document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
+  qNum = cevenReservarQNum();
+  cevenPintarQNum();
+  cevenEditandoQNum(null);   // arranca una cotización nueva: nada que re-guardar
   // Limpiar todo
   items = [];
   warrantyItems = [];
@@ -98,6 +111,7 @@ function nuevaCotizacion(){
   if(document.getElementById('mes-cierre-mY')) setMesCierre('');
   if(document.getElementById('quote-estado')) document.getElementById('quote-estado').value = 'Cotizado';
   document.getElementById('exec').value = '';
+  document.getElementById('proyecto').value = '';
   document.getElementById('obs').value = '';
   _lastFOBState = false; // nueva cotización sin FOB
   // Resetear fecha efectiva a +15 días
@@ -116,9 +130,9 @@ function copiarCotizacion(){
   if(!items.length && !warrantyItems.length){ alert('La cotización está vacía, no hay nada para copiar.'); return; }
   if(!confirm('¿Crear una nueva cotización copiando la actual?')) return;
   // Nuevo número de cotización
-  qNum = _readQCounter() + 1;
-  cevenLsSet('cqc', qNum);
-  document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
+  qNum = cevenReservarQNum();
+  cevenPintarQNum();
+  cevenEditandoQNum(null);   // es una copia nueva, no la original
   // Clonar productos y garantías (ids nuevos y únicos para los items)
   items = items.map(function(it){ return Object.assign({}, it, { id: _nextItemId() }); });
   warrantyItems = warrantyItems.map(function(w){ return Object.assign({}, w); });
@@ -139,9 +153,12 @@ function copiarCotizacionHist(qn){
   var rows=db.filter(function(r){return r['N° Cotización']===qn;});
   if(!rows.length){ alert('No se encontró la cotización #'+qn+'.'); return; }
   if(!confirm('¿Crear una copia de la cotización #'+qn+' y abrirla para editar?')) return;
-  var newNum = _readQCounter() + 1;
-  cevenLsSet('cqc', newNum);
-  var newQn = String(newNum).padStart(4,'0');
+  var newQn = cevenQNumFmt(cevenReservarQNum());
+  /* Sin este filtro las filas se AGREGABAN sobre las que ya tuvieran ese
+     número: era el único camino que metía dos cotizaciones distintas bajo el
+     mismo número en el mismo array. renderHistory() las mostraba concatenadas
+     en una sola tarjeta y deleteQ() borraba las dos. */
+  db = db.filter(function(r){ return r['N° Cotización'] !== newQn; });
   var now=new Date();
   var date=now.toLocaleDateString('es-AR');
   var time=now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
@@ -168,11 +185,14 @@ function editQuoteFromHistory(qn, skipConfirm){
   var first=rows[0];
   if(!cevenCanEditQuote(first['Ejecutivo'])){ alert('No tenés permiso para editar esta cotización.'); return; }
   if(!skipConfirm && items.length && !confirm('¿Cargar la cotización #'+qn+'? Se reemplazará la cotización actual.')){return;}
-  qNum = parseInt(qn);
-  document.getElementById('qnum').textContent = 'Cotización #'+qn;
+  qNum = parseInt(qn, 10);
+  cevenPintarQNum();
+  // Re-guardar ESTE número es una edición, no una colisión (ver doSave).
+  cevenEditandoQNum(qn);
   document.getElementById('client').value = first['Cliente']!=='—'?first['Cliente']:'';
   if(document.getElementById('mes-cierre-mY')) setMesCierre(first['Mes Cierre']||'');
   document.getElementById('exec').value   = first['Ejecutivo']!=='—'?first['Ejecutivo']:'';
+  document.getElementById('proyecto').value = first['Proyecto']!=='—'?(first['Proyecto']||''):'';
   document.getElementById('obs').value    = first['Observaciones']!=='—'?first['Observaciones']:'';
   // Condiciones comerciales guardadas con la cotización. Sin esto, reabrir una
   // cotización y volver a guardarla las pisaba con lo que hubiera en pantalla.

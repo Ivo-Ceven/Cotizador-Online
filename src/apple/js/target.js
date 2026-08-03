@@ -93,15 +93,15 @@ function toggleSkuRow(sku){
 function renderSkuDashboard(){
   var pipe = getPipeline();
   var db = getDB();
-  var states = ['Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
-  var stColor = {
-    'Cotizado':'#0071e3','Negociacion':'#c84e00','Commit':'#7a5800',
-    'Con OC':'#15863a','Autorizando':'#169670','Facturado':'#17a589','Perdido':'#a80011'
-  };
-  var stBg = {
-    'Cotizado':'#e8f4ff','Negociacion':'#fff3e0','Commit':'#fff8e1',
-    'Con OC':'#e8f6ee','Autorizando':'#d4f0de','Facturado':'#b8e8cc','Perdido':'#fbbebe'
-  };
+  /* El target sigue el embudo comercial, así que no incluye 'Proyecto' (una
+     idea todavía sin cotizar no proyecta facturación). Colores desde
+     shared/pipeline-status.js: eran las mismas dos tablas, copiadas. */
+  var states = cevenEstadoValores().filter(function(s){ return s !== 'Proyecto'; });
+  var stColor = {}, stBg = {};
+  states.forEach(function(s){
+    stColor[s] = cevenEstadoCard(s).bg;
+    stBg[s]    = cevenEstadoPill(s).bg;
+  });
 
   // Agregar por SKU
   var agg = {};

@@ -23,9 +23,12 @@ function cevenExecActual(){
   var el = document.getElementById('exec');
   return el ? (el.value||'').trim() : '';
 }
+/* El mensaje no puede nombrar la acción: esta función la llaman tanto
+   saveQuote() como addToPipeline(), y decía "antes de guardar" también cuando
+   el usuario había tocado "Agregar al pipeline". */
 function cevenRequireExec(){
   if(cevenExecActual()) return true;
-  showToast('Elegí el Ejecutivo antes de guardar.');
+  showToast('Elegí el Ejecutivo para poder continuar.');
   return false;
 }
 
@@ -38,24 +41,46 @@ function doSave(overwrite){
   var time=now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
   var client=document.getElementById('client').value||'—';
   var opg=document.getElementById('opg').value||'—';
-  var sala=document.getElementById('sala').value||'—';
+  var proyecto=document.getElementById('proyecto').value||'—';
   var exec=cevenExecActual();
   var ob=document.getElementById('obs').value||'—';
   var mesC = getMesCierre();
   var estadoQ = (document.getElementById('quote-estado') && document.getElementById('quote-estado').value) || 'Cotizado';
-  var qn=String(qNum).padStart(4,'0');
+  var qn=cevenQNumFmt(qNum);
   var db=getDB();
   var already=false; for(var i=0;i<db.length;i++){if(db[i]['N° Cotización']===qn){already=true;break;}}
   if(already && !overwrite) return false;
-  if(already && overwrite){
-    db=db.filter(function(r){return r['N° Cotización']!==qn;});
+  if(already){
+    if(cevenEsEdicionDe(qn)){
+      // Es la cotización que se abrió del historial: re-guardarla es lo esperado.
+      db=db.filter(function(r){return r['N° Cotización']!==qn;});
+    } else {
+      /* El número ya existe y NO es el que se estaba editando: alguien del
+         equipo lo usó primero y llegó por la sync. Sobreescribir borraría su
+         cotización sin avisar, así que esta se guarda con el próximo libre. */
+      qNum = cevenReservarQNum();
+      var qnViejo = qn;
+      qn = cevenQNumFmt(qNum);
+      cevenPintarQNum();
+      showToast('El número #'+qnViejo+' ya lo usó otra cotización del equipo. Esta se guardó como #'+qn+'.');
+    }
   }
+  // El número se consume recién acá (state.js ya no lo reserva al cargar).
+  cevenAnotarQNum(qNum);
+  cevenEditandoQNum(qn);
   for(var j=0;j<items.length;j++){
     var it=items[j];
     var sp = (it.salePrice===''||it.salePrice==null) ? 0 : it.salePrice;
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'OPG':opg,'Sala':sala,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ});
+    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'OPG':opg,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Nivel de precio':(typeof tierDeLinea==='function'?tierDeLinea(it):''),'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ});
   }
   saveDB(db);
+  /* Se recuerda el nivel con el que se le cotizo a este cliente. Es el germen de
+     la tabla de clientes: manana la misma ficha lleva condiciones de pago, CUIT,
+     etc. Ver shared/clientes.js. */
+  if(typeof cevenClienteSet === 'function'){
+    var _tg2 = document.getElementById('tier-global');
+    if(_tg2 && _tg2.value && client && client !== '—') cevenClienteSet(client, {tier: _tg2.value});
+  }
   return true;
 }
 
@@ -74,7 +99,8 @@ function _snapshotQuoteState(){
     items: JSON.parse(JSON.stringify(items)),
     client: document.getElementById('client').value,
     opg: document.getElementById('opg').value,
-    sala: document.getElementById('sala').value,
+    proyecto: document.getElementById('proyecto').value,
+    tier: (document.getElementById('tier-global')||{}).value,
     exec: document.getElementById('exec').value,
     mesCierre: getMesCierre(),
     estado: document.getElementById('quote-estado') ? document.getElementById('quote-estado').value : 'Cotizado',
@@ -96,11 +122,12 @@ function _setExecValue(nombre){
 
 function _restoreQuoteState(snap){
   qNum = snap.qNum;
-  document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
+  cevenPintarQNum();
   items = snap.items;
   document.getElementById('client').value = snap.client;
   document.getElementById('opg').value    = snap.opg;
-  document.getElementById('sala').value   = snap.sala;
+  document.getElementById('proyecto').value = snap.proyecto;
+  if(document.getElementById('tier-global')) document.getElementById('tier-global').value = snap.tier||'';
   _setExecValue(snap.exec);
   if(document.getElementById('mes-cierre-mY')) setMesCierre(snap.mesCierre);
   if(document.getElementById('quote-estado')) document.getElementById('quote-estado').value = snap.estado;
@@ -116,13 +143,15 @@ function nuevaCotizacion(){
   var hadItems = items.length > 0;
   var snap = hadItems ? _snapshotQuoteState() : null;
   // Incrementar número
-  try { qNum = parseInt(localStorage.getItem('poly_cqc')||'0') + 1; localStorage.setItem('poly_cqc', qNum); } catch(e){}
-  document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
+  qNum = cevenReservarQNum();
+  cevenPintarQNum();
+  cevenEditandoQNum(null);   // arranca una cotización nueva: nada que re-guardar
   // Limpiar todo
   items = [];
   document.getElementById('client').value = '';
   document.getElementById('opg').value = '';
-  document.getElementById('sala').value = '';
+  document.getElementById('proyecto').value = '';
+  if(document.getElementById('tier-global')) document.getElementById('tier-global').value = '';
   if(document.getElementById('mes-cierre-mY')) setMesCierre('');
   if(document.getElementById('quote-estado')) document.getElementById('quote-estado').value = 'Cotizado';
   // Refrescar la lista antes de limpiar: puede haber aparecido un ejecutivo
@@ -144,17 +173,18 @@ function nuevaCotizacion(){
 
 // Crea una cotización NUEVA copiando la que está cargada actualmente (mismos productos,
 // cliente, OPG, ejecutivo, etc.) pero con un número de cotización nuevo. Útil para cargar
-// otra Sala del mismo OPG partiendo de una lista de productos parecida.
+// otro proyecto del mismo OPG partiendo de una lista de productos parecida.
 function copiarCotizacion(){
   if(!items.length){ showToast('La cotización está vacía, no hay nada para copiar.'); return; }
   if(!cevenRequireExec()) return;
   var snap = _snapshotQuoteState();
   // Nuevo número de cotización
-  try { qNum = parseInt(localStorage.getItem('poly_cqc')||'0') + 1; localStorage.setItem('poly_cqc', qNum); } catch(e){}
-  document.getElementById('qnum').textContent = 'Cotización #' + String(qNum).padStart(4,'0');
+  qNum = cevenReservarQNum();
+  cevenPintarQNum();
+  cevenEditandoQNum(null);   // es una copia nueva, no la original
   // Clonar productos (ids nuevos para los items)
   items = items.map(function(it){ return Object.assign({}, it, { id: Date.now() + Math.random() }); });
-  // El resto de los campos (cliente, OPG, sala, ejecutivo, observaciones, mes, estado, fecha
+  // El resto de los campos (cliente, OPG, proyecto, ejecutivo, observaciones, mes, estado, fecha
   // efectiva, entrega) se mantienen tal cual están en pantalla → ya forman parte de la copia.
   renderQ();
   doSave(true); // persistir la copia como cotización nueva
@@ -175,9 +205,12 @@ function copiarCotizacionHist(qn){
   var rows=db.filter(function(r){return r['N° Cotización']===qn;});
   if(!rows.length){ showToast('No se encontró la cotización #'+qn+'.'); return; }
   var snap = _snapshotQuoteState();
-  var newNum;
-  try { newNum = parseInt(localStorage.getItem('poly_cqc')||'0') + 1; localStorage.setItem('poly_cqc', newNum); } catch(e){ newNum = Date.now(); }
-  var newQn = String(newNum).padStart(4,'0');
+  var newQn = cevenQNumFmt(cevenReservarQNum());
+  /* Sin este filtro las filas se AGREGABAN sobre las que ya tuvieran ese
+     número: era el único camino que metía dos cotizaciones distintas bajo el
+     mismo número en el mismo array. renderHistory() las mostraba concatenadas
+     en una sola tarjeta y deleteQ() borraba las dos. */
+  db = db.filter(function(r){ return r['N° Cotización'] !== newQn; });
   var now=new Date();
   var date=now.toLocaleDateString('es-AR');
   var time=now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
@@ -212,14 +245,30 @@ function editQuoteFromHistory(qn, skipUndoToast){
   if(!cevenCanEditQuote(first['Ejecutivo'])){ showToast('No tenés permiso para editar esta cotización.'); return; }
   var hadItems = items.length > 0;
   var snap = hadItems ? _snapshotQuoteState() : null;
-  qNum = parseInt(qn);
-  document.getElementById('qnum').textContent = 'Cotización #'+qn;
+  qNum = parseInt(qn, 10);
+  cevenPintarQNum();
+  // Re-guardar ESTE número es una edición, no una colisión (ver doSave).
+  cevenEditandoQNum(qn);
   document.getElementById('client').value = first['Cliente']!=='—'?first['Cliente']:'';
   document.getElementById('opg').value    = first['OPG']!=='—'?(first['OPG']||''):'';
-  document.getElementById('sala').value   = first['Sala']!=='—'?(first['Sala']||''):'';
+  document.getElementById('proyecto').value = first['Proyecto']!=='—'?(first['Proyecto']||''):'';
   if(document.getElementById('mes-cierre-mY')) setMesCierre(first['Mes Cierre']||'');
   _setExecValue(first['Ejecutivo']!=='—'?first['Ejecutivo']:'');
   document.getElementById('obs').value    = first['Observaciones']!=='—'?first['Observaciones']:'';
+  /* El nivel global de la cotizacion guardada: el mas frecuente entre sus
+     lineas. No se guarda aparte a proposito — se deduce de lo que realmente se
+     cotizo, asi que no puede quedar desfasado del precio de las lineas. */
+  var _tg = document.getElementById('tier-global');
+  if(_tg){
+    var _cnt = {}, _mejor = '', _max = 0;
+    rows.forEach(function(r){
+      var t = r['Nivel de precio'];
+      if(!t || t === 'MANUAL') return;
+      _cnt[t] = (_cnt[t]||0) + 1;
+      if(_cnt[t] > _max){ _max = _cnt[t]; _mejor = t; }
+    });
+    _tg.value = _mejor;
+  }
   if(document.getElementById('quote-estado')){
     var _estLoad='Cotizado';
     for(var _ri=0;_ri<rows.length;_ri++){ if(rows[_ri]['_estado']){ _estLoad=rows[_ri]['_estado']; break; } }
@@ -235,7 +284,14 @@ function editQuoteFromHistory(qn, skipUndoToast){
       description: r['Descripción'] || '',
       salePrice: sp,
       qty: parseInt(r['Cantidad']) || 1,
-      stock: r['Nota'] !== '—' ? (r['Nota']||'') : ''
+      stock: r['Nota'] !== '—' ? (r['Nota']||'') : '',
+      /* Vacio = sigue al global. Se guarda el nivel EFECTIVO de cada linea, asi
+         que reabrir una cotizacion vieja recupera exactamente con que nivel se
+         armo cada una — incluidas las MANUAL, que no se repricean. */
+      tier: (function(){
+        var t = r['Nivel de precio'] || '';
+        return (t && _tg && t === _tg.value) ? '' : t;
+      })()
     });
   });
   // Resetear sort para que los productos cargados queden en orden de importación
@@ -249,14 +305,13 @@ function editQuoteFromHistory(qn, skipUndoToast){
 
 function exportDB(){
   var db=getDB(); if(!db.length){showToast('No hay cotizaciones guardadas.');return;}
-  // El Excel dice "Proyecto" donde el dato se guarda con la clave 'Sala'. La
-  // clave viaja en `cquotes` y en los backups desde el día uno: renombrarla
-  // obligaría a migrar todo lo guardado, así que se traduce solo el encabezado.
-  var XLS_HD={'Sala':'Proyecto'};
-  var heads=COLS.map(function(k){return XLS_HD[k]||k;});
-  var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++){var k=COLS[i];o[XLS_HD[k]||k]=r[k]!==undefined?r[k]:'';}return o;});
+  // Ya no hay traducción de encabezados: la clave se llama 'Proyecto' igual que
+  // la columna del Excel desde el corte de modelo de 08/2026 (antes era 'Sala' y
+  // había un mapa acá para que el Excel no lo dijera).
+  var heads=COLS.slice();
+  var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++){var k=COLS[i];o[k]=r[k]!==undefined?r[k]:'';}return o;});
   var ws=XLSX.utils.json_to_sheet(data,{header:heads});
-  ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:14},{wch:20},{wch:18},{wch:28},{wch:12},{wch:16},{wch:36},{wch:10},{wch:16},{wch:14},{wch:14}];
+  ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:14},{wch:20},{wch:18},{wch:28},{wch:12},{wch:18},{wch:16},{wch:36},{wch:10},{wch:16},{wch:14},{wch:14}];
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cotizaciones');
   XLSX.writeFile(wb,'Ceven_Poly_Cotizaciones.xlsx');
 }

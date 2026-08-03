@@ -111,16 +111,16 @@ function renderArchiveMonth(monthKey, entries){
     }
   })();
   // Pills por estado
-  var statusOrder = ['Proyecto','Cotizado','Negociacion','Commit','Con OC','Autorizando','Facturado','Perdido'];
-  var statusColors = {'Proyecto':{bg:'#f2e8ff',fg:'#6e36c8'},'Cotizado':{bg:'#e8f4ff',fg:'#0071e3'},'Negociacion':{bg:'#fff3e0',fg:'#c84e00'},'Commit':{bg:'#fff8e1',fg:'#7a5800'},'Con OC':{bg:'#e8f6ee',fg:'#15863a'},'Autorizando':{bg:'#d4f0de',fg:'#0e7a52'},'Facturado':{bg:'#b8e8cc',fg:'#0a5c30'},'Perdido':{bg:'#fbbebe',fg:'#a80011'}};
+  // Orden, colores y etiquetas desde shared/pipeline-status.js.
+  var statusOrder = cevenEstadoValores();
   var pillsHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">';
   statusOrder.forEach(function(s){
     var data = byStatus[s]||{count:0,monto:0,marW:0,marM:0};
     if(!data.count) return;
-    var c = statusColors[s]||{bg:'#f2f2f7',fg:'#1d1d1f'};
+    var c = cevenEstadoPill(s);
     var mgStr = data.marM>0?' · MgPd '+(data.marW/data.marM).toFixed(2)+'%':'';
-    pillsHtml += '<div class="spill spill-'+s.replace(/ /,'')+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px">'
-      +'<strong>'+s+'</strong> · '+data.count+' cot. · USD '+fI(data.monto)+mgStr+'</div>';
+    pillsHtml += '<div class="'+cevenSpillClass(s)+'" style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:6px">'
+      +'<strong>'+cevenEsc(cevenEstadoLabel(s))+'</strong> · '+data.count+' cot. · USD '+fI(data.monto)+mgStr+'</div>';
   });
   pillsHtml += '</div>';
   document.getElementById('dash-by-status').innerHTML = pillsHtml;
@@ -142,10 +142,11 @@ function renderArchiveMonth(monthKey, entries){
   entries.forEach(function(r){
     var mesC = r.mesCierre || '—';
     if(mesC.length===7){ var pp=mesC.split('-'); mesC = meses[parseInt(pp[1])-1]+' '+pp[0]; }
-    var statusColors = {
-      'Facturado':'#17a589','Perdido':'#a80011'
-    };
-    var fg = statusColors[r.estado] || '#6e6e73';
+    /* El color del estado archivado salía de una tabla de DOS entradas: cualquier
+       estado que no fuera Facturado o Perdido se pintaba gris genérico. Ahora
+       sale de shared/pipeline-status.js, que además cae a un gris oscuro legible
+       si el estado no está en la lista (dato viejo o import). */
+    var fg = cevenEstadoPill(r.estado).fg;
     var idA = monthA + ' data-aid="'+cevenEsc(r.id)+'"';
     // Selector de mes editable para mover la entrada a otro mes
     var mesSel = '<select data-aact="mes"'+idA+' style="padding:2px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:11px;font-family:inherit;background:#fff;min-width:110px">'+mesOpts+'</select>';

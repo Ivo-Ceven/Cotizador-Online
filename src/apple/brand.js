@@ -19,13 +19,13 @@ window.CEVEN_BRAND = {
   /* --- Sincronizacion (shared/sync.js) ------------------------------ */
 
   // Nombres BASE, sin prefijo: sync.js les antepone `prefix`.
-  settingKeys: ['cquotes','cpl','carchive','cnac','cqc','ctarget','ctarget_manual',
+  settingKeys: ['cquotes','cpl','carchive','cnac','cqc','cclientes','ctarget','ctarget_manual',
                 'clogo','clogo_dark','cnac_mac24_v2'],
 
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','ejecutivo','mesCierre','estado',
     'qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad','montoAcc','montoServ',
     'monto','margenPond','moneda','skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',
-    'skuPartialRemMes','skuArchivedQty','ovLink'],
+    'skuPartialRemMes','skuArchivedQty','ovLink','esFOB'],
 
   numCols: ['id','qNum','qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad',
     'montoAcc','montoServ','monto','margenPond'],
@@ -49,12 +49,33 @@ window.CEVEN_BRAND = {
   // El poll tiene que preservarlos al mergear las filas del servidor.
   localOnlyCols: ['skuOvLinks'],
 
+  /* Claves cuyo valor solo puede SUBIR. El contador de cotizaciones es una:
+     el poll escribia el valor del servidor sin comparar magnitud, asi que si
+     otro equipo estaba atrasado el contador local RETROCEDIA y las proximas
+     cotizaciones reusaban numeros ya emitidos. sync.js las resuelve con
+     Math.max en vez de pisar, en el poll y en el bootstrap. */
+  monotonicKeys: ['cqc'],
+
   /* --- Color de marca (shared/theme.js) ----------------------------- */
 
   // Acento: filete de la barra superior, vista activa, boton Guardar, links y
-  // foco. Es la senal de en que cotizador estas. `dk` es la variante para modo
-  // oscuro y `soft` el fondo tenue.
-  theme: { accent:'#0071e3', hover:'#0060c0', soft:'#e8f4ff', dk:'#0a84ff' },
+  // foco. Es la senal de en que cotizador estas. `soft` es el fondo tenue.
+  //
+  // Violeta casi negro, para acompanar al logo negro de Apple. `dk` NO es una
+  // variante apenas mas clara como en las otras marcas: sobre el #1c1c1e del
+  // modo oscuro un violeta casi negro directamente no se ve, asi que ahi va uno
+  // claro del mismo tono.
+  //
+  // OJO: esto pinta lo que pasa por --acc (ver shared/theme.js). El azul
+  // #0071e3 sigue hardcodeado en la pagina de CevenCare, en los chips de estado
+  // "Cotizado" y en varios botones sueltos: eso es el AZUL SEMANTICO (--cblue),
+  // no el acento de marca, y no se mueve con este campo.
+  theme: { accent:'#2d1b4e', hover:'#1e1235', soft:'#efeaf7', dk:'#a78bfa' },
+
+  /* --- Niveles de precio ------------------------------------------- */
+
+  // Apple no cotiza por niveles: el precio sale del costo + margen por item.
+  priceTiers: [],
 
   /* --- Navegacion (shared/navbar.js) -------------------------------- */
 
@@ -74,6 +95,10 @@ window.CEVEN_BRAND = {
 
   // Columnas cuyo orden por defecto es DESCENDENTE al tocar el encabezado
   // (numeros y fechas se leen "de mayor a menor"; el texto, alfabetico).
+  // Cuantas columnas tiene la tabla: el <tr> de encabezado de cada cliente lo
+  // necesita para el colspan (shared/pipeline-group.js).
+  pipeColCount: 14,
+
   pipeSortDescCols: ['monto','qMac','qIph','qIpad','qServ','qAcc','margenPond','fechaISO'],
 
   /* --- Backup (shared/backup.js, shared/backup-folder.js) ----------- */

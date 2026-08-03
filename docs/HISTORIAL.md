@@ -23,6 +23,351 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 03/08/2026 · Poly cotiza con lista de precios: 4 niveles por SKU
+
+Módulos nuevos `src/shared/clientes.js` y `src/poly/js/tiers.js`. Scripts nuevos
+`check-poly-catalogo.js` y `check-poly-tiers.js`. `APP_VERSION` 4.9 → 5.0.
+
+### Lo que cambia de fondo
+
+Hasta ahora **el catálogo de Poly no tenía precios**: `processRows()` guardaba un
+`listPrice` de referencia y el comentario decía explícitamente *"el precio nunca
+se auto-completa (se carga a mano por OPG)"*; `addToQuote()` creaba la línea con
+`salePrice: ''`. El export nuevo del ERP trae **4 precios por SKU**, así que Poly
+pasa a cotizar con lista.
+
+### El archivo viene en formato largo
+
+Una fila por **(SKU, ubicación, nivel de precio)**: 564 filas son **77 SKUs**
+reales (141 combos × 4 niveles). Tres cosas verificadas sobre el archivo, que son
+las que habilitan el plegado a un producto por SKU:
+
+- **El precio no depende de la ubicación.** Los 40 SKUs que están en más de un
+  depósito tienen el mismo precio en todos, así que el precio es función de
+  (SKU, nivel) y la ubicación solo aporta stock.
+- **El stock (`LocAvailable`) se suma entre depósitos, deduplicando por
+  ubicación.** El archivo repite el mismo valor en las 4 filas de niveles de cada
+  depósito: sumar sin deduplicar lo **cuadruplicaba**. Solo un SKU está hoy en
+  dos depósitos (99T09AA: 9 + 1 = 10), pero el error habría sido silencioso.
+- **`Programa fiscal` y `RUBRO` son consistentes** entre las filas de un SKU. Los
+  dos se guardan y se muestran en el catálogo; el IVA **no entra en ningún
+  cálculo** — Poly no tiene columna de IVA en la cotización.
+
+Sin `LocAvailable` el stock queda **null, no 0**: "no lo tengo cargado" y "se me
+agotó" no son lo mismo, y el catálogo los muestra distinto.
+
+El importador conserva el camino viejo si el archivo **no** trae la columna
+`Nivel de precio` (los tipo "LP y Stock"), y ya no borra los SKUs cargados a mano
+al importar.
+
+### Los dos selectores
+
+Uno **global** en el encabezado de la cotización y uno **por línea** en la tabla.
+Una línea tiene tres estados: sigue al global (`tier:''`), tiene nivel propio, o
+es **MANUAL** (precio escrito a mano).
+
+**Cambiar el global repricea SOLO las que lo siguen.** Las de nivel propio y las
+MANUAL quedan intactas — si el global pisara todo, el selector de línea no
+serviría para nada. Escribir un precio a mano marca la línea MANUAL
+automáticamente: sin eso, el próximo cambio del global le pisaba el número recién
+escrito. Y elegir en una línea el mismo nivel que el global la deja **siguiendo**
+al global, no clavada en ese nivel.
+
+**Cada opción del selector muestra su precio**, y esto no es cosmético: hay **16
+SKUs donde el orden no se cumple**. `A4LZ8AA` tiene Tier 2 en 4.346 y Tier 1 en
+3.983,85 — más caro el "2" que el "1". `77P41AA` tiene Negocios Especiales
+(496,95) más caro que Tier 3 (485,24). Elegir "Tier 1" sin ver el número es
+elegir a ciegas, así que **ningún código asume que los niveles estén ordenados**.
+
+### El nivel se recuerda por cliente
+
+Nace como **ficha de cliente**, no como un campo suelto: `shared/clientes.js`
+guarda hoy solo el nivel, pero el próximo paso previsto es una tabla de clientes
+con condiciones de pago, CUIT, etc., y agregar un campo tiene que ser agregar una
+clave. La clave es el nombre **normalizado con `cevenNormClient()`** — el mismo
+criterio con el que el pipeline agrupa—, así que "ACME S.A." y "acme s.a. "
+comparten ficha. El campo Cliente ganó autocompletado, igual que OPG, para que un
+typo no cree un cliente nuevo con su propio nivel.
+
+Al elegir el cliente se propone su último nivel, **solo si el selector global
+todavía está vacío**: si el usuario ya eligió uno a mano para esa cotización,
+cambiárselo por atrás sería peor que no ayudar.
+
+### Persistencia
+
+`COLS` de Poly gana `'Nivel de precio'`, así que reabrir una cotización del
+historial recupera con qué nivel se armó **cada línea**, incluidas las MANUAL. El
+nivel global no se guarda aparte a propósito: se deduce del más frecuente entre
+las líneas, y así no puede quedar desfasado de los precios realmente cotizados.
+
+**Verificación**: `node scripts/check-poly-catalogo.js` corre el importador real
+contra `ingresoPoly.xls` (18 casos, incluidos el stock ×4 y los precios fuera de
+orden) y `node scripts/check-poly-tiers.js` la semántica de repriceo (20 casos).
+**Sin navegador.**
+
+---
+
+## 03/08/2026 · Pipeline agrupado por cliente, y los números dejan de repetirse
+
+Módulos nuevos `src/shared/quote-num.js` y `src/shared/pipeline-group.js`.
+Scripts nuevos `check-quote-num.js` y `check-pipe-roundtrip.js`. Fases 3 a 8.
+
+### Los números de cotización se repetían por tres caminos
+
+1. **El contador se incrementaba en cada carga de página** (`state.js`), no al
+   crear una cotización. Y como `sync.js` se carga **antes** que `state.js`, ese
+   `setItem` dejaba la clave sucia **antes** del bootstrap; `mergeSettings()`
+   saltea las claves sucias, así que **el contador local siempre le ganaba al del
+   equipo y se lo imponía**. Un navegador con `localStorage` limpio arrancaba en
+   `#0001` y bajaba a todos a 1. Ahora el número se **muestra** al cargar y se
+   **reserva al guardar**.
+2. **El poll escribía el valor del servidor sin comparar magnitud**, así que el
+   contador podía **retroceder**. Ahora hay `monotonicKeys: ['cqc']` en
+   `brand.js` y `sync.js` resuelve esas claves con `Math.max` —en el poll y en el
+   bootstrap— en vez de pisar. **No se sacó `cqc` de `settingKeys`**: dejaría de
+   propagarse y habría *más* colisiones, no menos.
+3. **Un contador atrasado devolvía un número ya usado.** `cevenNextQNum()` no le
+   cree solo al contador: devuelve `max(contador, mayor número que existe de
+   verdad) + 1`, mirando historial, pipeline y archivo. Con eso se auto-repara.
+
+Además: `copiarCotizacionHist()` hacía `db.push()` **sin filtrar** por el número
+nuevo — era el único camino que metía dos cotizaciones distintas bajo el mismo
+número en el mismo array (el historial las mostraba concatenadas en una tarjeta y
+borrar una borraba las dos). Y `doSave(true)` **pisaba en silencio**: si dos
+usuarios tomaban el mismo número, el segundo en guardar borraba la cotización del
+primero. Ahora distingue los dos casos por el origen del número —
+`editQuoteFromHistory()` marca cuál se abrió para editar— y ante una colisión
+real guarda con el próximo libre y lo dice.
+
+**Por qué no una sequence en Postgres**, que es lo que sugería `ARQUITECTURA.md`:
+la app es una PWA que funciona offline y pedirle el número al servidor haría que
+no se pueda cotizar sin conexión — que es justo donde quedan las colisiones
+residuales. Si con esto siguen apareciendo, la forma correcta es *reserva
+oportunista* (número del servidor con red, local sin ella, marcado como
+provisional), que es una fase entera.
+
+Todo esto tiene banco de pruebas: **`node scripts/check-quote-num.js`**, 23 casos
+que corren el módulo real, incluida la función de merge monótono extraída de
+`sync.js` (no una copia, que se desfasaría).
+
+### La tabla se agrupa por cliente
+
+Cliente → Proyecto → Artículos, en las dos marcas. El encabezado de cada cliente
+trae **cuántos proyectos, el total y la distribución por estado** — el número que
+antes había que sacar sumando filas a ojo.
+
+Lo que **no** se unificó: `renderPipeline()`. Poly tiene 9 columnas planas y
+Apple 14, con unidades por familia, margen ponderado, filas virtuales por
+override de SKU y facturación parcial. Unificarlo sería el `if(brand)` que
+`ARQUITECTURA.md` prohíbe. Lo que sí se comparte es la capa de agrupación, el
+registro de nodos y el orden de los grupos, parametrizados con `pipeColCount` en
+cada `brand.js` — el mismo patrón que ya usaba `pipeSortDescCols`.
+
+**El direccionamiento por índice tuvo que irse** (solo en Poly; Apple ya
+resolvía por id). `window._pipeRows` + `data-i` + `_pipeRowAt()` no sirven con
+filas de grupo intercaladas. Pasar el id por un `data-*` tampoco: lo convierte en
+string y `updatePipelineStatus()` compara con `===` contra el id numérico — se
+rompería en silencio. Ahora por el DOM viaja una **clave opaca** y un registro
+devuelve el **objeto original**.
+
+Dos detalles de comportamiento: buscar un proyecto **abre solo** el grupo del
+cliente (si no, se ve una fila colapsada sin evidencia de que adentro está lo que
+se pidió), y eso es derivado del render — no se escribe en `_pipeExpanded`, así
+que limpiar la búsqueda vuelve a plegar todo sin dejar residuo. Y el estado de
+expansión **no** se persiste: se sincronizaría al equipo entero.
+
+Como el Cliente dejó de ser columna, perdió su `<th>` ordenable: lo repone un
+botón **"A–Z Clientes"** en la barra.
+
+### El Excel exportaba todo, siempre
+
+`buildPipelineWorkbook()` usaba `getPipeline()` entero, ignorando los filtros
+activos y la vista de mes archivado: filtrar y tocar "⬇ Excel" bajaba igual el
+pipeline completo. Ahora exporta lo que está en pantalla. En Poly, además, la
+columna "Proyectos" traía un **número** (cuántas salas tenía el OPG) mientras la
+tabla mostraba un **nombre** bajo el encabezado "Proyecto".
+
+### Apple: Proyecto ya no es Observaciones
+
+`doSave()` decía literalmente `var proyecto = ob` con el comentario "campo
+unificado": las dos claves de `cquotes` guardaban el mismo texto, así que agrupar
+por proyecto mostraba notas sueltas. Ahora son dos campos.
+
+**Ojo con esto, que es el único punto del trabajo que puede mover precios**: el
+marcador **FOB** (que pone la nacionalización en 0%) se escribe en Observaciones,
+que **no** viaja al pipeline — se detectaba de rebote porque `proyecto` era ese
+mismo texto. Al separarlos la detección se caía. Por eso la fila ahora guarda el
+flag `esFOB`, con **columna propia en Supabase** para que sincronice;
+`isCotizacionFOB()` sigue leyendo Observaciones, como siempre.
+
+**Verificación**: estática, con cuatro chequeos (`check-globals`,
+`check-precache`, `check-pipe-roundtrip`, `check-quote-num`). **Sin navegador.**
+
+---
+
+## 03/08/2026 · Poly: la fila del pipeline pasa a ser un PROYECTO
+
+Migración `20260803120000_poly_pipeline_por_proyecto.sql`. Script nuevo
+`scripts/check-pipe-roundtrip.js`. Fase 2 del trabajo del pipeline.
+
+### El modelo no representaba el negocio
+
+Una fila de Poly era un **OPG** con un array `salas[]` adentro, y `estado`,
+`mesCierre` y `factura` vivían a nivel OPG. Pero el OPG es **informativo** —lo
+asigna la marca cuando da un precio especial— y no es la unidad de seguimiento:
+lo es el proyecto. De ahí salían los dos síntomas:
+
+- **Cambiarle el estado a un proyecto se lo cambiaba a todos los del mismo OPG**,
+  porque el estado no era del proyecto.
+- **La misma cotización podía quedar en dos filas.** `addToPipeline()` buscaba la
+  fila destino **solo por OPG**; el guard por `qNum` aplicaba únicamente a filas
+  sin OPG. Cargar la #0071 con OPG "A" y volver a cargarla con OPG "B" la dejaba
+  en las dos, con su monto contado dos veces en los KPIs y repetido en el Excel.
+  Eso es lo que el usuario reportó como "cotizaciones con el mismo número".
+
+Ahora **1 fila = 1 proyecto = 1 cotización**: `qNum` es la identidad de la fila,
+el OPG es un campo más y cada proyecto lleva su propio estado, mes y factura.
+
+### El rename, que esta vez sí tocó los datos
+
+`sala`→`proyecto` en todos lados: el input `#sala`, el array `salas[]`, la clave
+`'Sala'` de `cquotes` y la columna `salas` de Supabase (dropeada). Eso **revierte
+a propósito** la decisión del 31/07, que renombró solo la UI justamente para no
+migrar datos guardados. Se pudo porque **no hay datos productivos** y la decisión
+explícita fue borrar los de prueba en vez de migrarlos. Se fue también el mapa
+`XLS_HD` que traducía el encabezado del Excel, que existía solo por ese desfase.
+
+**Lo que la migración SQL no alcanza**: el `localStorage` de cada navegador. Si
+alguien abre la app con el `poly_cpipeline` viejo en disco, el bootstrap lo trata
+como filas locales que el servidor no tiene y **las vuelve a subir**. Lo resuelve
+un flag `poly_model_v2` en `src/poly/index.html` que corre **antes** de
+`shared/sync.js` y con `localStorage` crudo — con `cevenLsSet()` las claves
+quedarían marcadas como sucias y el flush las subiría igual.
+
+### `padCols: {qNum: 4}` — la trampa que más caro salía
+
+Poly guarda el número como `'0071'` y la columna es `bigint`. Sin declararlo,
+`coerce()` devuelve `71`, `normPipe()` compara `'0071' !== 71`, la fila queda
+marcada como cambiada **para siempre** y el poll re-renderiza la tabla cada 15 s
+sin ningún error que lo explique. Es la misma trampa que ya estaba documentada en
+`apple/brand.js`.
+
+Como no hay tests y esto es invisible hasta que alguien nota que la tabla
+parpadea, quedó un script: **`node scripts/check-pipe-roundtrip.js`** simula el
+viaje de ida y vuelta a Supabase para las dos marcas y falla si alguna fila no
+vuelve idéntica. Verificado con un control negativo: vaciando `padCols` el script
+falla en 6 casos.
+
+### Lo que se fue
+
+`removeSalaFromPipeline()`, el merge intra-fila por `qNum`/nombre, `_normOpg()` y
+la rama `rmsala` del delegado: existían solo por el modelo de OPG. La fila
+expandida, que listaba las salas, ahora muestra **los artículos de la cotización
+con sus precios** —el nivel que antes no se veía sin abrir el historial—, leídos
+de `cquotes` por `qNum`. Si el total de los artículos no coincide con el monto de
+la fila, se avisa: el monto es una foto del momento de agregar al pipeline y la
+cotización pudo editarse después.
+
+`getDB()` se parsea **una vez por render** y se pasa a las filas expandidas
+(hace `JSON.parse` de varios MB y el poll redibuja cada 15 s), igual que ya hacía
+Apple. Y el `id` de fila nueva pasó de `Date.now()` a `Date.now()*1000 + random`:
+a secas colisionaba entre dos usuarios en el mismo milisegundo y la PK es
+`(brand, id)`. **Tiene que quedar entero** — la columna es `bigint`, así que el
+`Date.now()+Math.random()` de `catalog.js` no sirve acá.
+
+Los KPIs quedaron **Clientes** (distintos, sin distinguir mayúsculas) y
+**Proyectos**; antes eran "OPGs" —que contaba filas, incluidas las sin OPG— y
+"Proyectos". La columna Proyecto ahora es ordenable: era un array y no tenía
+sentido, ahora es texto.
+
+**Verificación**: estática (`node --check`, `check-globals`, `check-precache`,
+`check-pipe-roundtrip` en las dos marcas). **Sin navegador** — ver "Pendientes".
+
+---
+
+## 03/08/2026 · Pipeline: los estados en un solo lugar y los KPIs que mentían
+
+Módulo nuevo `src/shared/pipeline-status.js`. `APP_VERSION` 4.8 → 4.9. Es la
+**fase 1 de un trabajo más grande** en el pipeline (ver "Pendientes"): esta no
+toca datos ni modelo, solo lo que se lee.
+
+### La tabla de estados estaba escrita a mano en seis lugares
+
+`poly/js/pipeline-view.js`, `apple/js/pipeline-view.js` (dos veces),
+`apple/js/archive-view.js`, `apple/js/pipeline-detail.js` y `apple/js/target.js`
+tenían cada uno su copia del orden del embudo y de los colores. Ya habían
+divergido: **`Negociacion` se veía sin tilde** en las tablas y las pastillas, y
+con tilde en los `<select>` del HTML — el mismo estado, dos nombres. Y el
+archivo de Apple pintaba el estado con una tabla de **dos** entradas, así que
+cualquier cosa que no fuera Facturado o Perdido salía gris.
+
+Ahora hay una sola tabla, `CEVEN_ESTADOS`, con el valor guardado (`v`), la
+etiqueta visible (`lbl`) y los tres juegos de color que la app usa (pastilla,
+tinte de fila, tarjeta del dashboard). **`v` no se toca nunca**: es lo que está
+en localStorage, en la columna `estado` de Supabase y en los Excel exportados.
+Lo único que cambia es `lbl`.
+
+De paso, el estado `Proyecto` se muestra como **"En proyecto"**. En Poly
+"Proyecto" ya era el nombre de una columna y de un KPI, así que la pastilla
+"Proyecto · 3" y el KPI "3 Proyectos" se leían como si tuvieran algo que ver.
+
+### Los dos KPIs que estaban mal
+
+**"Proyectado" incluía lo ya facturado** (Commit + Con OC + Autorizando +
+Facturado), al lado de la tarjeta "Facturado": sumar las dos contaba la misma
+plata dos veces. **No se cambió la fórmula** —el Target Anual sigue el mismo
+criterio y moverla lo desalinearía— sino el rótulo: ahora dice **"Forecast del
+mes"** y, en Poly, una sub-línea que aclara cuánto de eso ya está facturado.
+
+**"Total pipeline" cambiaba de fórmula según el filtro sin cambiar de
+etiqueta**, y con las pastillas Facturado + Perdido activas a la vez mostraba
+**USD 0**. La condición era `st`, que solo se completa con **un** estado
+elegido; con dos quedaba vacía y se restaban Facturado y Perdido de una suma que
+ya solo tenía eso. Lo que se quería preguntar era "¿hay algún filtro de
+estado?", que ahora es `hayFiltroEstado`. El mismo bug estaba en las dos marcas.
+Poly además no tenía el `dash-total-lbl` que Apple usa para reetiquetar.
+
+### El archivo mensual de Poly se contradecía
+
+`dash-proy` mostraba **el mismo número** que `dash-facturado` bajo el rótulo
+"Proyectado", y `dash-total` decía "USD X perdido" bajo el rótulo "TOTAL
+PIPELINE". Ahora las tres tarjetas se reetiquetan para el mes archivado
+(`Facturado en Ene 2026` / `Proyectos facturados` / `Perdido en Ene 2026`).
+
+**Ojo con esto si se toca**: quien repinta una tarjeta tiene que restaurarla al
+volver. `renderPipeline()` reescribe sus rótulos en **cada** pasada, no solo
+cuando cambian — si no, volver de un mes archivado deja los rótulos del archivo
+sobre los números del pipeline. Apple ya lo hacía (`pipeline-view.js`, "Restaurar
+card negro"); Poly no lo necesitaba porque nunca cambiaba nada.
+
+### Información que solo existía en un `title=`
+
+En un celular no hay hover, así que todo esto era invisible: **el número de
+factura** (dos filas con y sin factura se distinguían solo por el color del
+botón — ahora la etiqueta dice `Fact. 0012`), la afordancia "clic para ver el
+detalle" (ahora la celda dice `· 2 proyectos ▸`), y el `<select>` de meses
+archivados, que no tenía más rótulo que su tooltip (ahora lleva "Vista"
+adelante).
+
+También: el estado vacío citaba un botón que no existe —decía *"Agregar a
+Pipeline"* cuando el botón real dice *"Agregar al pipeline"*— y el `↩` prometía
+deshacer "el último cambio de estado o fecha" cuando también deshace altas,
+bajas y edición de factura.
+
+### El aviso de archivado
+
+Era `📦 N entrada(s) archivada(s)`: movía filas fuera de la vista sin decir a
+dónde iban ni cómo verlas. Ahora nombra el mes y trae un botón **Ver** que lo
+selecciona. **No ofrece "Deshacer" a propósito**: el archivado es automático y
+vuelve a correr al entrar al pipeline, así que desarchivar sin mover el cierre
+estimado se re-archivaría en el acto — para eso está "↩ Restaurar" en la vista
+del mes, que sí mueve el mes.
+
+**Verificación**: estática (`node --check`, `check-globals` sin colisiones,
+`check-precache` 71 rutas). **Sin navegador todavía** — ver "Pendientes".
+
+---
+
 ## 31/07/2026 · Color por marca, barra de acciones nueva y "Proyecto" en Poly
 
 Módulo nuevo `src/shared/theme.js`. `APP_VERSION` 4.6 → 4.7.
@@ -41,11 +386,23 @@ botón Guardar, los links y el foco. `base.css` define los cuatro con el azul po
 defecto, así que el shell —que no tiene marca— y cualquier página que no cargue
 el módulo siguen andando.
 
-**El criterio del color es distinguirse entre marcas, no imitar el logo**: Apple
-azul `#0071e3`, Poly violeta `#6d3fd4`, HP naranja `#ff6b00` (reservado). Usar
-los colores reales dejaba a Apple y HP los dos azules, que es justo lo que hay
-que evitar. Las tarjetas del panel de marcas llevan el mismo acento, repetido a
-mano en el `<style>` del shell porque ahí no hay ningún `brand.js`.
+**El acento acompaña al logo de la marca, sin ser necesariamente su color
+exacto**: Apple violeta casi negro `#2d1b4e` (el logo es negro), Poly naranja
+pizarra `#b35333` (el naranja del logo, `#ff3900`, bajado y desaturado: el puro
+da 3,6:1 sobre blanco y como texto no se lee), HP azul `#0096d6`, el del logo
+(reservado). El criterio original era el contrario —distinguirse entre marcas,
+no imitar el logo, con Apple azul `#0071e3`, Poly violeta `#6d3fd4` y HP naranja
+`#ff6b00`—, y se dio vuelta en 08/2026 al entrar los logos reales en las
+tarjetas del shell y en el chip de la navbar: con el símbolo de la marca al
+lado, un acento que no tenía nada que ver se leía como un error de impresión.
+Las tarjetas del panel llevan el mismo acento, repetido a mano en el `<style>`
+del shell porque ahí no hay ningún `brand.js`.
+
+Dos cosas que el acento **no** arrastra, y por eso el cotizador de Apple sigue
+teniendo azul por todos lados: `--cblue` (`#0071e3`), que es el azul *semántico*
+—el estado "Cotizado", las flechas de orden, los chips— y no la marca; y los
+`#0071e3` hardcodeados de `apple/css/cevencare.css` y de varios botones sueltos,
+que nunca pasaron por `--acc`. Cambiar `theme` no los toca.
 
 `theme.js` **no toca** el `<meta name="theme-color">` aunque sea lo obvio: ese
 meta ya lo maneja `pwa.js`, que lo sincroniza con el modo oscuro en
@@ -453,6 +810,39 @@ validaciones server-side.
 
 ## Pendientes
 
+### 🟡 Pipeline: verificar en un navegador (fases 1–8 hechas el 03/08/2026)
+
+**Las ocho fases del plan están implementadas y ninguna se abrió en un navegador.**
+Lo que hay que recorrer, en las dos marcas y en claro y oscuro:
+
+- **Numeración**: abrir la app tres veces seguidas y confirmar que el número **no
+  avanza**; guardar y confirmar que recién ahí avanza; poner el contador en 1 a
+  mano en DevTools y verificar que el siguiente número sale por encima del máximo
+  real; copiar una cotización del historial y ver que no duplica el número.
+- **Agrupación**: abrir y cerrar clientes y proyectos, ordenar por cada columna,
+  el botón "A–Z Clientes", buscar un proyecto (el grupo tiene que abrirse solo) y
+  limpiar la búsqueda (tiene que volver a plegarse). **Dejar la vista expandida
+  20 s**: el poll redibuja cada 15 s, así que cualquier estado que viva solo en el
+  DOM se borra en silencio — es la prueba específica del esquema de expansión.
+- **Archivo**: entrar a un mes y **volver**, que los rótulos de las tres tarjetas
+  se restauren.
+- **Excel**: exportar con filtros puestos y confirmar que baja solo lo filtrado.
+- **Rol lector**: sin botones de edición.
+- **FOB en Apple**: una cotización con "FOB" en Observaciones **tiene que seguir**
+  nacionalizando a 0%. Es el único punto del trabajo que puede mover precios.
+
+**La migración SQL está escrita pero NO aplicada**:
+`supabase/migrations/20260803120000_poly_pipeline_por_proyecto.sql` borra los
+datos de prueba de Poly, dropea `salas` y agrega la columna `esFOB`.
+
+**Lo que este trabajo NO resuelve, y conviene que sea decisión y no olvido**:
+`cquotes` viaja como blob entero con last-write-wins (`ARQUITECTURA.md`), así que
+dos usuarios que guardan dentro de la misma ventana de 15 s se pisan el historial
+completo — y eso también produce números reutilizados. Con la base vacía es el
+momento más barato que va a ser nunca para migrarlo a tabla propia fila por fila,
+pero exige generalizar `sync.js`, que hoy conoce exactamente dos formas.
+Se decidió **no hacerlo ahora**.
+
 ### 🔴 Urgente — depende del usuario
 - **No hay backup de los datos productivos**: viven SOLO en el `localStorage` del
   navegador del usuario, sin copia en la base. Exportar el backup JSON y, ya
@@ -465,6 +855,13 @@ validaciones server-side.
   el ciclo completo necesita el token del admin, o sea la app abierta.
 
 ### Técnicos
+- **La fase 1 del pipeline (03/08) tampoco se abrió en un navegador.** Qué mirar:
+  el Total con las pastillas **Facturado + Perdido activas a la vez** (era el caso
+  que daba USD 0); entrar a un mes archivado y **volver**, que los rótulos de las
+  tres tarjetas se restauren; que `Negociación` salga con tilde en tabla,
+  pastillas y archivo, en las dos marcas; el toast de archivado con su botón
+  **Ver**; y todo en modo oscuro (las clases `row-st-*` / `spill-*` matchean por
+  clase, no por el style inline).
 - **Nada de lo hecho el 28–31/07 se probó en un navegador**: la verificación fue
   estática (sintaxis, precache, globales duplicadas, y bancos de prueba en Node
   para sync y auth). Falta abrir las dos marcas y recorrer los flujos.

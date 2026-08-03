@@ -87,6 +87,9 @@ table,input,select,textarea,.si,.kpi,.bk,.tgt-inp{font-variant-numeric:tabular-n
 .cvnav-brand[disabled]{cursor:default}
 .cvnav-brand:not([disabled]):hover{background:rgba(0,0,0,.055)}
 .cvnav-mark{font-size:16px;line-height:1}
+/* Logo de marca: caja fija para que el alto del chip no cambie según la
+   proporción del archivo (HP es cuadrado, Apple apaisado, Poly vertical). */
+img.cvnav-mark{display:block;width:18px;height:18px;object-fit:contain;flex-shrink:0}
 .cvnav-name{font-family:var(--f-disp);font-size:14px;font-weight:600;letter-spacing:-.012em;white-space:nowrap}
 .cvnav-name b{font-weight:600}
 .cvnav-name i{font-style:normal;color:var(--ct3);margin:0 5px;font-weight:400}
