@@ -189,3 +189,8 @@ body.dark .hist-card table th{background:var(--ch)!important;color:var(--ct2)!im
 body.dark .hist-card table td{color:var(--ct1)!important;border-color:var(--cb2)!important}
 body.dark .hist-card-hdr div[style*="color:#6e6e73"]{color:var(--ct2)!important}
 body.dark .hist-warr-hdr{background:rgba(200,78,0,.12)!important;border-color:rgba(200,78,0,.2)!important;color:#ff9f0a!important}
+/* Mis cotizaciones. El celeste claro del modo claro sobre fondo oscuro sería un
+   bloque blanco: acá la misma señal se da con el azul teñido sobre el fondo.
+   Gana por especificidad a la regla .hist-card de arriba (tres clases). */
+body.dark .hist-card.hist-mia{background:rgba(10,132,255,.10)!important;border-color:rgba(10,132,255,.38)!important}
+body.dark .hist-card.hist-mia .hist-card-hdr{background:rgba(10,132,255,.16)!important}

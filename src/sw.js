@@ -43,6 +43,8 @@ var ASSETS = [
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
   './icons/favicon-32.png',
+  // Logo de Ceven: lo usa el comprobante imprimible, en las dos marcas.
+  './icons/ceven.png',
 
   // Logos de marca: los usa el panel del shell y el chip de la navbar.
   './icons/brands/apple.png',
@@ -75,6 +77,7 @@ var ASSETS = [
   './shared/pipeline-group.js',
   './shared/pipeline-ui.js',
   './shared/pdf-core.js',
+  './shared/comprobante.js',
   './shared/css/base.css',
   './shared/css/dark.css',
 

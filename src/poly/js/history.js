@@ -126,11 +126,16 @@ function renderHistory(){
         +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
         +'<td style="text-align:right;font-weight:500">USD '+fI(parseFloat(r['Total'])||0)+'</td></tr>';
     }
-    html+='<div class="hist-card" style="background:#fff;border-radius:12px;border:0.5px solid #d2d2d7;margin-bottom:13px;overflow:hidden">'
+    // Las cotizaciones propias van en celeste (ver .hist-mia en base.css): el
+    // historial es del equipo entero y encontrar las tuyas era leer la columna
+    // Ejecutivo tarjeta por tarjeta.
+    var mia = (typeof cevenOwnsExecutive === 'function' && cevenOwnsExecutive(first['Ejecutivo'])) ? ' hist-mia' : '';
+    html+='<div class="hist-card'+mia+'" style="background:#fff;border-radius:12px;border:0.5px solid #d2d2d7;margin-bottom:13px;overflow:hidden">'
       +'<div class="hist-card-hdr" style="display:flex;align-items:center;gap:10px;padding:11px 14px;background:#f5f5f7;flex-wrap:wrap">'
         +'<input type="checkbox"'+(histSel[qn]?' checked':'')+' data-act="sel" data-qn="'+qnA+'" style="width:auto;accent-color:#1d1d1f">'
         +'<div style="font-size:15px;font-weight:600;flex:1">Cotización #'+cevenEsc(qn)+'</div>'
         +'<div style="font-size:11px;color:#6e6e73">'+cevenEsc(first['Fecha']||'')+' '+cevenEsc(first['Hora']||'')+'</div>'
+        +'<button class="bs" data-act="comp" data-qn="'+qnA+'" title="Abrir el comprobante imprimible de esta cotización" style="color:#1f3864;border-color:#1f3864">🧾 Comprobante</button>'
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bs" data-act="edit" data-qn="'+qnA+'" style="color:#0071e3;border-color:#0071e3">✎ Editar</button>' : '')
         +'<button class="bs" data-act="copy" data-qn="'+qnA+'" title="Copiar como cotización nueva y abrirla para editar" style="color:#15863a;border-color:#34c759">⧉ Copiar</button>'
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bsr" data-act="del" data-qn="'+qnA+'">✕</button>' : '')
@@ -161,6 +166,7 @@ function _histBindDelegation(){
     var act = el.getAttribute('data-act'), qn = el.getAttribute('data-qn');
     if(act === 'edit')      editQuoteFromHistory(qn);
     else if(act === 'copy') copiarCotizacionHist(qn);
+    else if(act === 'comp') cevenImprimirComprobante(qn);
     else if(act === 'del')  deleteQ(qn);
   });
   cevenDelegate('histwrap', 'change', function(ev){
