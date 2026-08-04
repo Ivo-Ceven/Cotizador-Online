@@ -23,6 +23,104 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 04/08/2026 · Las tareas del equipo pasan a ser un tablero propio
+
+Página nueva `src/tareas/` (`index.html` + `js/board.js` + `css/board.css`).
+`shared/todos.js` reescrito como store. Migración
+`20260804100000_tareas_tablero_y_equipo.sql`. `APP_VERSION` 5.0 → 5.1.
+
+### Deja de ser un panel del shell
+
+Era una checklist plana embutida abajo del selector de marcas: texto, quién la
+cargó y un checkbox. Ahora se entra con una tarjeta, igual que a un cotizador, y
+adentro hay tres columnas —**To do / Doing / Done**— con miembros delegados.
+
+En el shell queda **la puerta y el número de pendientes**, nada más. Ese conteo
+es el motivo de que `shared/todos.js` siga cargándose en las dos páginas: es el
+único dato del tablero que sirve sin entrar.
+
+### Delegar necesitó abrir la lista del equipo
+
+Para arrastrar un miembro sobre una tarjeta hay que saber quiénes son los
+miembros, y **la única forma de listarlos era la Edge Function `admin-users`,
+que valida server-side `caller.email === admin@ceven.com`**. Con eso, delegar
+habría sido una función que solo podía usar una persona.
+
+De ahí sale `ceven_equipo()`: `security definer` porque `auth.users` no es
+legible por `authenticated` (ni tiene que serlo), devolviendo **solo email,
+nombre y rol** y con el filtro `ceven_is_staff()` **dentro del cuerpo** — con un
+token que no sea `@ceven.com` da cero filas. Es la misma información que la app
+ya publicaba de rebote (`todos.creadoPor` guarda el nombre de quien cargó cada
+tarea), ahora expuesta a propósito y en un solo lugar.
+
+### `hecho` no se borró, y tiene un trigger
+
+`estado` deja a `hecho` redundante. Borrarlo habría roto a los clientes que
+todavía no recargaron: la app es una PWA con *stale-while-revalidate*, así que
+después del deploy siguen habiendo navegadores mandando `PATCH {"hecho":true}`
+sin saber que existe `estado`. Sin trigger, esa tarea quedaba tildada para uno y
+en "To do" para todos los demás — la misma clase de divergencia silenciosa que
+ya costó cara con el contador de cotizaciones.
+
+El trigger `todos_sync_estado` deriva uno del otro: gana el campo que cambió, y
+si cambian los dos gana `estado` (eso solo lo manda el cliente nuevo, que es el
+único que distingue `doing`). `hecho` se puede dropear cuando no queden clientes
+viejos, no antes.
+
+Del mismo lado, el front **se degrada solo** si se deploya antes que la
+migración: detecta por la respuesta del servidor que faltan las columnas o la
+RPC, avisa una vez y sigue guardando lo que sí existe, en vez de perder el
+cambio en silencio.
+
+### Los dos arrastres
+
+Conviven en la misma pantalla y hay que distinguirlos **mientras** se arrastra,
+no al soltar: tarjeta→columna mueve, miembro→tarjeta delega.
+`dataTransfer.getData()` devuelve vacío durante `dragover` —es una restricción
+de la especificación, el contenido recién se lee al soltar—, así que cada
+arrastre declara su propio **tipo MIME** y el `dragover` decide mirando
+`dataTransfer.types`. Efecto secundario buscado: como cada objetivo llama a
+`preventDefault()` solo para su tipo, la tarjeta anidada dentro de la columna no
+compiten, aunque el evento burbujee de una a la otra.
+
+**Todo lo que se hace arrastrando se puede hacer sin arrastrar.** En celular no
+existe `dragstart`: la API de drag & drop de HTML5 no funciona con el dedo. El
+detalle (tocar la tarjeta) mueve, delega, renombra y elimina; con el teclado,
+`Enter` abre y `←`/`→` mueven de columna.
+
+Dos detalles que costaron: el repintado **se posterga mientras haya un arrastre
+en curso**, porque si el poll de 15 s rehace el DOM con algo en la mano el
+navegador cancela el gesto sin avisar; y el modal de detalle **se repinta por
+dentro** en vez de cerrarse y volver a abrirse, porque cada ciclo empujaba y
+sacaba una entrada del historial (`cevenNav`) y el botón Atrás del celular
+dejaba de coincidir con lo que se veía.
+
+### El poll ya no pisa lo que acabás de hacer
+
+Mover una tarjeta y que el repaso de los 15 s conteste con la foto anterior la
+devolvía sola a su columna por un ciclo entero. Ahora cada cambio local marca su
+id por 8 segundos y el merge lo respeta; pasada la ventana gana el servidor, que
+es lo que hace que el tablero converja entre varias personas.
+
+Y el id de una tarea dejó de ser `Date.now()` pelado: el POST usa
+`resolution=merge-duplicates`, así que dos personas cargando algo en el mismo
+milisegundo hacían que **la segunda pisara a la primera en silencio**. Ahora
+lleva tres dígitos de ruido.
+
+### La barra superior sin marca
+
+`src/tareas/` no es una marca (no tiene `brand.js`, ni tema, ni pipeline) pero
+tampoco es el shell: necesita chip propio y vuelta al panel. Se declara con
+`window.CEVEN_PAGE = {label, icon}`. **No** es un `CEVEN_BRAND` de mentira a
+propósito: eso arrastraría todo el contrato de marca —`theme`, `prefix`,
+`pipeCols`, el botón de modo oscuro que acá no tiene a quién llamar— para usar
+dos campos.
+
+**Verificación**: estática (`check-globals`, que ahora incluye la página nueva, y
+`check-precache`). **Sin navegador.**
+
+---
+
 ## 03/08/2026 · Poly cotiza con lista de precios: 4 niveles por SKU
 
 Módulos nuevos `src/shared/clientes.js` y `src/poly/js/tiers.js`. Scripts nuevos
@@ -809,6 +907,24 @@ validaciones server-side.
 ---
 
 ## Pendientes
+
+### 🟢 Tareas: confirmar el trigger y el backfill en el SQL Editor
+
+La migración `20260804100000` se aplicó el 04/08/2026 y el tablero se probó
+entero en un navegador (con sesión simulada y datos sembrados: los dos
+arrastres, el detalle, el filtro, el escapado y el rol lector).
+
+Lo único que quedó sin ver son las tres cosas que no se pueden observar desde
+afuera con la publishable key, porque necesitan leer el catálogo con sesión: el
+**trigger `todos_sync_estado`**, los **CHECK** de `estado`/`asignados` y el
+**backfill** de las filas que ya existían. Están los tres comandos listos en el
+bloque de VERIFICACIÓN al final del archivo de la migración. El que importa es
+el segundo: simula el `PATCH {"hecho":true}` del cliente viejo y confirma que
+`estado` lo sigue.
+
+Con la RPC sí alcanzó la prueba de afuera: `rpc/ceven_equipo` devuelve 401
+*permission denied for function* (existe y le niega el paso a `anon`), mientras
+que una función inexistente da 404.
 
 ### 🟡 Pipeline: verificar en un navegador (fases 1–8 hechas el 03/08/2026)
 

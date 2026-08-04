@@ -84,6 +84,8 @@ var ASSETS = [
   './vendor/jspdf.plugin.autotable.min.js',
 
   './apple/css/cevencare.css',
+  './tareas/css/board.css',
+  './tareas/js/board.js',
 
   './apple/brand.js',
   './apple/js/state.js',
@@ -133,7 +135,9 @@ var DOCS = [
   './apple/cevencare.html',
   './apple/cevencare',
   './poly/',
-  './poly/index.html'
+  './poly/index.html',
+  './tareas/',
+  './tareas/index.html'
 ];
 
 /* Una respuesta redirigida (308 de cleanUrls) no puede devolverse tal cual a

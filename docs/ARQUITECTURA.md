@@ -2,7 +2,7 @@
 
 ## Visión general
 
-La plataforma es multi-marca: un **shell** (`src/index.html`) con el login, el panel selector de marcas y el organizador de tareas del equipo, más un cotizador independiente por marca (`src/apple/` y `src/poly/` completos; HP se agregará igual). `src/shared/` tiene lo común a todas las páginas; `src/vendor/` las librerías auto-hospedadas (xlsx, html2canvas, jsPDF + autotable).
+La plataforma es multi-marca: un **shell** (`src/index.html`) con el login y el panel selector, más un cotizador independiente por marca (`src/apple/` y `src/poly/` completos; HP se agregará igual). Del panel también se entra al **tablero de tareas del equipo** (`src/tareas/`), que no es una marca: es una página compartida, sin cotización ni pipeline. `src/shared/` tiene lo común a todas las páginas; `src/vendor/` las librerías auto-hospedadas (xlsx, html2canvas, jsPDF + autotable).
 
 Está desplegada como **PWA instalable y offline-first** en https://cotizadores-ceven.vercel.app (`src/sw.js` en la raíz, scope `/`).
 
@@ -28,7 +28,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `monthpicker.js` | Campo de mes/año (el "cierre estimado"): un `<button>` que abre una grilla de 12 meses con el año arriba. `cevenMonthField()` devuelve el HTML, `cevenMonthSet()` lo escribe desde código y `cevenMesLabel()` formatea `2026-11` → `Nov 2026`. El botón expone `value` y dispara `change` igual que el `<select>` que reemplazó |
 | `navbar.js` | Barra superior de todas las páginas: chip de marca, un ítem por vista (leídos de `CEVEN_BRAND.navItems`) y el bloque de cuenta (dark mode, usuarios, quién sos + rol, contraseña, salir). `cevenNavbarSync()` marca la vista activa y esconde lo que el rol no puede usar |
 | `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos |
-| `todos.js` | Organizador de tareas del equipo (tabla `todos`, poll cada 15 s). Solo lo usa el shell |
+| `todos.js` | Tareas del equipo: **store y sincronización**, no UI (tabla `todos` + RPC `ceven_equipo`, poll cada 15 s). Expone `window.cevenTareas`. Lo usan el shell (solo para la pastilla de pendientes de la tarjeta) y `tareas/js/board.js` |
 | `pwa.js` | Registro del service worker, aviso de versión nueva, botón instalar, pastilla de cambios pendientes |
 | `init.js` | Pinta la versión y sincroniza el ícono de dark mode |
 | `css/base.css`, `css/dark.css` | Estilos, idénticos para todas las marcas. Los tokens de color (`:root`), la pila tipográfica (`--f-ui`/`--f-disp`) y la escala `.h1`/`.h2`/`.h3`/`.sub`/`.lbl` viven en `base.css`, porque el shell **no** carga `dark.css` — ahí quedó solo lo de `body.dark` |
@@ -107,6 +107,24 @@ Poly tiene los mismos nombres donde el concepto es el mismo, pero su `pipeline-c
 > **Ojo con "sala" en el código de Poly.** Lo que la UI llama **Proyecto (cliente final)** se guarda con las claves viejas: el input es `#sala`, el array de la fila es `salas[]`, cada elemento tiene `.sala`, la columna en Supabase es `salas` (jsonb, declarada en `objCols`) y la clave dentro de `cquotes` es `'Sala'` (en `COLS`). Se renombró **solo lo que se lee en pantalla** (31/07/2026); tocar las claves obligaría a migrar `cquotes`, los backups JSON y la columna de la base. La traducción del encabezado de Excel se hace en `exportDB()` con un mapa `XLS_HD`.
 
 `cevencare.html` + `js/cevencare.js` + `css/cevencare.css` son una mini-app aparte (sin Supabase): cotiza garantías por dispositivo/canal y envía los ítems elegidos al cotizador con `postMessage({type:'cevencare-add-warranty', items})`; `warranties.js` los recibe y los suma a `warrantyItems`.
+
+## `src/tareas/`: el tablero del equipo
+
+Una página, no una marca. Entra desde la tarjeta del shell igual que un cotizador, pero **no** carga `brand.js`, `theme.js`, `sync.js` ni nada del pipeline: son 9 scripts contra los 43 de Poly.
+
+| Archivo | Responsabilidad |
+|---|---|
+| `index.html` | Esqueleto: equipo, alta y las tres columnas vacías. Los cuerpos los llena el JS |
+| `js/board.js` | Render del tablero, los dos arrastres y el modal de detalle |
+| `css/board.css` | Estilos propios. Sin variante oscura: el shell es siempre claro |
+
+Lo que hay que saber para tocarlo:
+
+- **El estado y la sincronización no están acá**, están en `shared/todos.js` (`window.cevenTareas`). `board.js` solo pinta y llama; el shell usa el mismo store para la pastilla de pendientes.
+- **Conviven dos arrastres** en la misma pantalla: tarjeta→columna mueve de estado, miembro→tarjeta delega. Se distinguen por el **tipo MIME** del `dataTransfer` (`application/x-ceven-tarea` / `-miembro`), porque `getData()` no se puede leer durante `dragover` — solo `types`. Cada objetivo llama a `preventDefault()` **únicamente** para su tipo, y por eso la tarjeta anidada dentro de la columna no se pisan.
+- **Todo lo que se hace arrastrando se puede hacer sin arrastrar**: en celular no existe `dragstart`. El detalle (tocar la tarjeta) mueve y delega, y con el teclado `Enter` abre y `←`/`→` mueven de columna.
+- El repintado **se posterga mientras haya un arrastre en curso**: si el poll de 15 s rehace el DOM con algo en la mano, el navegador cancela el gesto sin avisar.
+- Sin marca, la barra superior se declara con `window.CEVEN_PAGE = {label, icon}` antes de `shared/navbar.js` (ver el comentario de ese archivo). No es un `CEVEN_BRAND` falso a propósito.
 
 ## Flujo de datos
 

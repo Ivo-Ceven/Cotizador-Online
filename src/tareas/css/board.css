@@ -1,0 +1,186 @@
+/* ============================================================================
+   TABLERO DE TAREAS  ·  src/tareas/
+   ----------------------------------------------------------------------------
+   Estilos propios de esta página. Los tokens (--c0, --ct1, --cb, --corg…), la
+   escala tipográfica y la navbar salen de shared/css/base.css.
+
+   No hay variante oscura a propósito: esta página es parte del shell, que es
+   siempre claro (el shell no carga dark.css — ver el comentario de base.css).
+
+   ⚠ Los nombres de clase de acá comparten espacio con los de base.css, que se
+   carga antes y en TODAS las páginas. El contenedor se llamaba `.tb` y heredaba
+   en silencio la barra de herramientas de vista de base.css (`display:flex`),
+   que ponía el encabezado, el equipo y el alta uno al lado del otro. Antes de
+   agregar una clase corta acá, buscarla en base.css — `node
+   scripts/check-tareas.js` lo verifica.
+   ========================================================================== */
+
+body{padding-bottom:0}
+
+/* `hidden` tiene que ganarle a las reglas de display de este archivo. La regla
+   del navegador es `[hidden]{display:none}`, que al ser un selector de atributo
+   pierde contra CUALQUIER clase: `.tb-alta{display:flex}` la pisaba y el
+   formulario de alta le seguía apareciendo al rol lector, que no puede
+   escribir. board.js prende y apaga cosas con `.hidden`, así que la regla va
+   una sola vez acá y no elemento por elemento. */
+[hidden]{display:none!important}
+
+.tablero{max-width:1180px;margin:0 auto;padding:26px 18px 60px}
+
+/* ── Encabezado ─────────────────────────────────────────────────────────── */
+.tb-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.tb-hd .sub{margin-top:4px}
+
+/* ── Equipo ─────────────────────────────────────────────────────────────── */
+.tb-equipo{margin-bottom:16px}
+.tb-tip{text-transform:none;letter-spacing:0;font-weight:400;color:var(--ct3)}
+.tb-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
+
+/* Chip de miembro: es un <button> (foco, teclado, click para filtrar) que
+   además es arrastrable. El cursor `grab` es la única señal de que se puede
+   llevar a una tarjeta, así que no se saca ni en :hover. */
+.mb{
+  display:inline-flex;align-items:center;gap:7px;
+  background:var(--c1);border:0.5px solid var(--cb);border-radius:980px;
+  padding:4px 12px 4px 4px;font-family:inherit;font-size:12.5px;color:var(--ct1);
+  cursor:grab;box-shadow:var(--sh1);
+  transition:border-color .15s ease,box-shadow .15s ease,transform .08s ease;
+}
+.mb:hover{border-color:var(--ct3);box-shadow:var(--sh2)}
+.mb:active{cursor:grabbing;transform:scale(.97)}
+.mb.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-soft)}
+.mb-yo{color:var(--ct3);font-size:11px}
+.mb-todas{padding:4px 13px;gap:0}
+
+/* Avatar. El color sale de un hash del email (ver tono() en board.js): que
+   cada persona tenga siempre el mismo permite reconocerla en la tarjeta sin
+   leer, que es todo el punto de mostrar iniciales y no el nombre completo. */
+.av{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:24px;height:24px;border-radius:50%;flex-shrink:0;
+  color:#fff;font-size:10px;font-weight:700;letter-spacing:.3px;
+  border:none;font-family:inherit;line-height:1;
+}
+
+/* ── Alta ───────────────────────────────────────────────────────────────── */
+.tb-alta{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+/* `width:auto` no es de más: base.css pone `width:100%` a todo input/select
+   —le sirve a los formularios en grilla de los cotizadores— y acá eso hacía que
+   cada control ocupara un renglón entero en vez de compartir la fila. */
+.tb-alta input,.tb-alta select{
+  border:0.5px solid var(--cb);border-radius:10px;padding:10px 12px;width:auto;
+  font-size:14px;font-family:inherit;background:var(--c1);color:var(--ct1);outline:none;
+}
+.tb-alta input{flex:1 1 240px;min-width:200px}
+.tb-alta select{flex:0 0 auto}
+.tb-alta input:focus,.tb-alta select:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+.tb-alta button{
+  border:none;border-radius:980px;padding:10px 20px;font-size:14px;font-weight:500;
+  cursor:pointer;background:var(--ct1);color:#fff;font-family:inherit;
+  transition:background .15s ease,transform .08s ease;
+}
+.tb-alta button:hover{background:#3a3a3c}
+.tb-alta button:active{transform:scale(.98)}
+
+.tb-nota,.tb-solo-lectura{
+  background:#fff8e6;border:0.5px solid #f0dfae;color:#7a5c00;
+  font-size:12.5px;border-radius:10px;padding:9px 12px;margin-bottom:16px;
+}
+.tb-nota{margin-top:8px;margin-bottom:0}
+
+/* ── Columnas ───────────────────────────────────────────────────────────── */
+/* `stretch` y no `start`: las tres columnas al alto de la más larga. Además de
+   verse parejo, el objetivo donde soltar una tarjeta pasa a ser toda la
+   columna y no solo el pedacito que ocupan las que ya tiene — que es justo el
+   problema al mover algo a una columna vacía. */
+.tb-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch}
+.col{background:var(--c3);border-radius:16px;padding:12px 12px 14px;min-width:0;display:flex;flex-direction:column}
+.col-hd{display:flex;align-items:center;gap:8px;padding:2px 4px 11px}
+.col-hd b{font-size:13px;font-weight:600;letter-spacing:-.006em;flex:1}
+.col-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--ct3)}
+.col-cnt{
+  font-size:11px;font-weight:600;color:var(--ct2);background:var(--c1);
+  border-radius:980px;padding:2px 9px;font-variant-numeric:tabular-nums;
+}
+/* Un color por columna: es la señal que se lee de reojo cuando el tablero
+   está lleno y los tres bloques tienen la misma forma. */
+.col[data-estado="doing"] .col-dot{background:var(--corg)}
+.col[data-estado="done"]  .col-dot{background:var(--cgreen)}
+
+.col-body{display:flex;flex-direction:column;gap:8px;min-height:96px;border-radius:12px;padding:2px;flex:1}
+.col.sobre .col-body{outline:2px dashed var(--acc);outline-offset:2px;background:rgba(0,113,227,.055)}
+.col-vacio{
+  text-align:center;color:var(--ct3);font-size:11.5px;padding:26px 8px;
+  border:1px dashed var(--cb);border-radius:12px;
+}
+
+/* ── Tarjetas ───────────────────────────────────────────────────────────── */
+.tk{
+  background:var(--c1);border:0.5px solid var(--cb2);border-radius:12px;
+  padding:10px 11px;box-shadow:var(--sh1);cursor:pointer;
+  transition:box-shadow .15s ease,border-color .15s ease,transform .08s ease;
+}
+.tk[draggable="true"]{cursor:grab}
+.tk:hover{box-shadow:var(--sh2);border-color:var(--cb)}
+.tk.llevando{opacity:.45;cursor:grabbing}
+/* Resaltado al pasarle un miembro por encima: el borde completo, no el
+   outline punteado de las columnas, para que no se confundan los dos gestos. */
+.tk.sobre{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-soft),var(--sh2)}
+.tk-txt{font-size:13px;line-height:1.4;color:var(--ct1);word-break:break-word;white-space:pre-wrap}
+.col[data-estado="done"] .tk-txt{color:var(--ct2);text-decoration:line-through}
+.tk-pie{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px}
+.tk-avs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0}
+.tk-avs .av{width:22px;height:22px;font-size:9.5px;cursor:pointer;box-shadow:0 0 0 1.5px var(--c1)}
+.tk-avs .av:hover{filter:brightness(1.12)}
+.tk-sin{font-size:10.5px;color:var(--ct3);font-style:italic}
+.tk-meta{font-size:10px;color:var(--ct3);text-align:right;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── Detalle (modal) ────────────────────────────────────────────────────────
+   Es lo que hace usable el tablero sin arrastrar: en celular la API de
+   drag & drop de HTML5 no existe, así que mover y delegar tiene que poder
+   hacerse tocando. También es el camino accesible por teclado. */
+#tk-modal{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center;padding:18px;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.tkm{background:var(--c1);border:0.5px solid var(--cb);border-radius:18px;width:420px;max-width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--sh3);padding:20px 22px}
+.tkm-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.tkm-x{border:none;background:var(--c0);width:28px;height:28px;border-radius:50%;font-size:17px;cursor:pointer;color:var(--ct2);line-height:1;font-family:inherit}
+.tkm-x:hover{background:var(--c3)}
+.tkm textarea{
+  width:100%;border:0.5px solid var(--cb);border-radius:10px;padding:9px 11px;
+  font-size:14px;font-family:inherit;line-height:1.45;color:var(--ct1);
+  background:var(--c1);outline:none;resize:vertical;min-height:66px;
+}
+.tkm textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+.tkm textarea[readonly]{background:var(--c0);color:var(--ct2)}
+.tkm .lbl{margin-top:16px}
+.tkm-estados{display:flex;gap:7px}
+.tkm-estados button{
+  flex:1;border:0.5px solid var(--cb);border-radius:10px;padding:8px 6px;
+  font-size:12.5px;font-family:inherit;cursor:pointer;background:var(--c1);color:var(--ct1);
+  transition:border-color .15s ease,background .15s ease;
+}
+.tkm-estados button:hover:not([disabled]){border-color:var(--ct3)}
+.tkm-estados button.on{border-color:var(--acc);background:var(--acc-soft);font-weight:600}
+.tkm-estados button[disabled]{cursor:default;opacity:.55}
+.tkm-eq{display:flex;flex-direction:column;gap:5px;max-height:210px;overflow-y:auto}
+.tkm-eq button{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  border:0.5px solid transparent;border-radius:10px;padding:5px 9px 5px 5px;
+  background:none;font-family:inherit;font-size:13px;color:var(--ct1);cursor:pointer;
+}
+.tkm-eq button:hover:not([disabled]){background:var(--c0)}
+.tkm-eq button.on{border-color:var(--acc);background:var(--acc-soft)}
+.tkm-eq button[disabled]{cursor:default}
+.tkm-eq .tick{margin-left:auto;color:var(--acc);font-size:13px;font-weight:700}
+.tkm-eq .rol{font-size:10.5px;color:var(--ct3)}
+.tkm-pie{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:20px}
+.tkm-del{border:0.5px solid var(--cred);border-radius:980px;padding:8px 15px;font-size:12.5px;font-family:inherit;cursor:pointer;background:none;color:var(--cred)}
+.tkm-del:hover{background:#fff0f0}
+.tkm-ok{border:none;border-radius:980px;padding:9px 20px;font-size:13px;font-weight:500;font-family:inherit;cursor:pointer;background:var(--ct1);color:#fff}
+.tkm-ok:hover{background:#3a3a3c}
+
+/* ── Angosto ────────────────────────────────────────────────────────────── */
+@media (max-width:820px){
+  .tablero{padding:20px 14px 50px}
+  .tb-cols{grid-template-columns:1fr;gap:12px}
+  .col-body{min-height:0}
+}

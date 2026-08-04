@@ -26,9 +26,13 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+/* "Marca" es un decir: lo que se revisa es cada PAGINA con su propio bundle de
+   <script src>. El tablero de tareas (src/tareas/) no es una marca pero comparte
+   el mismo scope global con shared/, asi que corre el mismo riesgo. */
 const MARCAS = [
-  { nombre: 'apple', html: 'src/apple/index.html' },
-  { nombre: 'poly',  html: 'src/poly/index.html'  }
+  { nombre: 'apple',  html: 'src/apple/index.html'  },
+  { nombre: 'poly',   html: 'src/poly/index.html'   },
+  { nombre: 'tareas', html: 'src/tareas/index.html' }
 ];
 
 /* Solo definiciones en COLUMNA 0: lo que esta indentado vive dentro de un IIFE

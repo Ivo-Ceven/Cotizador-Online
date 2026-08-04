@@ -65,9 +65,17 @@
   .mcard.soon{opacity:.5;pointer-events:none;box-shadow:none}
   .badge{display:inline-block;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--ct2);background:var(--c3);border-radius:980px;padding:3px 9px;margin-top:6px}
 
-  /* ── Tareas del equipo ── */
-  #todos-panel{width:100%;max-width:520px;margin-top:34px;background:#fff;border:0.5px solid var(--cb);border-radius:16px;padding:18px 20px 14px;box-shadow:var(--sh2)}
-  #todos-panel .hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+  /* ── Tareas del equipo ──
+     Se entra igual que a un cotizador, con la misma tarjeta. Pero NO es una
+     marca: va en su propia fila, separada por un filete, para que el panel siga
+     leyéndose como "elegí la marca" y esto quede claramente aparte. */
+  .extras{margin-top:30px;padding-top:26px;border-top:0.5px solid var(--cb);width:100%;max-width:568px;display:flex;justify-content:center}
+  .tcard{width:100%;max-width:400px;--acc:#30a46c}
+  .tcard .mcard-mark{display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--c3);border-radius:10px}
+  /* Pendientes: el único dato del tablero que sigue estando en el shell — para
+     eso está la tarjeta, para no tener que entrar a ver si hay algo. */
+  #tareas-badge{display:inline-block;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:#fff;background:var(--acc);border-radius:980px;padding:3px 9px;margin-top:6px}
+  #tareas-badge[data-vacio="1"]{color:var(--ct2);background:var(--c3)}
 
   /* ── Formularios y botones propios del shell ── */
   .inp{border:0.5px solid var(--cb);border-radius:9px;padding:9px 11px;font-size:14px;width:100%;outline:none;margin-bottom:13px;font-family:inherit;background:#fff}
@@ -146,20 +154,21 @@
   </div>
 
   <!-- ============================================================
-       TAREAS DEL EQUIPO · organizador colaborativo compartido entre
-       marcas (ver shared/todos.js). Checklist simple: texto + quién
-       la creó + hecha/pendiente.
+       TAREAS DEL EQUIPO · tablero compartido entre marcas. Desde la
+       v5.1 se entra a él como a un cotizador (src/tareas/); acá queda
+       solo la puerta y el conteo de pendientes, que lo pinta
+       shared/todos.js.
        ============================================================ -->
-  <div id="todos-panel">
-    <div class="hd">
-      <div class="h3">✅ Tareas del equipo</div>
-      <div class="sub">Compartidas entre todas las marcas</div>
-    </div>
-    <form onsubmit="return addTodo(event)" style="display:flex;gap:8px;margin-bottom:6px">
-      <input id="todo-input" type="text" placeholder="Agregar una tarea..." class="inp" style="margin-bottom:0;flex:1">
-      <button type="submit" class="btn-dark" style="padding:9px 16px;white-space:nowrap">Agregar</button>
-    </form>
-    <div id="todo-list"></div>
+  <div class="extras">
+    <a class="mcard tcard" href="tareas/" title="Abrir el tablero de tareas del equipo">
+      <span class="mcard-mark" aria-hidden="true">✅</span>
+      <span class="mcard-body">
+        <b>Tareas del equipo</b>
+        <span>To do · Doing · Done, con miembros delegados</span>
+        <span id="tareas-badge" data-vacio="1">Al día</span>
+      </span>
+      <span class="mcard-go" aria-hidden="true">→</span>
+    </a>
   </div>
 </div>
 

@@ -22,9 +22,17 @@
 
    Depende de: auth.js (rol, sesión) y —si es un cotizador— brand.js.
    El shell la usa sin navItems: solo el wordmark y la cuenta.
+
+   Hay un tercer caso: páginas que NO son de marca pero tampoco son el shell
+   (src/tareas/). Declaran `window.CEVEN_PAGE = {label, icon}` antes de cargar
+   este archivo y con eso reciben chip propio y vuelta al panel. Es un objeto
+   aparte y no un CEVEN_BRAND falso a propósito: un brand.js de mentira
+   arrastraría todo el contrato de marca (theme, prefix, pipeCols, el botón de
+   modo oscuro que acá no tiene a quién llamar) para usar dos campos.
    ============================================================================ */
 (function(){
   var B = window.CEVEN_BRAND || null;
+  var P = (!B && window.CEVEN_PAGE) ? window.CEVEN_PAGE : null;
 
   /* Cara visible de cada marca: el logo oficial, en icons/brands/. Vive acá y no
      en brand.js porque es la misma tarjeta que muestra el panel del shell: si se
@@ -66,6 +74,8 @@
   function build(){
     var items   = (B && B.navItems) || [];
     var esMarca = !!B;
+    // Todo lo que cuelga un nivel abajo de la raíz vuelve al panel; el shell ya está ahí.
+    var vuelve  = !!(B || P);
     var hayUsuarios = !!document.getElementById('ceven-users-modal');
 
     var h = '<header class="cvnav"><div class="cvnav-in">';
@@ -76,14 +86,14 @@
     var mark = mk
       ? '<img class="cvnav-mark" src="../icons/brands/' + mk.img + '" alt="" width="18" height="18"' +
         (mk.mono ? ' data-mono="1"' : '') + '>'
-      : '<span class="cvnav-mark">' + (esMarca ? '📄' : '📊') + '</span>';
+      : '<span class="cvnav-mark">' + esc((P && P.icon) || (esMarca ? '📄' : '📊')) + '</span>';
 
     h += '<button class="cvnav-brand" id="cvnav-home"' +
-         (esMarca ? ' title="Volver al panel de marcas"' : ' disabled') + '>' +
+         (vuelve ? ' title="Volver al panel de marcas"' : ' disabled') + '>' +
          mark +
-         '<span class="cvnav-name">Ceven' +
-           (esMarca ? '<i>·</i><b>' + esc(B.label) + '</b>' : '<i>·</i><b>Cotizadores</b>') +
-         '</span></button>';
+         '<span class="cvnav-name">Ceven<i>·</i><b>' +
+           esc(B ? B.label : (P ? P.label : 'Cotizadores')) +
+         '</b></span></button>';
 
     // Vistas
     h += '<nav class="cvnav-links" id="cvnav-links" aria-label="Secciones">';
@@ -117,7 +127,7 @@
   /* ── Cableado ─────────────────────────────────────────────────────────── */
   function wire(){
     var home = document.getElementById('cvnav-home');
-    if(home && B) home.addEventListener('click', function(){ location.href = '../index.html'; });
+    if(home && (B || P)) home.addEventListener('click', function(){ location.href = '../index.html'; });
 
     var links = document.getElementById('cvnav-links');
     if(links) links.addEventListener('click', function(ev){

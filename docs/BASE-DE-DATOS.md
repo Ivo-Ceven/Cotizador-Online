@@ -55,13 +55,21 @@ create table public.pipeline (
 -- Poly. Sincroniza por REST directo (shared/todos.js), no por el intercept de
 -- localStorage de los cotizadores. Agregada 2026-07-27.
 create table public.todos (
-  id        bigint primary key,   -- Date.now() generado por el cliente
+  id        bigint primary key,   -- generado por el cliente: Date.now()*1000 + ruido
   texto     text not null,
-  hecho     boolean not null default false,
+  hecho     boolean not null default false,   -- espejo de estado='done', ver abajo
+  estado    text not null default 'todo',     -- todo | doing | done (columna del tablero)
+  asignados jsonb not null default '[]',      -- emails @ceven.com delegados
   "creadoPor" text,               -- nombre o email de quien la creó
   fecha     text,                 -- dd/mm/aaaa (para mostrar)
   "fechaISO" text                 -- ISO 8601 (para ordenar)
 );
+-- `hecho` quedó redundante con `estado`, pero NO se borra: la app es una PWA
+-- offline-first, así que después de un deploy siguen habiendo navegadores con
+-- el bundle anterior mandando PATCH {"hecho":true} sin saber que existe
+-- `estado`. El trigger `todos_sync_estado` deriva uno del otro (gana el que
+-- cambió; si cambian los dos, gana `estado`) para que no puedan desfasarse.
+-- Se puede dropear junto con el trigger cuando no queden clientes viejos.
 alter table public.todos enable row level security;
 create policy "authenticated full access" on public.todos
   for all to authenticated using (true) with check (true);
@@ -99,6 +107,8 @@ Desde el **31/07/2026** hay cuatro policies por tabla (una por operación) en ve
 | `@ceven.com` con rol `admin` | todo | todo |
 
 Las policies llaman a cuatro funciones: `ceven_is_staff()` (dominio), `ceven_role()`, `ceven_is_writer()` y `ceven_can_write_brand(b)`.
+
+Hay una quinta que **no** es de policies sino de lectura directa desde la app: **`ceven_equipo()`** (migración `20260804100000`), que devuelve email, nombre y rol de las cuentas `@ceven.com`. La necesita el tablero de tareas para poder arrastrar un miembro sobre una tarjeta; hasta entonces la única forma de listar usuarios era la Edge Function `admin-users`, que solo responde a `admin@ceven.com` — o sea que delegar habría sido una función de un solo usuario. Es `security definer` porque `auth.users` no es legible por `authenticated` (ni debe serlo): devuelve **solo esos tres campos** y lleva el filtro `ceven_is_staff()` adentro del cuerpo, así que con un token que no sea `@ceven.com` devuelve cero filas.
 
 Dos decisiones que conviene no revertir sin entenderlas:
 
