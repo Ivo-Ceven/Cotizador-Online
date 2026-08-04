@@ -135,15 +135,32 @@ if(eB && eS && eQ){
 }
 
 /* ── 4. columnas que se mandan a Supabase ─────────────────────────────────── */
-const columnas = ['id', 'texto', 'hecho', 'estado', 'asignados', 'creadoPor', 'fecha', 'fechaISO'];
+const columnas = ['id', 'texto', 'hecho', 'estado', 'asignados', 'creadoPor', 'fecha', 'fechaISO', 'terminadaEn'];
 for(const c of columnas){
   const enStore = new RegExp('\\b' + c + ':').test(storeJs);
   if(!enStore) fallo('todos.js ya no arma la columna ' + c + ' — revisar normalizar()');
 }
-for(const c of ['estado', 'asignados']){
-  if(!new RegExp('add column if not exists ' + c + '\\b').test(sql)){
-    fallo('la migracion no agrega la columna ' + c);
+/* Contra TODAS las migraciones, no contra una: las columnas del tablero se
+   fueron agregando en archivos distintos y atarlo a uno solo obliga a editar
+   este script cada vez que aparece otro. */
+const sqlTodas = fs.readdirSync(path.join(ROOT, 'supabase/migrations'))
+  .filter(f => f.endsWith('.sql'))
+  .map(f => fs.readFileSync(path.join(ROOT, 'supabase/migrations', f), 'utf8'))
+  .join('\n');
+for(const c of ['estado', 'asignados', '"terminadaEn"']){
+  /* (?![\w]) y no \b: los nombres camelCase van entre comillas dobles en SQL, y
+     \b despues de un `"` seguido de un espacio no matchea (ninguno de los dos
+     es caracter de palabra). */
+  if(!new RegExp('add column if not exists ' + c + '(?![\\w])').test(sqlTodas)){
+    fallo('ninguna migracion agrega la columna ' + c);
   }
+}
+
+/* `terminadaEn` la escribe SOLO el trigger: si el cliente empezara a mandarla,
+   el reloj del navegador (que es del usuario) pasaria a decidir que se archiva
+   para todo el equipo. payload() tiene que seguir sacandola. */
+if(!/if\(k === 'terminadaEn'\) continue;/.test(storeJs)){
+  fallo('todos.js ya no excluye terminadaEn del payload — la escribiria el cliente');
 }
 
 /* ── 5. clases que pisan a base.css ───────────────────────────────────────── */

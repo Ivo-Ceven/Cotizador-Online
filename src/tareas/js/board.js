@@ -63,6 +63,12 @@
 
   var _filtro = '';   // email por el que está filtrado el tablero ('' = todas)
 
+  /* Mostrar u ocultar las terminadas hace más de cevenTareas.DIAS_ARCHIVO.
+     Arranca oculto en cada carga y no se persiste: el estado normal del tablero
+     es "lo que está vivo", y dejarlo pegado entre sesiones convertiría el
+     archivado en algo que hay que volver a apagar a mano. */
+  var _verArchivadas = false;
+
   function esc(s){
     return (typeof cevenEsc === 'function') ? cevenEsc(s) : String(s == null ? '' : s);
   }
@@ -140,8 +146,10 @@
     if(!avs) avs = '<span class="tk-sin">Sin delegar</span>';
 
     var meta = esc(t.creadoPor) + ((t.creadoPor && t.fecha) ? ' · ' : '') + esc(t.fecha);
+    var arch = cevenTareas.esArchivada(t);
+    if(arch) meta = 'archivada · ' + meta;
 
-    return '<article class="tk" data-id="' + t.id + '" tabindex="0"'
+    return '<article class="tk' + (arch ? ' tk-arch' : '') + '" data-id="' + t.id + '" tabindex="0"'
          + (escribe() ? ' draggable="true"' : '')
          + ' aria-label="' + esc(t.texto) + '">'
          +   '<div class="tk-txt">' + esc(t.texto) + '</div>'
@@ -172,11 +180,30 @@
       var cnt  = sec.querySelector('[data-cnt]');
 
       var lista = visibles.filter(function(t){ return t.estado === c.id; });
+
+      /* Archivado: solo puede haber en done, y el botón vive en su encabezado.
+         El conteo de la columna cuenta lo que se VE — si dijera el total, la
+         cabecera contradiría a la lista de abajo. */
+      var arch = sec.querySelector('[data-arch]');
+      if(arch){
+        var archivadas = lista.filter(cevenTareas.esArchivada).length;
+        if(!_verArchivadas) lista = lista.filter(function(t){ return !cevenTareas.esArchivada(t); });
+        arch.hidden = !archivadas;
+        arch.textContent = _verArchivadas
+          ? 'ocultar archivadas'
+          : archivadas + (archivadas === 1 ? ' archivada' : ' archivadas');
+        arch.setAttribute('aria-pressed', _verArchivadas ? 'true' : 'false');
+        arch.title = 'Terminadas hace más de ' + cevenTareas.DIAS_ARCHIVO + ' días. No se borran.';
+      }
       /* Más nuevas arriba. El tablero no guarda un orden manual: agregar una
          columna `orden` es aditivo y se puede hacer después, pero un orden
          arrastrable exige resolver también el reordenamiento concurrente entre
          varias personas, y eso es otro trabajo. */
       lista.sort(function(a, b){
+        // Las archivadas, al final: cuando se muestran no tienen que empujar
+        // hacia abajo a las que siguen importando.
+        var aa = cevenTareas.esArchivada(a), ab = cevenTareas.esArchivada(b);
+        if(aa !== ab) return aa ? 1 : -1;
         var d = String(b.fechaISO || '').localeCompare(String(a.fechaISO || ''));
         return d !== 0 ? d : (b.id - a.id);
       });
@@ -289,8 +316,15 @@
       }
     });
 
-    /* Click: quitar un delegado si se tocó su avatar, abrir el detalle si no. */
+    /* Click: mostrar/ocultar archivadas, quitar un delegado si se tocó su
+       avatar, o abrir el detalle. El botón de archivadas va PRIMERO porque vive
+       en el encabezado de la columna, fuera de cualquier `.tk`. */
     $cols.addEventListener('click', function(ev){
+      if(cerca(ev.target, '[data-arch]')){
+        _verArchivadas = !_verArchivadas;
+        render();
+        return;
+      }
       var quitar = cerca(ev.target, '[data-quitar]');
       if(quitar){
         var card0 = cerca(quitar, '.tk');

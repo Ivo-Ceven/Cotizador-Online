@@ -102,6 +102,15 @@ body{padding-bottom:0}
   font-size:11px;font-weight:600;color:var(--ct2);background:var(--c1);
   border-radius:980px;padding:2px 9px;font-variant-numeric:tabular-nums;
 }
+/* Solo en Done. Deliberadamente discreto: es una salida de emergencia para ir a
+   buscar algo terminado, no una cuarta pestaña del tablero. */
+.col-arch{
+  border:none;background:none;font-family:inherit;font-size:10.5px;color:var(--ct2);
+  cursor:pointer;padding:2px 6px;border-radius:980px;text-decoration:underline;
+  text-underline-offset:2px;white-space:nowrap;
+}
+.col-arch:hover{color:var(--ct1);background:var(--c1);text-decoration:none}
+.col-arch[aria-pressed="true"]{color:var(--ct1);background:var(--c1);text-decoration:none}
 /* Un color por columna: es la señal que se lee de reojo cuando el tablero
    está lleno y los tres bloques tienen la misma forma. */
 .col[data-estado="doing"] .col-dot{background:var(--corg)}
@@ -126,6 +135,11 @@ body{padding-bottom:0}
 /* Resaltado al pasarle un miembro por encima: el borde completo, no el
    outline punteado de las columnas, para que no se confundan los dos gestos. */
 .tk.sobre{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-soft),var(--sh2)}
+/* Archivada: sigue siendo una tarjeta normal (se puede abrir, mover y
+   re-delegar), solo que apagada — el borde punteado dice "esto ya no cuenta"
+   sin sacarle nada. */
+.tk-arch{background:transparent;border-style:dashed;border-color:var(--cb);box-shadow:none;opacity:.62}
+.tk-arch:hover{opacity:1;box-shadow:var(--sh1)}
 .tk-txt{font-size:13px;line-height:1.4;color:var(--ct1);word-break:break-word;white-space:pre-wrap}
 .col[data-estado="done"] .tk-txt{color:var(--ct2);text-decoration:line-through}
 .tk-pie{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px}

@@ -86,8 +86,13 @@
       <div class="col-hd"><span class="col-dot"></span><b>Doing</b><span class="col-cnt" data-cnt>0</span></div>
       <div class="col-body" data-body></div>
     </section>
+    <!-- Done es la única con botón de archivadas: lo que lleva más de 3 días
+         terminado sale del tablero pero NO se borra (ver shared/todos.js
+         esArchivada() y la migración 20260804180000). -->
     <section class="col" data-estado="done">
-      <div class="col-hd"><span class="col-dot"></span><b>Done</b><span class="col-cnt" data-cnt>0</span></div>
+      <div class="col-hd"><span class="col-dot"></span><b>Done</b>
+        <button type="button" class="col-arch" data-arch hidden></button>
+        <span class="col-cnt" data-cnt>0</span></div>
       <div class="col-body" data-body></div>
     </section>
   </div>

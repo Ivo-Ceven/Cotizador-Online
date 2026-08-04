@@ -106,8 +106,22 @@
                    : [],
       creadoPor: r.creadoPor || '',
       fecha:     r.fecha     || '',
-      fechaISO:  r.fechaISO  || ''
+      fechaISO:  r.fechaISO  || '',
+      /* Cuándo pasó a done — la escribe el trigger de la base, no el cliente
+         (ver la migración 20260804180000). Se fuerza a null fuera de done para
+         que una fila que quedó sucia en el servidor no archive nada acá. */
+      terminadaEn: (estado === 'done' && r.terminadaEn) ? String(r.terminadaEn) : null
     };
+  }
+
+  /* ¿Ya se puede sacar del tablero? Terminada hace más de DIAS_ARCHIVO.
+     Sin fecha todavía (recién movida offline, o el poll no volvió) cuenta como
+     NO archivada: el error seguro es dejarla a la vista, no esconderla. */
+  var DIAS_ARCHIVO = 3;
+  function esArchivada(t){
+    if(!t || t.estado !== 'done' || !t.terminadaEn) return false;
+    var ms = Date.parse(t.terminadaEn);
+    return isFinite(ms) && (Date.now() - ms) > DIAS_ARCHIVO * 86400000;
   }
 
   /* Lo que se manda al servidor. Con la migración sin aplicar se recortan las
@@ -118,6 +132,11 @@
     for(var k in campos){
       if(!Object.prototype.hasOwnProperty.call(campos, k)) continue;
       if(_sinTablero && (k === 'estado' || k === 'asignados')) continue;
+      /* `terminadaEn` NUNCA viaja: es del trigger. El reloj del navegador lo
+         pone el usuario, y una máquina adelantada archivaría tareas de más para
+         todo el equipo. Además evita que la columna 400ee el request entero si
+         la app se deploya antes que la migración 20260804180000. */
+      if(k === 'terminadaEn') continue;
       out[k] = campos[k];
     }
     return out;
@@ -313,8 +332,20 @@
   function actualizar(id, campos){
     var t = porId(id);
     if(!t || !puedeEscribir()) return false;
+    var eraDone = t.estado === 'done';
     Object.assign(t, campos);
     t.hecho = t.estado === 'done';
+    /* Espejo local de lo que va a hacer el trigger, para que la pantalla no
+       espere al próximo repaso. El valor del servidor lo pisa en el primer
+       poll; que difieran unos segundos no puede archivar nada de más, porque
+       una tarea recién terminada está a DIAS_ARCHIVO del corte de cualquier
+       forma. La condición es "entrar" a done, no "estar": renombrar o delegar
+       una terminada no le reinicia el reloj. */
+    if(t.estado === 'done'){
+      if(!eraDone) t.terminadaEn = new Date().toISOString();
+    } else {
+      t.terminadaEn = null;
+    }
     tocar(t.id);
     emit();
     /* `hecho` viaja siempre junto a `estado`: el trigger de la base lo derivaría
@@ -390,6 +421,11 @@
   /* ── API pública ───────────────────────────────────────────────────────── */
   window.cevenTareas = {
     ESTADOS: ESTADOS.slice(),
+    DIAS_ARCHIVO: DIAS_ARCHIVO,
+    /* Vive acá y no en el tablero para que haya UNA sola definición de
+       "archivada": el día que el shell quiera contarlas, o que aparezca otra
+       vista, no puede haber dos cortes distintos. */
+    esArchivada: esArchivada,
 
     /* Copias: el tablero ordena y filtra sobre lo que recibe, y no tiene por
        qué poder mutar el store de rebote. */
