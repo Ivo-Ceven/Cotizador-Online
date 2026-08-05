@@ -287,9 +287,32 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 .crow.enq td{background:#eaf7ee}
 .crow.enq td:first-child{box-shadow:inset 3px 0 0 var(--cgreen)}
 .crow.enq:hover td{background:#dff2e6}
-.cat-sumar{white-space:nowrap}
+/* El `+` de agregar: celeste azulado, para que se lea como la acción principal
+   de la lista y no se confunda con el negro de "Guardar" ni con el rojo de
+   eliminar. `!important` porque el botón sale con la clase `.bd`, que ya trae
+   fondo negro. */
+.cat-sumar{white-space:nowrap;background:#2f9be0!important;color:#fff!important;border:none!important}
+.cat-sumar:hover{background:#1f8bd0!important}
 .cat-quitar{white-space:nowrap;color:#15863a!important;border-color:#34c759!important}
 .cat-quitar:hover{background:#eaf7ee!important}
+
+/* Cantidad con − y + en la tabla de la cotización. El input queda en el medio
+   para poder escribir un número grande de una. */
+.qstepper{display:inline-flex;align-items:center;gap:4px}
+.qstepper input{width:46px;text-align:center}
+.qstep{
+  border:0.5px solid var(--cb);background:var(--c1);color:var(--ct1);
+  width:22px;height:22px;border-radius:6px;cursor:pointer;
+  font-family:inherit;font-size:13px;line-height:1;padding:0;flex-shrink:0;
+}
+.qstep:hover{background:var(--c3)}
+/* Eliminar la línea. Se lee como acción destructiva sin gritar: gris hasta que
+   el mouse encima lo pone rojo. */
+.q-del{
+  border:none;background:none;color:var(--ct3);cursor:pointer;
+  font-size:14px;line-height:1;padding:3px 5px;border-radius:6px;font-family:inherit;
+}
+.q-del:hover{color:var(--cred);background:#fff0f0}
 .si{text-align:right;padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:13px;font-family:inherit;background:#fff}
 .no-spin::-webkit-outer-spin-button,.no-spin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .no-spin{-moz-appearance:textfield}
@@ -345,7 +368,20 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 .pk-x:hover{background:var(--c3)}
 .pk-filtros{display:flex;gap:8px;padding:12px 20px;flex-shrink:0}
 .pk-filtros textarea{flex:1;padding:8px 12px;border:0.5px solid var(--cb);border-radius:8px;font-size:14px;font-family:inherit;resize:none;min-height:36px;line-height:1.4}
-.pk-filtros select{width:auto;min-width:130px}
+
+/* Categorías en globitos. El color de cada uno lo pone el JS (pastel derivado
+   del nombre, estable entre importaciones); acá va solo la forma. */
+.pk-rubros{display:flex;flex-wrap:wrap;gap:6px;padding:0 20px 12px;flex-shrink:0}
+.pk-rub{
+  border:1px solid var(--cb);border-radius:980px;padding:4px 13px;
+  font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;
+  background:var(--c1);color:var(--ct2);white-space:nowrap;
+  transition:filter .15s ease,box-shadow .15s ease;
+}
+.pk-rub:hover{filter:brightness(.96)}
+/* Activo: un anillo, no un color distinto. Cambiarle el fondo al elegido
+   rompería la asociación color↔categoría, que es justo lo que se busca. */
+.pk-rub.on{box-shadow:0 0 0 2px var(--ct1);font-weight:600}
 /* La lista scrollea sola: el pie con la cotización tiene que quedar SIEMPRE a
    la vista — es lo que hace que se vea crecer lo que se está agregando. */
 .pk-lista{flex:1;overflow-y:auto;padding:0 20px;min-height:120px}

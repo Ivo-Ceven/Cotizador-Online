@@ -131,11 +131,36 @@ elegir productos.
   saliendo en el PDF, que es lo que ve el cliente. Lo que ya no hay es forma de
   cambiarlo desde la app.
 
+### Ajustes de uso (misma tanda, `APP_VERSION` 5.7)
+
+- **La fila de la cotización perdió el ✎ y quedó solo la papelera.** En esa
+  tabla ya se editan a mano la cantidad, el nivel, el precio y la nota; lo único
+  que quedaba detrás del lápiz era cambiarle el SKU y la descripción a una
+  línea, que es raro y se confundía con "editar el producto del catálogo".
+  Se borraron también `openQuoteItemEdit()` / `closeQuoteItemEdit()` /
+  `saveQuoteItemEdit()` y el markup de `#qitem-edit-modal`: sin el ✎ quedaban
+  sin punto de entrada. **Apple lo conserva** — allá el ✎ sigue en la fila.
+- **Cantidad con `−` y `+`**, conservando el input: escribir 12 de una es más
+  rápido que apretar doce veces. Los pasos leen del ítem y **no del input**,
+  porque el valor del DOM puede estar a medio tipear ("1" mientras se escribe
+  "12" haría que el `+` salte a 2 en vez de a 13). Bajar de 1 no borra la línea:
+  para eso está la papelera.
+- **Las categorías de la flotante pasaron de `<select>` a globitos pastel.** El
+  color sale de un hash del nombre y es estable entre importaciones — si "AUDIO"
+  cambiara de color, dejaría de servir como señal. El activo se marca con un
+  anillo y no con otro color, por lo mismo. Tocar el activo saca el filtro.
+  La elegida vive en el `data-rubro` del contenedor, así `_rubroElegido()` la lee
+  igual que el `value` de un `<select>` y el filtrado sigue siendo uno solo.
+- **El `+` de agregar quedó celeste azulado** (`#2f9be0`): se lee como la acción
+  principal de la lista, sin competir con el negro de Guardar ni el rojo de
+  eliminar.
+
 **Verificación**: en navegador, con el harness aislado. Se probó el alta con `+`,
 el estado verde, los `−/+` del carrito, el `×`, el filtro por categoría, el
 pegado de cuatro SKUs (uno repetido y uno inexistente), Escape, y que la tabla
-de la cotización coincida con el carrito. Estáticos: `check-globals`,
-`check-precache`, `check-tareas`.
+de la cotización coincida con el carrito. De los ajustes: los globitos filtran y
+se destildan, los pasos de cantidad suben y no bajan de 1, y en la fila ya no
+hay lápiz. Estáticos: `check-globals`, `check-precache`, `check-tareas`.
 
 ---
 

@@ -49,6 +49,13 @@ body.dark .crow.enq:hover td{background:rgba(52,199,89,.24)!important}
 body.dark .pk-filtros textarea{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark .pk-lista thead th{background:var(--ch)!important}
 body.dark .pk-step{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
+body.dark .qstep{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
+body.dark .qstep:hover{background:#48484a!important}
+body.dark .q-del:hover{background:rgba(255,69,58,.15)!important}
+/* Los globitos de categoria llevan color inline (pastel claro): sobre fondo
+   oscuro se bajan de brillo en bloque en vez de recalcularlos uno por uno. */
+body.dark .pk-rub{filter:brightness(.72) saturate(1.15)}
+body.dark .pk-rub.on{box-shadow:0 0 0 2px var(--ct1)!important;filter:brightness(.85) saturate(1.15)}
 /* inputs / selects */
 body.dark input:not([type=file]){background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark select{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}

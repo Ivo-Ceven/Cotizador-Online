@@ -24,7 +24,17 @@ function renderQ() {
     html+='<tr>'
       +'<td style="font-weight:500">'+cevenEsc(it.sku)+'</td>'
       +'<td class="wrap">'+cevenEsc(it.description)+'</td>'
-      +'<td style="text-align:right"><input class="si" type="number" min="1" value="'+cevenEsc(it.qty)+'" style="width:48px" data-act="qty" data-id="'+idA+'"></td>'
+      /* Cantidad con − y +. El input queda: escribir 12 de una es más rápido que
+         apretar doce veces, y los botones cubren el ajuste de a uno, que es el
+         caso normal. Bajar de 1 no hace nada — para sacar la línea está la
+         papelera, y que el − la borre de sorpresa sería otra cosa. */
+      +'<td style="text-align:right;white-space:nowrap">'
+        +'<span class="qstepper">'
+          +'<button class="qstep" data-act="qmenos" data-id="'+idA+'" title="Restar uno">−</button>'
+          +'<input class="si" type="number" min="1" value="'+cevenEsc(it.qty)+'" data-act="qty" data-id="'+idA+'">'
+          +'<button class="qstep" data-act="qmas" data-id="'+idA+'" title="Sumar uno">+</button>'
+        +'</span>'
+      +'</td>'
       // Nivel de precio de esta línea (poly/js/tiers.js). Cada opción muestra su
       // precio: el orden de los niveles NO implica cuál es más caro.
       +'<td style="overflow:visible">'+tierSelectHTML(it)+'</td>'
@@ -36,9 +46,13 @@ function renderQ() {
       +'</td>'
       +'<td style="text-align:right;font-weight:500">'+cevenEsc(dp(lineTotal))+'</td>'
       +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc(it.stock||'')+'" placeholder="—" style="width:100%" data-act="nota" data-id="'+idA+'"></td>'
+      /* Una sola acción: sacar la línea. Antes había además un ✎ que abría el
+         modal de edición de ítem; se sacó porque en esta tabla ya se editan a
+         mano la cantidad, el nivel, el precio y la nota, y lo único que quedaba
+         detrás del lápiz era cambiarle el SKU y la descripción a una línea, que
+         es raro y confundía con "editar el producto del catálogo". */
       +'<td style="text-align:center;white-space:nowrap">'
-      +'<button class="bs" data-act="edit" data-id="'+idA+'" title="Editar SKU/descripción/precio (solo esta cotización)" style="padding:2px 6px;font-size:12px;margin-right:3px">✎</button>'
-      +'<button class="bsr" data-act="rm" data-id="'+idA+'" title="Eliminar">×</button>'
+      +'<button class="q-del" data-act="rm" data-id="'+idA+'" title="Eliminar de la cotización">🗑</button>'
       +'</td>'
       +'</tr>';
   }
@@ -62,8 +76,18 @@ function _qBindDelegation(){
     var el = cevenActEl(ev, this);
     if(!el) return;
     var act = el.getAttribute('data-act'), id = el.getAttribute('data-id');
-    if(act === 'edit')     openQuoteItemEdit(id);
-    else if(act === 'rm')  rmItem(id);
+    if(act === 'rm')  rmItem(id);
+    /* Los pasos de cantidad leen del ítem y no del input: el valor del DOM
+       puede estar a medio tipear, y un `parseInt` de "1" mientras alguien
+       escribe "12" haría que el + salte a 2 en vez de a 13. */
+    else if(act === 'qmas' || act === 'qmenos'){
+      for(var i=0;i<items.length;i++){
+        if(String(items[i].id) === String(id)){
+          upQty(id, items[i].qty + (act === 'qmas' ? 1 : -1));
+          break;
+        }
+      }
+    }
   });
   cevenDelegate('qbody', 'change', function(ev){
     var el = cevenActEl(ev, this);
@@ -110,59 +134,11 @@ function upUnitPrice(id, v){
   renderQ();
 }
 
-// ── Edición de ítem desde la cotización (no toca el catálogo) ──
-var _qieEditId = null;
-
-function openQuoteItemEdit(id){
-  var it = null;
-  for(var i=0;i<items.length;i++){ if(String(items[i].id)===String(id)){ it=items[i]; break; } }
-  if(!it) return;
-  _qieEditId = id;
-  document.getElementById('qie-sku').value   = it.sku || '';
-  document.getElementById('qie-desc').value  = it.description || '';
-  document.getElementById('qie-price').value = (it.salePrice===''||it.salePrice==null) ? '' : it.salePrice;
-  document.getElementById('qie-nota').value  = it.stock || '';
-  document.getElementById('qie-err').style.display = 'none';
-  var _m = document.getElementById('qitem-edit-modal');
-  var _wasOpen = _m.style.display === 'flex';
-  _m.style.display = 'flex';
-  if(window.cevenNav && !_wasOpen) cevenNav.openOverlay(closeQuoteItemEdit);
-}
-
-function closeQuoteItemEdit(){
-  _qieEditId = null;
-  document.getElementById('qitem-edit-modal').style.display = 'none';
-  if(window.cevenNav) cevenNav.notifyClosed(closeQuoteItemEdit);
-}
-
-function saveQuoteItemEdit(){
-  var sku      = document.getElementById('qie-sku').value.trim();
-  var desc     = document.getElementById('qie-desc').value.trim();
-  var priceStr = document.getElementById('qie-price').value.trim();
-  var nota     = document.getElementById('qie-nota').value.trim();
-  var errEl    = document.getElementById('qie-err');
-  if(!sku || !desc){
-    errEl.textContent = 'Completá SKU y Descripción.';
-    errEl.style.display = 'block';
-    return;
-  }
-  var price = priceStr === '' ? '' : parseFloat(priceStr);
-  if(priceStr !== '' && (isNaN(price) || price < 0)){
-    errEl.textContent = 'El precio debe ser un número válido.';
-    errEl.style.display = 'block';
-    return;
-  }
-  for(var i=0;i<items.length;i++){
-    if(String(items[i].id)===String(_qieEditId)){
-      items[i].sku         = sku;
-      items[i].description = desc;
-      items[i].salePrice   = price;
-      items[i].stock       = nota;
-      break;
-    }
-  }
-  closeQuoteItemEdit();
-  renderQ();
-}
+/* Acá vivía el modal de edición de ítem (openQuoteItemEdit / saveQuoteItemEdit
+   + #qitem-edit-modal). Se sacó el 05/08/2026 junto con el botón ✎ de la fila:
+   la cantidad, el nivel, el precio y la nota se editan en la propia tabla, y lo
+   único que quedaba detrás del lápiz era cambiarle el SKU y la descripción a una
+   línea suelta — raro, y se confundía con editar el producto del catálogo.
+   Apple SÍ lo conserva: allá el ✎ sigue en la fila. */
 
 // rmItem(), editItem(), openCat() y upField() viven en shared/quote-core.js.

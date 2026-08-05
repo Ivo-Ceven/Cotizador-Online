@@ -184,8 +184,17 @@ function _pintarCarrito(){
       s.addEventListener('input', renderPicker);
       s.addEventListener('paste', function(ev){ handleSearchPaste(ev, s); });
     }
+    /* Globitos de categoría: el elegido se guarda en el contenedor. Delegado
+       porque _pintarFiltroRubro() rehace los botones en cada render. */
     var r = document.getElementById('pk-rubro');
-    if(r) r.addEventListener('change', renderPicker);
+    if(r) r.addEventListener('click', function(ev){
+      var b = ev.target.closest ? ev.target.closest('[data-rub]') : null;
+      if(!b || !r.contains(b)) return;
+      var val = b.getAttribute('data-rub');
+      // Volver a tocar el activo saca el filtro: el mismo gesto para ida y vuelta.
+      r.setAttribute('data-rubro', val === r.getAttribute('data-rubro') ? '' : val);
+      renderPicker();
+    });
   }
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);

@@ -162,10 +162,19 @@ function initCat() {
 /* El filtrado real. Recibe los campos porque hay DOS juegos: los de la vista
    Catálogo (#fsearch/#frubro) y los de la subpantalla flotante (#pk-search /
    #pk-rubro). La lógica es una sola; lo único que cambia es de dónde lee. */
+/* La categoría elegida. Hay dos formas de filtro conviviendo: el `<select>` de
+   la vista Catálogo y los globitos de la flotante, que guardan lo elegido en un
+   `data-rubro` del contenedor. Se lee acá, en un solo lugar, en vez de que cada
+   llamador sepa con cuál está hablando. */
+function _rubroElegido(el){
+  if(!el) return '';
+  return ('value' in el && el.tagName === 'SELECT') ? el.value : (el.getAttribute('data-rubro') || '');
+}
+
 function getFilteredCon(searchEl, rubroEl){
   var s = searchEl ? searchEl.value.toLowerCase().trim() : '';
   var terms = s ? s.split(/\s+/).filter(function(t){return t.length>0;}) : [];
-  var rubV = rubroEl ? rubroEl.value : '';
+  var rubV = _rubroElegido(rubroEl);
   return products.filter(function(p){
     // El rubro se compara exacto: las opciones salen de los propios productos,
     // así que un "contiene" solo agregaría falsos positivos entre categorías con
@@ -192,26 +201,66 @@ function getFiltered(){
    cotización, y perder el filtro en ese momento —justo cuando estás recorriendo
    una categoría— sería insufrible. Si el rubro elegido ya no existe (catálogo
    nuevo), se cae a "Todas" en vez de dejar la tabla vacía sin explicación. */
-function _pintarFiltroRubro(sel){
-  sel = sel || document.getElementById('frubro');
-  if(!sel) return;
-  var actual = sel.value;
+/* Color pastel estable por categoría, derivado del nombre. Estable importa: si
+   "AUDIO" cambiara de color entre importaciones, dejaría de servir como señal.
+   Saturación y luminosidad fijas para que todos empasten entre sí y el texto
+   —el mismo tono pero oscuro— se lea sobre cualquiera de ellos. */
+function _tonoRubro(nombre){
+  var h = 0, s = String(nombre || '');
+  for(var i=0;i<s.length;i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+
+function _rubrosDelCatalogo(){
   var vistos = {}, rubros = [];
   for(var i=0;i<products.length;i++){
     var r = String(products[i].rubro||'').trim();
     if(r && !vistos[r]){ vistos[r] = 1; rubros.push(r); }
   }
   rubros.sort(function(a,b){ return a.localeCompare(b,'es'); });
+  return rubros;
+}
+
+/* Pinta el filtro de categoría, en cualquiera de sus dos formas: el `<select>`
+   de la vista Catálogo o los globitos de la flotante. Se repuebla en cada
+   render porque importar un Excel nuevo cambia el juego de rubros.
+
+   Conserva la selección: renderCat() corre también al agregar un producto a la
+   cotización, y perder el filtro en ese momento —justo cuando estás recorriendo
+   una categoría— sería insufrible. Si el rubro elegido ya no existe (catálogo
+   nuevo), se cae a "Todas" en vez de dejar la tabla vacía sin explicación. */
+function _pintarFiltroRubro(el){
+  el = el || document.getElementById('frubro');
+  if(!el) return;
+  var rubros = _rubrosDelCatalogo();
+  var actual = _rubroElegido(el);
   if(actual && rubros.indexOf(actual) < 0) actual = '';
-  var h = '<option value="">Todas</option>';
-  for(var j=0;j<rubros.length;j++){
-    h += '<option value="'+cevenEsc(rubros[j])+'"'+(rubros[j]===actual?' selected':'')+'>'+cevenEsc(rubros[j])+'</option>';
+
+  if(el.tagName === 'SELECT'){
+    var h = '<option value="">Todas</option>';
+    for(var j=0;j<rubros.length;j++){
+      h += '<option value="'+cevenEsc(rubros[j])+'"'+(rubros[j]===actual?' selected':'')+'>'+cevenEsc(rubros[j])+'</option>';
+    }
+    el.innerHTML = h;
+    el.value = actual;
+    // Sin rubros en el catálogo (archivo viejo sin la columna) el filtro sobra.
+    var caja = el.closest ? el.closest('.card') : null;
+    if(caja) caja.style.display = rubros.length ? '' : 'none';
+    return;
   }
-  sel.innerHTML = h;
-  sel.value = actual;
-  // Sin rubros en el catálogo (archivo viejo sin la columna) el filtro sobra.
-  var caja = sel.closest ? sel.closest('.card') : null;
-  if(caja) caja.style.display = rubros.length ? '' : 'none';
+
+  // Globitos. El elegido se guarda en el contenedor, no en un estado aparte:
+  // así _rubroElegido() lo lee igual que el value de un <select>.
+  el.setAttribute('data-rubro', actual);
+  var g = '<button type="button" class="pk-rub' + (actual ? '' : ' on') + '" data-rub="">Todas</button>';
+  for(var k=0;k<rubros.length;k++){
+    var n = rubros[k], t = _tonoRubro(n);
+    g += '<button type="button" class="pk-rub' + (n===actual?' on':'') + '" data-rub="'+cevenEsc(n)+'"'
+       + ' style="background:hsl('+t+',72%,91%);color:hsl('+t+',48%,30%);border-color:hsl('+t+',52%,80%)">'
+       + cevenEsc(n) + '</button>';
+  }
+  el.innerHTML = g;
+  el.style.display = rubros.length ? '' : 'none';
 }
 
 // Filas realmente pintadas en la última pasada de renderCat(). Los handlers
