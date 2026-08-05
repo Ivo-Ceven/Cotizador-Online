@@ -46,6 +46,7 @@
   var $solo   = document.getElementById('tb-solo-lectura');
   var $texto  = document.getElementById('tarea-texto');
   var $estado = document.getElementById('tarea-estado');
+  var $tabs   = document.getElementById('tb-tabs');
 
   /* Qué se está arrastrando. El tipo MIME viaja en el dataTransfer (es lo que
      mira dragover), pero el VALOR se guarda también acá porque getData() no se
@@ -62,6 +63,35 @@
   var _renderPendiente = false;
 
   var _filtro = '';   // email por el que está filtrado el tablero ('' = todas)
+
+  /* Tablero (equipo) que se está mirando. Se guarda en localStorage y NO se
+     sincroniza: es una preferencia de esta persona en esta máquina, y
+     mandarla al equipo haría que abrir la página le cambiara la vista a otro.
+     La clave lleva el email para que dos cuentas en la misma PC no se pisen. */
+  var TABLERO_KEY = 'ceven_tablero_actual';
+  var _tablero = '';
+
+  function claveTablero(){
+    var yo = (typeof cevenSessionUser === 'function' && cevenSessionUser()) || '';
+    return TABLERO_KEY + (yo ? ':' + yo : '');
+  }
+  /* Con qué tablero se abre la página: el último que se miró, si todavía
+     existe; si no, el primero de los tuyos; si no estás en ninguno, el de por
+     defecto. Nunca queda en uno vacío por accidente. */
+  function tableroInicial(){
+    var disponibles = cevenTareas.tableros();
+    var guardado = '';
+    try{ guardado = localStorage.getItem(claveTablero()) || ''; }catch(e){}
+    if(guardado && disponibles.indexOf(guardado) >= 0) return guardado;
+    var mios = cevenTareas.misEquipos();
+    if(mios.length) return mios[0];
+    return cevenTareas.EQUIPO_DEF;
+  }
+  function irATablero(nombre){
+    _tablero = nombre;
+    try{ localStorage.setItem(claveTablero(), nombre); }catch(e){}
+    render();
+  }
 
   /* Mostrar u ocultar las terminadas hace más de cevenTareas.DIAS_ARCHIVO.
      Arranca oculto en cada carga y no se persiste: el estado normal del tablero
@@ -103,10 +133,31 @@
          + (extra || '') + '>' + esc(iniciales(n)) + '</span>';
   }
 
-  /* ── Equipo ─────────────────────────────────────────────────────────────── */
+  /* ── Pestañas de tablero ────────────────────────────────────────────────── */
+  function renderTabs(){
+    if(!$tabs) return;
+    var mios = cevenTareas.misEquipos();
+    var h = '';
+    cevenTareas.tableros().forEach(function(n){
+      var pend = cevenTareas.list().filter(function(t){
+        return t.equipo === n && t.estado !== 'done';
+      }).length;
+      h += '<button type="button" class="tab' + (n === _tablero ? ' on' : '') + '"'
+         + ' data-tablero="' + esc(n) + '"'
+         // El punto marca los tableros donde sos miembro: con muchos equipos,
+         // distinguir los tuyos de los del resto de un vistazo es todo el punto.
+         + (mios.indexOf(n) >= 0 ? ' data-mio="1" title="Sos miembro de este equipo"' : '')
+         + '>' + esc(n) + (pend ? '<span class="tab-n">' + pend + '</span>' : '') + '</button>';
+    });
+    if(escribe()) h += '<button type="button" class="tab tab-mas" data-nuevo-equipo title="Crear un equipo nuevo">＋ Equipo</button>';
+    if(escribe()) h += '<button type="button" class="tab tab-cfg" data-editar-equipo title="Miembros de este tablero">⚙</button>';
+    $tabs.innerHTML = h;
+  }
+
+  /* ── Miembros del tablero actual ────────────────────────────────────────── */
   function renderEquipo(){
     if(!$chips) return;
-    var eq = cevenTareas.equipo();
+    var eq = cevenTareas.miembrosDe(_tablero);
     var yo = (typeof cevenSessionUser === 'function' && cevenSessionUser()) || '';
 
     var h = '<button type="button" class="mb mb-todas' + (_filtro ? '' : ' on') + '" data-filtro="">'
@@ -122,18 +173,21 @@
     });
     $chips.innerHTML = h;
 
-    /* Si la RPC ceven_equipo() todavía no existe, el equipo se deduce de lo que
-       haya (yo + quien ya tenga algo asignado) y delegar en alguien nuevo se
-       vuelve imposible. Decirlo, en vez de mostrar una lista corta sin
-       explicación. */
+    /* Avisos de la base, en orden de gravedad. Que falte una columna es lo
+       primero que hay que saber: el tablero se ve entero pero los cambios de
+       ese dato no se guardan en ningún lado. */
     if($nota){
-      var falta = eq.length <= 1;
-      $nota.hidden = !falta;
-      if(falta){
-        $nota.textContent = 'No se pudo leer la lista del equipo: falta aplicar la migración '
-          + '20260804100000_tareas_tablero_y_equipo.sql en Supabase. Hasta entonces solo aparecen '
-          + 'los miembros que ya tienen alguna tarea asignada.';
+      var faltan = cevenTareas.faltantes();
+      var msg = '';
+      if(faltan.length){
+        msg = 'La base todavía no tiene ' + (faltan.length === 1 ? 'la columna' : 'las columnas') + ' '
+            + faltan.join(', ') + ': eso no se está guardando. Faltan correr las migraciones de '
+            + 'supabase/migrations (20260804180000 y 20260804200000).';
+      } else if(eq.length <= 1){
+        msg = 'Este tablero tiene un solo miembro. Sumá gente con ⚙ para poder delegarle tareas.';
       }
+      $nota.hidden = !msg;
+      $nota.textContent = msg;
     }
   }
 
@@ -162,13 +216,18 @@
 
   function render(){
     if(!window.cevenTareas) return;
+    // El tablero elegido puede haber dejado de existir (lo borró alguien, o es
+    // el primer render y todavía no hay ninguno): se resuelve antes de pintar.
+    if(!_tablero || cevenTareas.tableros().indexOf(_tablero) < 0) _tablero = tableroInicial();
+    renderTabs();
     renderEquipo();
 
     var puede = escribe();
     if($alta) $alta.hidden = !puede;
     if($solo) $solo.hidden = puede;
 
-    var todas = cevenTareas.list();
+    // Primero el tablero, después el filtro por persona: son independientes.
+    var todas = cevenTareas.list().filter(function(t){ return t.equipo === _tablero; });
     var visibles = _filtro
       ? todas.filter(function(t){ return t.asignados.indexOf(_filtro) >= 0; })
       : todas;
@@ -235,6 +294,126 @@
      que llega. Por eso el limpiado va en document y no en cada contenedor. */
   document.addEventListener('dragend', limpiar);
   document.addEventListener('drop', limpiar);
+
+  /* ── Pestañas: cambiar, crear y administrar tableros ────────────────────── */
+  if($tabs){
+    $tabs.addEventListener('click', function(ev){
+      if(cerca(ev.target, '[data-nuevo-equipo]')){ nuevoEquipo(); return; }
+      if(cerca(ev.target, '[data-editar-equipo]')){ abrirEquipo(); return; }
+      var tab = cerca(ev.target, '[data-tablero]');
+      if(!tab) return;
+      var n = tab.getAttribute('data-tablero');
+      if(n !== _tablero){
+        _filtro = '';   // el filtro por persona era del tablero anterior
+        irATablero(n);
+      }
+    });
+  }
+
+  function nuevoEquipo(){
+    if(!escribe() || typeof promptModal !== 'function') return;
+    promptModal('Nombre del equipo nuevo', '', function(nombre){
+      nombre = String(nombre || '').trim();
+      if(!nombre) return;
+      if(cevenTareas.tableros().indexOf(nombre) >= 0){
+        if(typeof showToast === 'function') showToast('Ya existe un equipo llamado "' + nombre + '".');
+        return;
+      }
+      if(cevenTareas.crearEquipo(nombre)) irATablero(nombre);
+    }, {okLabel: 'Crear'});
+  }
+
+  /* Modal de miembros del tablero. Mismo patrón que el detalle de una tarea: se
+     crea una vez, se repinta por dentro y los listeners viven en el contenedor. */
+  function cerrarEquipo(){
+    var m = document.getElementById('eq-modal');
+    if(m && m.parentNode) m.parentNode.removeChild(m);
+    if(window.cevenNav) cevenNav.notifyClosed(cerrarEquipo);
+  }
+
+  function pintarEquipo(){
+    var wrap = document.getElementById('eq-modal');
+    if(!wrap) return;
+    var actual = cevenTareas.miembrosDe(_tablero).map(function(u){ return u.email; });
+    var tieneFila = cevenTareas.equipos().some(function(e){ return e.nombre === _tablero; });
+    var esDefecto = _tablero === cevenTareas.EQUIPO_DEF;
+
+    /* La lista para tildar es TODA la gente de Ceven, no los miembros: el punto
+       del modal es justamente sumar a alguien que todavía no está. */
+    var filas = cevenTareas.personas().map(function(u){
+      var on = actual.indexOf(u.email) >= 0;
+      return '<button type="button" data-miembro="' + esc(u.email) + '"' + (on ? ' class="on"' : '') + '>'
+           + avatarHTML(u.email)
+           + '<span>' + esc(u.nombre) + (u.rol ? ' <span class="rol">' + esc(u.rol) + '</span>' : '') + '</span>'
+           + (on ? '<span class="tick">✓</span>' : '')
+           + '</button>';
+    }).join('') || '<div class="sub">No se pudo leer la gente de Ceven.</div>';
+
+    wrap.innerHTML =
+      '<div class="tkm" role="dialog" aria-modal="true" aria-label="Miembros del equipo">'
+      +  '<div class="tkm-hd"><div class="h3">Equipo · ' + esc(_tablero) + '</div>'
+      +    '<button type="button" class="tkm-x" data-cerrar title="Cerrar">×</button></div>'
+      +  (tieneFila ? '' : '<div class="tb-nota" style="margin:0 0 12px">Este tablero no tiene ficha propia: '
+           + 'aparece porque hay tareas que lo nombran. Al sumar un miembro se crea.</div>')
+      +  '<div class="lbl">Quiénes aparecen para delegar acá</div>'
+      +  '<div class="tkm-eq">' + filas + '</div>'
+      +  '<div class="tkm-pie">'
+      +    (esDefecto
+            ? '<span class="sub">El tablero General no se puede eliminar.</span>'
+            : '<button type="button" class="tkm-del" data-borrar-equipo>Eliminar equipo</button>')
+      +    '<button type="button" class="tkm-ok" data-cerrar>Listo</button>'
+      +  '</div>'
+      + '</div>';
+  }
+
+  function abrirEquipo(){
+    if(!escribe()) return;
+    cerrarEquipo();
+    var wrap = document.createElement('div');
+    wrap.id = 'eq-modal';
+    document.body.appendChild(wrap);
+
+    wrap.addEventListener('click', function(ev){
+      if(ev.target === wrap || cerca(ev.target, '[data-cerrar]')){ cerrarEquipo(); return; }
+
+      var m = cerca(ev.target, '[data-miembro]');
+      if(m){
+        var email = m.getAttribute('data-miembro');
+        /* Un tablero que solo existe porque hay tareas que lo nombran no tiene
+           fila: se crea al primer cambio, o el tilde no tendría dónde guardarse. */
+        if(!cevenTareas.equipos().some(function(e){ return e.nombre === _tablero; })){
+          cevenTareas.crearEquipo(_tablero);
+        }
+        var actual = cevenTareas.miembrosDe(_tablero).map(function(u){ return u.email; });
+        if(actual.indexOf(email) >= 0) cevenTareas.quitarMiembro(_tablero, email);
+        else cevenTareas.agregarMiembro(_tablero, email);
+        pintarEquipo();
+        return;
+      }
+
+      if(cerca(ev.target, '[data-borrar-equipo]')) borrarEquipo();
+    });
+
+    pintarEquipo();
+    if(window.cevenNav) cevenNav.openOverlay(cerrarEquipo);
+  }
+
+  function borrarEquipo(){
+    var nombre = _tablero;
+    var cuantas = cevenTareas.list().filter(function(t){ return t.equipo === nombre; }).length;
+    var msg = 'Eliminar el equipo "' + nombre + '".'
+      + (cuantas
+          ? '\n\nSus ' + cuantas + (cuantas === 1 ? ' tarea pasa' : ' tareas pasan')
+            + ' al tablero ' + cevenTareas.EQUIPO_DEF + '. No se borra ninguna.'
+          : '\n\nNo tiene tareas.');
+    if(typeof confirmModal !== 'function') return;
+    confirmModal(msg, function(){
+      if(cevenTareas.eliminarEquipo(nombre)){
+        cerrarEquipo();
+        irATablero(cevenTareas.EQUIPO_DEF);
+      }
+    }, {okLabel: 'Eliminar', danger: true});
+  }
 
   /* ── Arrastrar un miembro ───────────────────────────────────────────────── */
   if($chips){
@@ -374,7 +553,9 @@
       ev.preventDefault();
       var txt = ($texto.value || '').trim();
       if(!txt) return;
-      if(cevenTareas.agregar(txt, $estado.value)) $texto.value = '';
+      // La tarea nace en el tablero que se está mirando: crearla y que aparezca
+      // en otro lado sería el peor default posible.
+      if(cevenTareas.agregar(txt, $estado.value, _tablero)) $texto.value = '';
       $texto.focus();
     });
   }
@@ -406,7 +587,16 @@
            + (puede ? '' : ' disabled') + '>' + c.label + '</button>';
     }).join('');
 
-    var eq = cevenTareas.equipo();
+    /* Tablero al que pertenece. Mover una tarea de equipo se hace desde acá y no
+       arrastrando: el gesto de arrastre ya tiene dos significados en esta
+       pantalla (mover de columna, delegar) y un tercero sería adivinanza. */
+    var tableros = cevenTareas.tableros().map(function(n){
+      return '<button type="button" data-tab="' + esc(n) + '"'
+           + (t.equipo === n ? ' class="on"' : '')
+           + (puede ? '' : ' disabled') + '>' + esc(n) + '</button>';
+    }).join('');
+
+    var eq = cevenTareas.miembrosDe(t.equipo);
     /* Alguien que ya está asignado pero salió del equipo igual tiene que poder
        sacarse de la tarea: se agrega al final de la lista para que exista una
        fila donde tocar. */
@@ -431,6 +621,7 @@
       +    '<button type="button" class="tkm-x" data-cerrar title="Cerrar">×</button></div>'
       +  '<textarea id="tkm-texto"' + (puede ? '' : ' readonly') + '></textarea>'
       +  '<div class="lbl">Columna</div><div class="tkm-estados">' + estados + '</div>'
+      +  '<div class="lbl">Equipo</div><div class="tkm-estados tkm-tabs">' + tableros + '</div>'
       +  '<div class="lbl">Delegada a</div><div class="tkm-eq">' + miembros + '</div>'
       +  '<div class="tkm-pie">'
       +    (puede ? '<button type="button" class="tkm-del" data-eliminar>Eliminar</button>' : '<span></span>')
@@ -465,6 +656,20 @@
       }
       var mv = cerca(ev.target, '[data-mover]');
       if(mv){ guardarTexto(); cevenTareas.mover(_abierta, mv.getAttribute('data-mover')); pintarDetalle(); return; }
+
+      var tb = cerca(ev.target, '[data-tab]');
+      if(tb){
+        guardarTexto();
+        var destino = tb.getAttribute('data-tab');
+        if(cevenTareas.moverAEquipo(_abierta, destino)){
+          /* Se cierra: la tarea ya no está en el tablero que se está mirando, y
+             dejar abierto el detalle de algo que desapareció de atrás confunde.
+             El cartel dice a dónde fue, que es lo que hace falta saber. */
+          cerrarDetalle();
+          if(typeof showToast === 'function') showToast('Tarea movida al equipo ' + destino + '.');
+        }
+        return;
+      }
 
       var tg = cerca(ev.target, '[data-toggle]');
       if(tg){

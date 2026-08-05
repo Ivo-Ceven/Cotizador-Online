@@ -23,6 +23,74 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 04/08/2026 · Tareas: archivado automático y tableros por equipo
+
+Migraciones `20260804180000_tareas_archivado.sql` y
+`20260804200000_tareas_equipos.sql`. `APP_VERSION` 5.1 → 5.3.
+
+### Done crecía para siempre
+
+Nada archivaba ni purgaba: el único borrado era manual, tarjeta por tarjeta.
+Ahora una tarea terminada hace más de **3 días** sale del tablero, con un botón
+en la cabecera de Done para verlas. **No se borra nada** — es archivado de
+presentación, y las filas siguen viniendo en el poll.
+
+Hizo falta una columna: `fechaISO` es cuándo se **creó** la tarea, no cuándo se
+terminó. Archivar por ese campo daba lo contrario de lo buscado — una tarea
+vieja recién terminada nacía archivada, y una creada y cerrada hoy tardaba 3
+días en irse. `terminadaEn` la escribe **solo el trigger**: el reloj del
+navegador es del usuario, y una máquina adelantada archivaría tareas de más para
+todo el equipo. El backfill usa `fechaISO` (cota inferior: se terminaron después
+de crearse), así que lo viejo queda archivado de entrada, que es el efecto
+buscado.
+
+Un detalle que costó: el sello se pone al **entrar** a done, no al **estar**. Si
+no, renombrar o delegar una tarea terminada le reiniciaba los 3 días.
+
+### Un tablero por equipo de trabajo
+
+Un solo tablero para toda la empresa mezclaba trabajos sin relación. Ahora hay
+una pestaña por equipo, con el conteo de pendientes y un punto en los tuyos.
+Crear equipos y sumar gente se hace desde el propio tablero, sin pasar por el
+admin.
+
+**⚠ Es separación de PANTALLA, no de permisos** — decisión explícita del equipo.
+El cliente se baja `todos?select=*` entero y filtra en JavaScript, y las
+policies siguen dejando que cualquier `@ceven.com` lea y escriba todos los
+equipos. Sirve para organizarse, no para esconder: un `curl` con el token de
+cualquiera lista todo. Está escrito en la migración, en `BASE-DE-DATOS.md` y en
+el encabezado de `shared/todos.js` para que nadie lo confunda más adelante.
+
+`todos.equipo` guarda el **nombre** y no una FK, porque la app es offline-first
+y una tarea creada sin conexión no puede depender de resolver un id contra el
+servidor. Efecto buscado: una tarea que nombra un equipo que ya no existe igual
+se ve, en un tablero con ese nombre. Con una FK habría desaparecido. El precio
+es que renombrar implicaría tocar todas sus tareas, así que **no se ofrece
+renombrar**: se crea otro y se mueven. Borrar un equipo **no borra sus tareas**,
+las manda a General.
+
+### Dos cosas que se llamaban igual
+
+`ceven_equipo()` (la RPC) devuelve **gente**; `equipos` (la tabla) son
+**tableros**. En el store quedaron como `personas()` y `equipos()`, con el aviso
+arriba del archivo: el nombre de la RPC no se tocó porque ya está aplicada, y
+renombrarla sería otra migración por un problema de prolijidad.
+
+### La degradación dejó de ser un booleano
+
+Había un flag `_sinTablero` para "faltan las columnas nuevas". Con tres
+migraciones en vuelo eso no alcanzaba: que faltara `equipo` habría dejado de
+mandar también `estado`. Ahora se registra **qué columna** rechazó el servidor
+(PostgREST la nombra en el error) y se recorta solo esa, reintentando — el ciclo
+termina sí o sí porque el conjunto solo crece.
+
+**Verificación**: `check-tareas.js` (ampliado con la columna nueva) más
+`check-globals` y `check-precache`. El archivado se probó en navegador con
+tareas sembradas a 2,9 / 3,1 / 40 días. **Los tableros por equipo no se
+probaron en navegador.**
+
+---
+
 ## 04/08/2026 · Las tareas del equipo pasan a ser un tablero propio
 
 Página nueva `src/tareas/` (`index.html` + `js/board.js` + `css/board.css`).
@@ -908,23 +976,29 @@ validaciones server-side.
 
 ## Pendientes
 
-### 🟢 Tareas: confirmar el trigger y el backfill en el SQL Editor
+### 🟡 Tareas: los tableros por equipo no se abrieron en un navegador
 
-La migración `20260804100000` se aplicó el 04/08/2026 y el tablero se probó
-entero en un navegador (con sesión simulada y datos sembrados: los dos
-arrastres, el detalle, el filtro, el escapado y el rol lector).
+Las tres migraciones del tablero están aplicadas y verificadas contra la base
+(05/08/2026): trigger, backfill, invariante `hecho ⇔ done ⇔ terminadaEn`,
+policies de `equipos` y el linter de seguridad sin hallazgos nuevos.
 
-Lo único que quedó sin ver son las tres cosas que no se pueden observar desde
-afuera con la publishable key, porque necesitan leer el catálogo con sesión: el
-**trigger `todos_sync_estado`**, los **CHECK** de `estado`/`asignados` y el
-**backfill** de las filas que ya existían. Están los tres comandos listos en el
-bloque de VERIFICACIÓN al final del archivo de la migración. El que importa es
-el segundo: simula el `PATCH {"hecho":true}` del cliente viejo y confirma que
-`estado` lo sigue.
+Lo que falta es **mirarlo funcionando**:
 
-Con la RPC sí alcanzó la prueba de afuera: `rpc/ceven_equipo` devuelve 401
-*permission denied for function* (existe y le niega el paso a `anon`), mientras
-que una función inexistente da 404.
+- **Equipos**: crear uno, sumar y sacar gente con ⚙, mover una tarea de equipo
+  desde el detalle, borrar un equipo con tareas adentro (tienen que ir a
+  General, no borrarse), y confirmar que el tablero elegido se recuerda al
+  recargar pero **no** se le cambia a otro usuario.
+- **Archivado**: desplegar "N archivadas" en Done y ver las tarjetas con borde
+  punteado; el ocultar y el conteo ya se probaron.
+- **Comprobante** (`shared/comprobante.js`): nunca se abrió el documento. Falta
+  ver el logo, la tabla, la fila TOTAL y que `window.print()` no salga en blanco.
+
+Para probar en el navegador hay una receta que funciona, y una trampa: el JWT
+falso hace que `sync.js` reintente el refresh y salte el `alert()` de sesión
+expirada, que cuelga CDP. La salida es servir una **copia** de `src` con
+`SUPABASE_URL` vacío (ahí `sync.js` se autodesactiva) y sembrar
+`localStorage`. El tablero de tareas no sufre esto porque `todos.js` nunca
+llama a `cevenRefreshToken()`.
 
 ### 🟡 Pipeline: verificar en un navegador (fases 1–8 hechas el 03/08/2026)
 

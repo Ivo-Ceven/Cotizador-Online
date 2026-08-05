@@ -60,9 +60,20 @@ create table public.todos (
   hecho     boolean not null default false,   -- espejo de estado='done', ver abajo
   estado    text not null default 'todo',     -- todo | doing | done (columna del tablero)
   asignados jsonb not null default '[]',      -- emails @ceven.com delegados
+  equipo    text not null default 'General',  -- tablero al que pertenece (NOMBRE, no FK)
+  "terminadaEn" timestamptz,      -- cuándo pasó a done; la escribe SOLO el trigger
   "creadoPor" text,               -- nombre o email de quien la creó
   fecha     text,                 -- dd/mm/aaaa (para mostrar)
   "fechaISO" text                 -- ISO 8601 (para ordenar)
+);
+
+-- Equipos de trabajo del tablero. `miembros` es a quién se le puede DELEGAR
+-- dentro de ese tablero, no quién puede verlo.
+create table public.equipos (
+  nombre      text primary key,
+  miembros    jsonb not null default '[]',
+  "creadoPor" text,
+  "creadoISO" text
 );
 -- `hecho` quedó redundante con `estado`, pero NO se borra: la app es una PWA
 -- offline-first, así que después de un deploy siguen habiendo navegadores con
@@ -70,6 +81,28 @@ create table public.todos (
 -- `estado`. El trigger `todos_sync_estado` deriva uno del otro (gana el que
 -- cambió; si cambian los dos, gana `estado`) para que no puedan desfasarse.
 -- Se puede dropear junto con el trigger cuando no queden clientes viejos.
+--
+-- El mismo trigger sella `terminadaEn` al ENTRAR a done y la limpia al salir.
+-- El cliente NUNCA la manda: el reloj del navegador lo pone el usuario, y una
+-- máquina adelantada archivaría tareas de más para todo el equipo. Sobre esa
+-- fecha corre el archivado automático (3 días, constante DIAS_ARCHIVO en
+-- shared/todos.js): las terminadas hace más salen del tablero pero no se
+-- borran.
+--
+-- ⚠ `todos.equipo` guarda el NOMBRE del equipo y no una FK a `equipos`, porque
+-- la app es offline-first y una tarea creada sin conexión no puede depender de
+-- resolver un id contra el servidor. Efecto buscado: una tarea que apunta a un
+-- equipo inexistente igual se muestra, en un tablero con ese nombre — con una
+-- FK, desaparecería.
+--
+-- ⚠⚠ LOS TABLEROS NO SON UNA BARRERA DE PRIVACIDAD. Separan el trabajo en la
+-- pantalla: el cliente se baja `todos?select=*` entero y filtra en JavaScript,
+-- y las policies dejan que cualquier @ceven.com lea y escriba todos los
+-- equipos. Es una decisión explícita (04/08/2026), no un olvido. Para que
+-- fuera aislamiento real habría que filtrar por pertenencia en las policies
+-- (join contra `equipos.miembros` con `auth.jwt() ->> 'email'`) y que el
+-- cliente pida solo su equipo — ver el encabezado de la migración
+-- 20260804200000_tareas_equipos.sql.
 alter table public.todos enable row level security;
 create policy "authenticated full access" on public.todos
   for all to authenticated using (true) with check (true);

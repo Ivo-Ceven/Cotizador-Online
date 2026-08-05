@@ -1,9 +1,24 @@
 -- ============================================================================
 --  TAREAS DEL EQUIPO · archivado automático de las terminadas (3 días)
 --  ---------------------------------------------------------------------------
---  ⏳ PENDIENTE DE APLICAR en el proyecto iqewnebpdyctexavtpmt.
+--  ✅ APLICADA el 05/08/2026 en el proyecto iqewnebpdyctexavtpmt.
 --     Aditiva: una columna nueva en `todos` (con backfill) y una versión nueva
 --     del trigger que ya existe. No borra ni renombra nada.
+--
+--     Verificado con el bloque de VERIFICACIÓN de más abajo, sobre una fila de
+--     prueba que después se borró. Los seis pasos dieron lo esperado.
+--
+--     ⚠ OJO AL VERIFICAR ESTO DE NUEVO: si los pasos corren en UNA SOLA
+--     transacción, `now()` queda congelado y el paso 3 —"editar sin salir de
+--     done no cambia la fecha"— no prueba nada, porque un re-sellado daría
+--     exactamente el mismo valor. Hay que partirlo en dos transacciones y
+--     comparar contra `clock_timestamp()`. Hecho así: la fecha quedó en
+--     12:35:46.763 mientras el reloj avanzaba a 12:35:53, con un UPDATE que
+--     además cambió `texto` y `asignados`. Ahí sí queda demostrado que el
+--     reloj de archivado no se reinicia al editar una tarea terminada.
+--
+--     Invariante confirmada sobre las filas reales:
+--       hecho = true  ⇔  estado = 'done'  ⇔  "terminadaEn" is not null
 --
 --  QUÉ RESUELVE
 --  La columna Done crecía para siempre: nada archivaba ni purgaba, y el único

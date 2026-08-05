@@ -135,7 +135,7 @@ if(eB && eS && eQ){
 }
 
 /* ── 4. columnas que se mandan a Supabase ─────────────────────────────────── */
-const columnas = ['id', 'texto', 'hecho', 'estado', 'asignados', 'creadoPor', 'fecha', 'fechaISO', 'terminadaEn'];
+const columnas = ['id', 'texto', 'hecho', 'estado', 'asignados', 'creadoPor', 'fecha', 'fechaISO', 'terminadaEn', 'equipo'];
 for(const c of columnas){
   const enStore = new RegExp('\\b' + c + ':').test(storeJs);
   if(!enStore) fallo('todos.js ya no arma la columna ' + c + ' — revisar normalizar()');
@@ -147,7 +147,7 @@ const sqlTodas = fs.readdirSync(path.join(ROOT, 'supabase/migrations'))
   .filter(f => f.endsWith('.sql'))
   .map(f => fs.readFileSync(path.join(ROOT, 'supabase/migrations', f), 'utf8'))
   .join('\n');
-for(const c of ['estado', 'asignados', '"terminadaEn"']){
+for(const c of ['estado', 'asignados', '"terminadaEn"', 'equipo']){
   /* (?![\w]) y no \b: los nombres camelCase van entre comillas dobles en SQL, y
      \b despues de un `"` seguido de un espacio no matchea (ninguno de los dos
      es caracter de palabra). */
