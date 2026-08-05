@@ -23,6 +23,48 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 05/08/2026 · `promptModal` y `confirmModal` nunca funcionaron
+
+`APP_VERSION` 5.5 → 5.6. Una línea de `shared/notify.js`.
+
+Salió a la luz al no poder crear un equipo en el tablero de tareas, pero el bug
+no era del tablero: los dos modales genéricos se pintaban **sin input y sin
+botones**. Solo se veía el título y la única salida era clickear el fondo, que
+cancela.
+
+La causa es un selector:
+
+```js
+wrap.querySelector('div>div').textContent = title;   // ❌
+```
+
+`wrap` **también es un div**, y la tarjeta es su hija: `div>div` matchea primero
+la **tarjeta entera**, no el párrafo de adentro. Ponerle `textContent` a la
+tarjeta borra el input y los dos botones. El detalle de CSS que lo hace posible
+es que `querySelector()` con un combinador puede usar ancestros de **fuera** del
+elemento raíz para satisfacer el selector: solo el último compuesto tiene que
+caer adentro. Ahora el párrafo va marcado con `[data-txt]`.
+
+**Lo que estaba roto sin que nadie lo notara**, porque los cuatro caminos son
+poco frecuentes:
+
+- el **número de factura** de una fila del pipeline de Poly (`promptModal`);
+- la **restauración de un backup** (`confirmModal`, `shared/backup.js`);
+- la **recuperación de datos** cuando el arranque los encuentra vacíos
+  (`confirmModal`, `shared/recovery.js`) — el cartel aparecía sin el botón de
+  confirmar, así que la recuperación era imposible;
+- crear y borrar equipos en el tablero de tareas.
+
+**Verificación**: en navegador contra el Supabase real. El modal ahora trae
+input y los botones Cancelar/Crear, el equipo se crea, la pestaña aparece y
+queda activa, y quien lo crea entra como miembro. El camino de error también se
+probó: con un token inválido el POST devuelve 401 y sale el cartel "No tenés
+permiso…", en vez de fallar en silencio. Aparte, se confirmó en la base que el
+`INSERT` en `equipos` pasa las policies con claims de admin y que
+`authenticated` tiene los grants — el problema era 100 % del cliente.
+
+---
+
 ## 05/08/2026 · Poly: agregar productos sin cambiar de pantalla
 
 Archivo nuevo `src/poly/js/picker.js`. `APP_VERSION` 5.3 → 5.5.

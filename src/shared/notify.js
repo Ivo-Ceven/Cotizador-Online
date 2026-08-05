@@ -77,7 +77,7 @@ function promptModal(title, defaultValue, onSubmit, opts){
   wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif';
   wrap.innerHTML =
     '<div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:24px;width:360px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">'
-      + '<div style="font-size:15px;font-weight:600;color:#1d1d1f;margin-bottom:14px"></div>'
+      + '<div data-txt style="font-size:15px;font-weight:600;color:#1d1d1f;margin-bottom:14px"></div>'
       + '<input type="text" style="border:0.5px solid #d2d2d7;border-radius:8px;padding:9px 11px;font-size:14px;width:100%;outline:none;margin-bottom:14px;box-sizing:border-box;font-family:inherit">'
       + '<div style="display:flex;gap:8px;justify-content:flex-end">'
         + '<button data-cancel style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit">Cancelar</button>'
@@ -85,7 +85,19 @@ function promptModal(title, defaultValue, onSubmit, opts){
       + '</div>'
     + '</div>';
   document.body.appendChild(wrap);
-  wrap.querySelector('div>div').textContent = title;
+  /* `[data-txt]` y NO `div>div`. El selector viejo estaba roto y se llevaba
+     puesto el modal entero: `wrap` TAMBIEN es un div, asi que `div>div` matchea
+     primero la TARJETA (hija de wrap) y no el parrafo de adentro. Ponerle
+     textContent a la tarjeta borraba el input y los dos botones, y quedaba un
+     cartel con el titulo y nada mas — imposible de confirmar salvo clickeando
+     el fondo, que cancela.
+
+     No era teorico: rompia el numero de factura del pipeline de Poly, la
+     restauracion de backup, la recuperacion de datos y el alta de equipos del
+     tablero. querySelector() con un combinador puede usar ancestros de fuera
+     del elemento raiz para satisfacer el selector; solo el ultimo compuesto
+     tiene que caer adentro. */
+  wrap.querySelector('[data-txt]').textContent = title;
   var input = wrap.querySelector('input');
   input.value = defaultValue || '';
   function close(){ if(wrap.parentNode) wrap.parentNode.removeChild(wrap); }
@@ -113,14 +125,15 @@ function confirmModal(message, onConfirm, opts){
   wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif';
   wrap.innerHTML =
     '<div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:22px;width:380px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">'
-      + '<div style="font-size:14px;color:#1d1d1f;line-height:1.5;margin-bottom:18px;white-space:pre-line"></div>'
+      + '<div data-txt style="font-size:14px;color:#1d1d1f;line-height:1.5;margin-bottom:18px;white-space:pre-line"></div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end">'
         + '<button data-cancel style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit">Cancelar</button>'
         + '<button data-ok style="border:none;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;background:'+(opts.danger?'#d70015':'#1d1d1f')+';color:#fff;font-family:inherit">'+(opts.okLabel||'Confirmar')+'</button>'
       + '</div>'
     + '</div>';
   document.body.appendChild(wrap);
-  wrap.querySelector('div>div').textContent = message;
+  // Ver el comentario de promptModal(): `div>div` matcheaba la tarjeta entera.
+  wrap.querySelector('[data-txt]').textContent = message;
   function close(){ if(wrap.parentNode) wrap.parentNode.removeChild(wrap); }
   wrap.querySelector('[data-ok]').onclick = function(){ close(); onConfirm(); };
   wrap.querySelector('[data-cancel]').onclick = close;
