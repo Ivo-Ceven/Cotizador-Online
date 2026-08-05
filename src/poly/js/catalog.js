@@ -159,11 +159,13 @@ function initCat() {
 // _pendingNewSKUs, handleSearchInput/Paste, processMultiSKUs y
 // promptForNextPendingSKU viven en shared/catalog-core.js.
 
-function getFiltered() {
-  var s=document.getElementById('fsearch').value.toLowerCase().trim();
+/* El filtrado real. Recibe los campos porque hay DOS juegos: los de la vista
+   Catálogo (#fsearch/#frubro) y los de la subpantalla flotante (#pk-search /
+   #pk-rubro). La lógica es una sola; lo único que cambia es de dónde lee. */
+function getFilteredCon(searchEl, rubroEl){
+  var s = searchEl ? searchEl.value.toLowerCase().trim() : '';
   var terms = s ? s.split(/\s+/).filter(function(t){return t.length>0;}) : [];
-  var rub = document.getElementById('frubro');
-  var rubV = rub ? rub.value : '';
+  var rubV = rubroEl ? rubroEl.value : '';
   return products.filter(function(p){
     // El rubro se compara exacto: las opciones salen de los propios productos,
     // así que un "contiene" solo agregaría falsos positivos entre categorías con
@@ -177,6 +179,12 @@ function getFiltered() {
   });
 }
 
+/* Los filtros de la vista Catálogo. Conserva la firma sin argumentos porque
+   shared/catalog-core.js la llama así. */
+function getFiltered(){
+  return getFilteredCon(document.getElementById('fsearch'), document.getElementById('frubro'));
+}
+
 /* Opciones del filtro de categoría, sacadas del catálogo cargado. Se repuebla en
    cada render porque importar un Excel nuevo cambia el juego de rubros.
 
@@ -184,8 +192,8 @@ function getFiltered() {
    cotización, y perder el filtro en ese momento —justo cuando estás recorriendo
    una categoría— sería insufrible. Si el rubro elegido ya no existe (catálogo
    nuevo), se cae a "Todas" en vez de dejar la tabla vacía sin explicación. */
-function _pintarFiltroRubro(){
-  var sel = document.getElementById('frubro');
+function _pintarFiltroRubro(sel){
+  sel = sel || document.getElementById('frubro');
   if(!sel) return;
   var actual = sel.value;
   var vistos = {}, rubros = [];
@@ -246,58 +254,69 @@ function _enCotizacion(sku){
   return false;
 }
 
+/* Una fila de producto. La usan las DOS tablas —la vista Catálogo y la
+   subpantalla flotante— para que no se despeguen: si cada una armara su fila,
+   agregar una columna en un lado y olvidarse del otro no daría ningún error,
+   solo una tabla desalineada.
+
+   `idAttr` es cómo esa tabla direcciona sus filas (`data-i` en el catálogo,
+   `data-pi` en la flotante): cada una tiene su propio registro de lo pintado, y
+   mezclarlos agregaría el producto equivocado.
+
+   `admin` agrega ✎/× (editar o borrar un artículo manual del catálogo). En la
+   flotante no van: ahí se elige qué cotizar, no se administra el catálogo. */
+function _catRowHTML(p, idx, idAttr, admin){
+  var enq = _enCotizacion(p.sku);
+  var hasStock = p.stock!==null && p.stock!==undefined;
+  var stockColor = hasStock ? (p.stock<=0 ? '#d70015' : (p.stock<5 ? '#c84e00' : '#15863a')) : '#aeaeb2';
+  var ref = ' '+idAttr+'="'+idx+'"';
+  /* `pk-row` apaga el cursor de mano de `.crow`: en Apple la fila entera
+     selecciona, pero acá el unico objetivo de clic es el boton. */
+  return '<tr class="crow pk-row'+(enq?' enq':'')+'"'+ref+'>'
+    /* Primera columna: el botón. Antes acá había un checkbox y el alta pasaba
+       por "Agregar (N)"; ahora se agrega de a uno y en el acto. Si ya está en la
+       cotización, el mismo botón lo saca. */
+    +'<td style="text-align:center;overflow:visible">'
+      +'<button class="'+(enq?'bs cat-quitar':'bd cat-sumar')+'" data-act="'+(enq?'unq':'addone')+'"'+ref
+        +' title="'+(enq?'Sacar de la cotización':'Agregar a la cotización')+'"'
+        +' style="padding:3px 10px;font-size:13px;line-height:1.2">'+(enq?'✓':'+')+'</button>'
+    +'</td>'
+    +'<td style="font-weight:500">'+cevenEsc(p.sku)+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+'</td>'
+    +'<td class="wrap">'+cevenEsc(p.description)
+      // Rubro e IVA vienen del archivo del ERP (RUBRO y Programa fiscal). Son
+      // informativos: el IVA no entra en ningún cálculo de la cotización.
+      +(p.rubro ? ' <span style="font-size:10px;color:#6e6e73;background:#f0f0f3;padding:1px 6px;border-radius:8px;white-space:nowrap">'+cevenEsc(p.rubro)+'</span>' : '')
+      +(p.iva && /reducid/i.test(p.iva) ? ' <span style="font-size:10px;color:#7a5800;background:#fff8e1;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Programa fiscal: '+cevenEsc(p.iva)+'">IVA reducido</span>' : '')
+    +'</td>'
+    /* Los 4 niveles, uno debajo del otro: es la única vista donde se pueden
+       comparar. El selector de la cotización muestra el precio al lado de cada
+       nivel, pero ahí ya elegiste el producto. */
+    +'<td style="text-align:right;color:#6e6e73;white-space:nowrap">'+_catPreciosHTML(p)+'</td>'
+    +'<td style="text-align:center;font-weight:600;color:'+stockColor+'">'+(hasStock?cevenEsc(p.stock):'—')+'</td>'
+    +(admin
+      ? '<td style="text-align:center;white-space:nowrap;overflow:visible">'
+        +'<button class="bs" data-act="edit"'+ref+' title="Editar" style="padding:2px 6px;font-size:12px">✎</button> '
+        +'<button class="bsr" data-act="del"'+ref+' title="Eliminar del catálogo">×</button>'
+      +'</td>'
+      : '')
+    +'</tr>';
+}
+
 function renderCat() {
   _pintarFiltroRubro();
   var filtered=getFiltered(), html='';
   _catRendered = filtered;
-  for(var i=0;i<filtered.length;i++){
-    var p=filtered[i], sel=!!selIds[p.id];
-    var enq = _enCotizacion(p.sku);
-    var hasStock = p.stock!==null && p.stock!==undefined;
-    var stockColor = hasStock ? (p.stock<=0 ? '#d70015' : (p.stock<5 ? '#c84e00' : '#15863a')) : '#aeaeb2';
-    html+='<tr class="crow'+(sel?' sel':'')+(enq?' enq':'')+'" data-act="row" data-i="'+i+'">'
-      +'<td style="overflow:visible"><input type="checkbox"'+(sel?' checked':'')+' data-act="chk" data-i="'+i+'"></td>'
-      +'<td style="font-weight:500">'+cevenEsc(p.sku)+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+'</td>'
-      +'<td class="wrap">'+cevenEsc(p.description)
-        // Rubro e IVA vienen del archivo del ERP (RUBRO y Programa fiscal). Son
-        // informativos: el IVA no entra en ningún cálculo de la cotización.
-        +(p.rubro ? ' <span style="font-size:10px;color:#6e6e73;background:#f0f0f3;padding:1px 6px;border-radius:8px;white-space:nowrap">'+cevenEsc(p.rubro)+'</span>' : '')
-        +(p.iva && /reducid/i.test(p.iva) ? ' <span style="font-size:10px;color:#7a5800;background:#fff8e1;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Programa fiscal: '+cevenEsc(p.iva)+'">IVA reducido</span>' : '')
-      +'</td>'
-      /* Los 4 niveles, uno debajo del otro: es la única vista donde se pueden
-         comparar. El selector de la cotización muestra el precio al lado de cada
-         nivel, pero ahí ya elegiste el producto. */
-      +'<td style="text-align:right;color:#6e6e73;white-space:nowrap">'+_catPreciosHTML(p)+'</td>'
-      +'<td style="text-align:center;font-weight:600;color:'+stockColor+'">'+(hasStock?cevenEsc(p.stock):'—')+'</td>'
-      /* Agregar/sacar de la cotización en un solo botón, sin pasar por el
-         checkbox ni por "Agregar (N)". El estado se lee del propio botón: si ya
-         está en la cotización dice "En cotización" y lo saca. Los checkboxes
-         siguen ahí para el alta en lote — los dos caminos conviven. */
-      +'<td style="text-align:center;white-space:nowrap;overflow:visible">'
-        +'<button class="'+(enq?'bs cat-quitar':'bd cat-sumar')+'" data-act="'+(enq?'unq':'addone')+'" data-i="'+i+'"'
-          +' title="'+(enq?'Sacar de la cotización':'Agregar a la cotización')+'"'
-          +' style="padding:3px 9px;font-size:12px">'+(enq?'✓ En cotización':'+ Agregar')+'</button>'
-      +'</td>'
-      +'<td style="text-align:center;white-space:nowrap;overflow:visible">'
-        +'<button class="bs" data-act="edit" data-i="'+i+'" title="Editar" style="padding:2px 6px;font-size:12px">✎</button> '
-        +'<button class="bsr" data-act="del" data-i="'+i+'" title="Eliminar del catálogo">×</button>'
-      +'</td>'
-      +'</tr>';
-  }
-  document.getElementById('catbody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
+  for(var i=0;i<filtered.length;i++) html += _catRowHTML(filtered[i], i, 'data-i', true);
+  document.getElementById('catbody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
   _catBindDelegation();
-  var cnt=Object.keys(selIds).length;
-  document.getElementById('catcount').textContent = filtered.length+' productos · '+cnt+' seleccionados';
-  var btn=document.getElementById('addbtn');
-  btn.style.display = cnt>0 ? 'inline-block' : 'none';
-  btn.textContent = editId!==null ? 'Confirmar cambio' : 'Agregar ('+cnt+')';
-  var allSel=filtered.length>0; for(var j=0;j<filtered.length;j++){if(!selIds[filtered[j].id]){allSel=false;break;}}
-  document.getElementById('chkall').checked=allSel;
+  document.getElementById('catcount').textContent = filtered.length+' productos';
+  // La flotante puede estar mostrando la misma lista: si no se repinta, queda
+  // con el estado viejo de los botones (renderCat se llama desde varios lados).
+  if(typeof renderPicker === 'function') renderPicker();
 }
 
 // Un solo listener en #catbody: cevenActEl() devuelve el elemento accionable más
-// cercano, así que el clic sobre el checkbox o sobre un botón NO cae además en el
-// handler de la fila (antes hacía falta un event.stopPropagation() en cada uno).
+// cercano, así que el clic sobre un botón NO cae además en el handler de la fila.
 function _catBindDelegation(){
   cevenDelegate('catbody', 'click', function(ev){
     var el = cevenActEl(ev, this);
@@ -309,7 +328,6 @@ function _catBindDelegation(){
     else if(act === 'del')    deleteManualProduct(p.id);
     else if(act === 'addone') agregarUno(p);
     else if(act === 'unq')    quitarDeCotizacion(p);
-    else                      toggleRow(p.id);   // 'row' y 'chk'
   });
 }
 
@@ -360,31 +378,27 @@ function _nuevoItemDeProducto(p, j){
   return it;
 }
 
-// ── AGREGAR A LA COTIZACIÓN (precio siempre en blanco: se tipea a mano) ──
-function addToQuote() {
-  var toAdd=[];
-  for(var i=0;i<products.length;i++){ if(selIds[products[i].id]) toAdd.push(products[i]); }
-  // Ordenar por el orden en que fueron seleccionados
-  toAdd.sort(function(a,b){ return (selIds[a.id]||0) - (selIds[b.id]||0); });
-  if(!toAdd.length) return;
+/* ── PEGADO MASIVO DE SKUs ────────────────────────────────────────────────────
+   Lo llama processMultiSKUs() de shared/catalog-core.js con los productos que
+   encontró. Antes ese código los dejaba TILDADOS y había que rematar con
+   "Agregar (N)"; sin checkbox ni botón de lote, pegar una columna de SKUs
+   habría dejado de agregar nada —sin error, sin aviso—, así que acá se agregan
+   derecho.
 
-  if(editId !== null) {
-    var p=toAdd[0];
-    for(var i=0;i<items.length;i++){
-      if(String(items[i].id)===String(editId)){
-        items[i].sku=p.sku; items[i].description=p.description;
-      }
-    }
-    editId=null;
-  } else {
-    for(var j=0;j<toAdd.length;j++){
-      items.push(_nuevoItemDeProducto(toAdd[j], j));
-    }
+   Apple no define esta función y sigue con el camino de la selección: por eso
+   shared/ pregunta si existe en vez de asumir. */
+function cevenAplicarSkusPegados(found){
+  var sumados = 0;
+  for(var i=0;i<found.length;i++){
+    if(_enCotizacion(found[i].sku)) continue;   // ya estaba: no se duplica
+    items.push(_nuevoItemDeProducto(found[i], sumados));
+    sumados++;
   }
-  selIds={};
-  _qSortKey = null; _qSortDir = 1;
-  renderQ();
-  goTo('quote');
+  if(sumados){
+    _qSortKey = null; _qSortDir = 1;   // que entren en el orden en que se pegaron
+    renderQ();
+  }
+  return sumados;
 }
 
 // _qSortKey/_qSortDir viven en shared/quote-core.js.

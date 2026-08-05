@@ -113,6 +113,7 @@ var ASSETS = [
   './poly/js/state.js',
   './poly/js/catalog.js',
   './poly/js/quote.js',
+  './poly/js/picker.js',
   './poly/js/tiers.js',
   './poly/js/products.js',
   './poly/js/quotes-db.js',

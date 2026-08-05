@@ -44,6 +44,11 @@ body.dark .crow:hover td{background:var(--c3)!important}
 body.dark .crow.sel td{background:rgba(10,132,255,.2)!important}
 body.dark .crow.enq td{background:rgba(52,199,89,.16)!important}
 body.dark .crow.enq:hover td{background:rgba(52,199,89,.24)!important}
+/* Subpantalla de productos: la mayoria sale de los tokens, pero el textarea y
+   la cabecera pegajosa de la tabla llevan fondo propio. */
+body.dark .pk-filtros textarea{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
+body.dark .pk-lista thead th{background:var(--ch)!important}
+body.dark .pk-step{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 /* inputs / selects */
 body.dark input:not([type=file]){background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark select{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}

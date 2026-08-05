@@ -67,7 +67,11 @@ function handleSearchInput(){
   renderCat();
 }
 
-function handleSearchPaste(e){
+/* `inputEl` es el campo desde el que se pegó. Se recibe en vez de buscar
+   '#fsearch' a mano porque ahora hay dos: el de la vista Catalogo y el de la
+   subpantalla flotante de Poly. Sin esto, pegar en la flotante limpiaba el otro
+   campo y dejaba el propio con el texto adentro. */
+function handleSearchPaste(e, inputEl){
   var text = (e.clipboardData || window.clipboardData).getData('text');
   if(!text) return;
   if(!/[\n\t,;]/.test(text.trim())){
@@ -78,10 +82,10 @@ function handleSearchPaste(e){
   e.preventDefault();
   var tokens = text.split(/[\n\t,;]+/).map(function(s){return s.trim();}).filter(function(s){return s.length>0;});
   if(!tokens.length) return;
-  processMultiSKUs(tokens);
+  processMultiSKUs(tokens, inputEl || (e.target || document.getElementById('fsearch')));
 }
 
-function processMultiSKUs(tokens){
+function processMultiSKUs(tokens, inputEl){
   var found = [];
   var notFound = [];
   for(var i=0;i<tokens.length;i++){
@@ -91,19 +95,33 @@ function processMultiSKUs(tokens){
     for(var j=0;j<products.length;j++){
       if((products[j].sku||'').toLowerCase() === t.toLowerCase()){ match = products[j]; break; }
     }
-    if(match){
-      found.push(match);
-      selIds[match.id] = _nextSel();
-    } else {
-      notFound.push(t);
-    }
+    if(match) found.push(match);
+    else      notFound.push(t);
   }
 
-  document.getElementById('fsearch').value = '';
+  /* Que hacer con lo encontrado depende de la marca, y no es un detalle
+     cosmetico: Poly ya no tiene checkbox ni boton de alta en lote, asi que si
+     acá se siguiera tildando no pasaria absolutamente nada al pegar. La marca
+     que sepa agregar directo define cevenAplicarSkusPegados(); la que no,
+     conserva el camino de la seleccion. */
+  var agregados = 0;
+  if(typeof cevenAplicarSkusPegados === 'function'){
+    agregados = cevenAplicarSkusPegados(found) || 0;
+  } else {
+    for(var k=0;k<found.length;k++) selIds[found[k].id] = _nextSel();
+  }
+
+  var el = inputEl || document.getElementById('fsearch');
+  if(el) el.value = '';
   renderCat();
 
   var msg = '';
-  if(found.length) msg += '✓ ' + found.length + ' SKU(s) encontrados y seleccionados';
+  if(found.length){
+    msg += (typeof cevenAplicarSkusPegados === 'function')
+      ? '✓ ' + agregados + ' SKU(s) agregados a la cotización'
+        + (agregados < found.length ? ' · ' + (found.length-agregados) + ' ya estaban' : '')
+      : '✓ ' + found.length + ' SKU(s) encontrados y seleccionados';
+  }
   if(notFound.length){
     msg += (msg?' · ':'') + '⚠ ' + notFound.length + ' no encontrados';
   }
@@ -130,12 +148,23 @@ function promptForNextPendingSKU(){
     return;
   }
   var nextSku = _pendingNewSKUs[0];
-  prepAddProd();
-  document.getElementById('np-sku').value = nextSku;
+
+  /* La subpantalla flotante de productos tapa la pantalla entera: si se navega
+     con ella abierta, la app cambia de vista DETRAS y el usuario sigue viendo
+     el catalogo, sin ninguna pista de que ahora hay un formulario esperandolo. */
+  if(typeof cerrarPicker === 'function') cerrarPicker();
+
+  /* El goTo va PRIMERO, y recien despues se llenan los campos. Al reves —que es
+     como estaba— no funcionaba: _navApply() llama a prepAddProd() al entrar a
+     'addprod', que limpia #np-sku, o sea que borraba el SKU que se acababa de
+     precargar. El formulario aparecia siempre vacio, justo en el flujo cuyo
+     unico objetivo es no volver a tipear el SKU que falto. */
+  goTo('addprod');
+
   var remaining = _pendingNewSKUs.length;
+  document.getElementById('np-sku').value = nextSku;
   document.getElementById('addprod-title').textContent = 'Agregar SKU faltante (' + remaining + ' pendiente' + (remaining===1?'':'s') + ')';
   // Auto-foco en descripción para acelerar carga
-  goTo('addprod');
   setTimeout(function(){
     var d = document.getElementById('np-desc');
     if(d) d.focus();

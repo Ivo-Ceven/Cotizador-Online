@@ -45,11 +45,12 @@
 
 <!-- QUOTE -->
 <div id="p-quote" class="pg on">
-  <div style="text-align:center;margin-bottom:14px">
-    <img id="logo-img" style="max-height:85px;max-width:380px;object-fit:contain;display:none;cursor:pointer" onclick="document.getElementById('logo-up').click()" title="Cambiar logo">
-    <div id="logo-ph" onclick="document.getElementById('logo-up').click()" style="display:inline-block;border:1.5px dashed #d2d2d7;border-radius:10px;padding:11px 26px;cursor:pointer;color:#6e6e73">+ Subir logo</div>
-    <input type="file" id="logo-up" accept="image/*" style="display:none" onchange="handleLogo(this.files[0])">
-  </div>
+  <!-- Acá vivía el logo (subir / cambiar). Se sacó el 05/08/2026: ocupaba el
+       encabezado entero de la vista sin aportar nada al armado de la cotización.
+       El logo NO desapareció del sistema: `_logo` sigue existiendo en
+       shared/ui-core.js, sincronizándose por `clogo` y saliendo en el PDF, que
+       es el documento que ve el cliente. Lo que ya no hay es forma de cambiarlo
+       desde la pantalla. -->
   <div class="qbar">
     <div class="qbar-top">
       <div class="qbar-ttl">

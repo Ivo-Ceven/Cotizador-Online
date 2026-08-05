@@ -67,11 +67,12 @@
 
 <!-- QUOTE -->
 <div id="p-quote" class="pg on">
-  <div style="text-align:center;margin-bottom:14px">
-    <img id="logo-img" style="max-height:85px;max-width:380px;object-fit:contain;display:none;cursor:pointer" onclick="document.getElementById('logo-up').click()" title="Cambiar logo">
-    <div id="logo-ph" onclick="document.getElementById('logo-up').click()" style="display:inline-block;border:1.5px dashed #d2d2d7;border-radius:10px;padding:11px 26px;cursor:pointer;color:#6e6e73">+ Subir logo</div>
-    <input type="file" id="logo-up" accept="image/*" style="display:none" onchange="handleLogo(this.files[0])">
-  </div>
+  <!-- Acá vivía el logo (subir / cambiar). Se sacó el 05/08/2026: ocupaba el
+       encabezado entero de la vista sin aportar nada al armado de la cotización.
+       El logo NO desapareció del sistema: `_logo` sigue existiendo en
+       shared/ui-core.js, sincronizándose por `clogo` y saliendo en el PDF, que
+       es el documento que ve el cliente. Lo que ya no hay es forma de cambiarlo
+       desde la pantalla. -->
   <div class="qbar">
     <div class="qbar-top">
       <div class="qbar-ttl">
@@ -228,23 +229,21 @@
     <div class="gf" style="margin-bottom:10px">
       <div style="grid-column:1/-1">
         <label class="lbl">Buscar / Pegar SKUs <span style="color:#6e6e73;font-weight:400">— pegá varios SKUs separados por enter, tab o coma</span></label>
-        <textarea id="fsearch" rows="1" placeholder="ej: poly studio x72  /  pegá varios SKUs aquí" oninput="handleSearchInput()" onpaste="handleSearchPaste(event)" style="width:100%;padding:8px 12px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;resize:vertical;min-height:36px;line-height:1.4"></textarea>
+        <textarea id="fsearch" rows="1" placeholder="ej: poly studio x72  /  pegá varios SKUs aquí" oninput="handleSearchInput()" onpaste="handleSearchPaste(event, this)" style="width:100%;padding:8px 12px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;resize:vertical;min-height:36px;line-height:1.4"></textarea>
       </div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span id="catcount" style="color:#6e6e73"></span>
-      <button class="bd" id="addbtn" onclick="addToQuote()" style="display:none">Agregar</button>
     </div>
     <div class="tw">
       <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:32px"><col style="width:15%"><col><col style="width:12%"><col style="width:8%"><col style="width:124px"><col style="width:64px"></colgroup>
+        <colgroup><col style="width:54px"><col style="width:15%"><col><col style="width:168px"><col style="width:62px"><col style="width:64px"></colgroup>
         <thead>
           <tr>
-            <th><input type="checkbox" id="chkall" onchange="toggleAll(this)"></th>
+            <th></th>
             <th>SKU</th><th>Descripción</th>
             <th style="text-align:right">Precios por nivel</th>
             <th style="text-align:center" title="Disponible (LocAvailable), sumando todos los depósitos">Stock</th>
-            <th style="text-align:center">Cotización</th>
             <th></th>
           </tr>
         </thead>
@@ -417,6 +416,7 @@
 <script src="../shared/clientes.js"></script>
 <script src="js/tiers.js"></script>
 <script src="js/quote.js"></script>
+<script src="js/picker.js"></script>
 <script src="js/products.js"></script>
 <script src="js/quotes-db.js"></script>
 <script src="../shared/pipeline-store.js"></script>
@@ -461,6 +461,55 @@
         <button class="bd" onclick="saveQuoteItemEdit()">Guardar en cotización</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     SUBPANTALLA DE PRODUCTOS  ·  se abre desde "+ Agregar producto"
+     de la cotización, ENCIMA de ella (ver poly/js/picker.js).
+     Arriba el catálogo con un `+` por producto; abajo, lo que la
+     cotización ya lleva. La vista Catálogo del menú sigue existiendo:
+     ahí se importa el Excel y se crean artículos a mano.
+     ============================================================ -->
+<div id="prod-picker" style="display:none">
+  <div class="pk-card" role="dialog" aria-modal="true" aria-label="Agregar productos">
+
+    <div class="pk-hd">
+      <div class="h3">Agregar productos <span id="pk-count" style="font-size:11px;font-weight:400;color:#aeaeb2;margin-left:6px"></span></div>
+      <button type="button" class="pk-x" data-pk-cerrar title="Cerrar">&times;</button>
+    </div>
+
+    <div class="pk-filtros">
+      <textarea id="pk-search" rows="1" placeholder="Buscar &mdash; o pegá varios SKUs separados por enter, tab o coma"></textarea>
+      <select id="pk-rubro"><option value="">Todas</option></select>
+    </div>
+
+    <div class="pk-lista">
+      <table style="table-layout:fixed;width:100%">
+        <colgroup><col style="width:54px"><col style="width:15%"><col><col style="width:168px"><col style="width:62px"></colgroup>
+        <thead>
+          <tr>
+            <th></th><th>SKU</th><th>Descripci&oacute;n</th>
+            <th style="text-align:right">Precios por nivel</th>
+            <th style="text-align:center">Stock</th>
+          </tr>
+        </thead>
+        <tbody id="pk-body"></tbody>
+      </table>
+    </div>
+
+    <div class="pk-pie">
+      <div class="pk-pie-hd">
+        <span class="lbl" style="margin:0">En la cotizaci&oacute;n (<span id="pk-cart-n">0</span>)</span>
+      </div>
+      <div id="pk-cart"></div>
+      <div class="pk-cierre">
+        <span>Total</span>
+        <b id="pk-total">&mdash;</b>
+        <button type="button" class="bd" data-pk-cerrar>Listo</button>
+      </div>
+    </div>
+
   </div>
 </div>
 

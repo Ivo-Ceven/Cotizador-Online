@@ -98,6 +98,7 @@ Módulos propios de Apple (`src/apple/js/`):
 | `archive-view.js` | Render de meses archivados, restaurar/mover entradas |
 | `pipeline-view.js` | Filtros, orden, dashboard KPI y render de la tabla del pipeline |
 | `pipeline-detail.js` | Fila expandible por cotización: estado/mes/OV por SKU, entregas parciales (filas virtuales, merge y disolución de grupos), export Excel del pipeline |
+| `picker.js` | **Solo Poly.** Subpantalla flotante para agregar productos sin salir de la cotización: arriba el catálogo con un `+` por producto, abajo lo que la cotización ya lleva (cantidades, total, `×`). Comparte `_catRowHTML()` con `catalog.js` para que las dos tablas no se despeguen; direcciona sus filas con `data-pi` contra su propio registro, porque el catálogo usa `data-i` |
 | `history.js` | Historial de cotizaciones: filtros, selección, borrado |
 | `pdf.js` | Generación de PDF (html2canvas + jsPDF) de la cotización actual y de seleccionadas |
 | `warranties.js` | Garantías CevenCare: render, integración por `postMessage`, sugerencia automática de garantía para Macs (tabla `MAC_WARRANTIES_3Y`), modal Cliente Final/Canal. **Acá corre el init** (`renderQ()`, defaults de fecha/pago) |

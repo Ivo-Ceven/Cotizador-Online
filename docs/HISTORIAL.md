@@ -23,6 +23,80 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 05/08/2026 · Poly: agregar productos sin cambiar de pantalla
+
+Archivo nuevo `src/poly/js/picker.js`. `APP_VERSION` 5.3 → 5.5.
+
+### El problema era el viaje de ida y vuelta
+
+"+ Agregar producto" llamaba a `openCat()`, que hace `goTo('catalog')`: te sacaba
+de la cotización, elegías con checkboxes, apretabas "Agregar (N)" y **recién al
+volver** veías qué había quedado. Armar una cotización era ir y venir a ciegas
+entre dos pantallas.
+
+Ahora se abre una capa flotante **encima** de la cotización, partida en dos:
+arriba el catálogo con un `+` por producto (`✓` y fila verde si ya está), abajo
+lo que la cotización ya lleva, con cantidades, total y `×`. La mitad de abajo es
+el punto: se ve crecer la cotización sin cerrar nada.
+
+El checkbox y el botón "Agregar (N)" se fueron. La vista Catálogo del menú
+**queda**: ahí se importa el Excel y se crean artículos a mano.
+
+### Sacar el checkbox rompía el pegado masivo de SKUs
+
+`processMultiSKUs()` (compartida) marcaba los SKUs pegados con
+`selIds[...] = _nextSel()` y avisaba "encontrados y **seleccionados**"; después
+se remataba con "Agregar (N)". Sin checkbox ni botón de lote, **pegar una
+columna de SKUs habría dejado de agregar nada, sin error y sin aviso**.
+
+De ahí sale `cevenAplicarSkusPegados()`: la marca que sabe agregar directo la
+define, la que no conserva el camino de la selección. Es el mismo patrón que
+`renderCat`/`getFiltered`/`addToQuote` — shared llama, la marca implementa —, no
+un `if` por marca adentro de `shared/`.
+
+### Dos bugs encontrados al probarlo
+
+- **El alta de un SKU faltante navegaba detrás de la flotante.** El camino de
+  "no encontrados" hace `goTo('addprod')`; con la capa abierta, la app cambiaba
+  de vista por atrás y el usuario seguía mirando el catálogo. Ahora se cierra
+  primero.
+- **El SKU faltante nunca se precargaba** — y esto es **anterior** a este
+  trabajo. `promptForNextPendingSKU()` llenaba `#np-sku` y *después* llamaba a
+  `goTo('addprod')`, que dispara `prepAddProd()` desde `_navApply()` y lo limpia.
+  El formulario aparecía vacío justo en el flujo cuyo único objetivo es no
+  volver a tipear el SKU. Se invirtió el orden.
+
+### Un gateo por rol que estaba de más
+
+Los controles del carrito arrancaron escondidos para el rol `lector`, pero el
+`+` de la lista no los miraba: se podía sumar un producto y después no cambiarle
+la cantidad ni sacarlo. Y era incorrecto de fondo: la regla de `auth.js` es que
+un lector **sí puede armar y guardar una cotización nueva** — lo que no puede
+tocar es lo ya guardado y el pipeline. El permiso se resuelve al guardar, no al
+elegir productos.
+
+### Además
+
+- **`Manual` pasó a decir `Custom`** en el nivel de precio. El valor guardado
+  sigue siendo `'MANUAL'`: viaja a `cquotes`, se sincroniza y ya está escrito en
+  las cotizaciones existentes.
+- **Condición de pago con opción libre** ("Otra…"). Había ocho lugares leyéndola
+  a mano; ahora pasan todos por `cevenPayMode()` / `cevenSetPayMode()` de
+  `shared/ui-core.js`. Con que uno se olvidara de resolver el marcador, el PDF
+  habría salido diciendo `__otra`.
+- **Filtro por categoría en Poly**, sobre el `RUBRO` que ya venía del ERP.
+- **El logo se fue de la pantalla de cotización.** No del sistema: `_logo` sigue
+  saliendo en el PDF, que es lo que ve el cliente. Lo que ya no hay es forma de
+  cambiarlo desde la app.
+
+**Verificación**: en navegador, con el harness aislado. Se probó el alta con `+`,
+el estado verde, los `−/+` del carrito, el `×`, el filtro por categoría, el
+pegado de cuatro SKUs (uno repetido y uno inexistente), Escape, y que la tabla
+de la cotización coincida con el carrito. Estáticos: `check-globals`,
+`check-precache`, `check-tareas`.
+
+---
+
 ## 04/08/2026 · Tareas: archivado automático y tableros por equipo
 
 Migraciones `20260804180000_tareas_archivado.sql` y
