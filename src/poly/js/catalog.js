@@ -312,24 +312,31 @@ function _enCotizacion(sku){
    `data-pi` en la flotante): cada una tiene su propio registro de lo pintado, y
    mezclarlos agregaría el producto equivocado.
 
-   `admin` agrega ✎/× (editar o borrar un artículo manual del catálogo). En la
-   flotante no van: ahí se elige qué cotizar, no se administra el catálogo. */
-function _catRowHTML(p, idx, idAttr, admin){
-  var enq = _enCotizacion(p.sku);
+   `opts.admin` agrega ✎/× (editar o borrar un artículo manual). `opts.agregar`
+   agrega la columna del botón `+`. Son excluyentes en la práctica: la vista
+   Catálogo administra productos y la flotante elige qué cotizar. */
+function _catRowHTML(p, idx, idAttr, opts){
+  opts = opts || {};
+  /* El verde de "ya está en la cotización" solo tiene sentido donde se puede
+     agregar. En la vista Catálogo la cotización no es el tema, y pintar filas
+     de verde ahí sería ruido. */
+  var enq = !!opts.agregar && _enCotizacion(p.sku);
   var hasStock = p.stock!==null && p.stock!==undefined;
   var stockColor = hasStock ? (p.stock<=0 ? '#d70015' : (p.stock<5 ? '#c84e00' : '#15863a')) : '#aeaeb2';
   var ref = ' '+idAttr+'="'+idx+'"';
   /* `pk-row` apaga el cursor de mano de `.crow`: en Apple la fila entera
      selecciona, pero acá el unico objetivo de clic es el boton. */
   return '<tr class="crow pk-row'+(enq?' enq':'')+'"'+ref+'>'
-    /* Primera columna: el botón. Antes acá había un checkbox y el alta pasaba
-       por "Agregar (N)"; ahora se agrega de a uno y en el acto. Si ya está en la
-       cotización, el mismo botón lo saca. */
-    +'<td style="text-align:center;overflow:visible">'
-      +'<button class="'+(enq?'bs cat-quitar':'bd cat-sumar')+'" data-act="'+(enq?'unq':'addone')+'"'+ref
-        +' title="'+(enq?'Sacar de la cotización':'Agregar a la cotización')+'"'
-        +' style="padding:3px 10px;font-size:13px;line-height:1.2">'+(enq?'✓':'+')+'</button>'
-    +'</td>'
+    /* La columna del botón existe SOLO en la flotante. Antes acá había un
+       checkbox y el alta pasaba por "Agregar (N)"; ahora se agrega de a uno y en
+       el acto, y el mismo botón lo saca si ya está. */
+    +(opts.agregar
+      ? '<td style="text-align:center;overflow:visible">'
+        +'<button class="'+(enq?'bs cat-quitar':'bd cat-sumar')+'" data-act="'+(enq?'unq':'addone')+'"'+ref
+          +' title="'+(enq?'Sacar de la cotización':'Agregar a la cotización')+'"'
+          +' style="padding:3px 10px;font-size:13px;line-height:1.2">'+(enq?'✓':'+')+'</button>'
+      +'</td>'
+      : '')
     +'<td style="font-weight:500">'+cevenEsc(p.sku)+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+'</td>'
     +'<td class="wrap">'+cevenEsc(p.description)
       // Rubro e IVA vienen del archivo del ERP (RUBRO y Programa fiscal). Son
@@ -342,7 +349,7 @@ function _catRowHTML(p, idx, idAttr, admin){
        nivel, pero ahí ya elegiste el producto. */
     +'<td style="text-align:right;color:#6e6e73;white-space:nowrap">'+_catPreciosHTML(p)+'</td>'
     +'<td style="text-align:center;font-weight:600;color:'+stockColor+'">'+(hasStock?cevenEsc(p.stock):'—')+'</td>'
-    +(admin
+    +(opts.admin
       ? '<td style="text-align:center;white-space:nowrap;overflow:visible">'
         +'<button class="bs" data-act="edit"'+ref+' title="Editar" style="padding:2px 6px;font-size:12px">✎</button> '
         +'<button class="bsr" data-act="del"'+ref+' title="Eliminar del catálogo">×</button>'
@@ -355,8 +362,8 @@ function renderCat() {
   _pintarFiltroRubro();
   var filtered=getFiltered(), html='';
   _catRendered = filtered;
-  for(var i=0;i<filtered.length;i++) html += _catRowHTML(filtered[i], i, 'data-i', true);
-  document.getElementById('catbody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
+  for(var i=0;i<filtered.length;i++) html += _catRowHTML(filtered[i], i, 'data-i', {admin:true});
+  document.getElementById('catbody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
   _catBindDelegation();
   document.getElementById('catcount').textContent = filtered.length+' productos';
   // La flotante puede estar mostrando la misma lista: si no se repinta, queda
@@ -364,9 +371,26 @@ function renderCat() {
   if(typeof renderPicker === 'function') renderPicker();
 }
 
+/* Cablea un contenedor de burbujas de categoría. Delegado y atado una sola vez,
+   porque _pintarFiltroRubro() rehace los botones en cada render. Lo usan la
+   vista Catálogo (#frubro) y la flotante (#pk-rubro), con su propio callback. */
+function bindRubros(el, alCambiar){
+  if(!el || el._rubBound) return;
+  el._rubBound = true;
+  el.addEventListener('click', function(ev){
+    var b = ev.target.closest ? ev.target.closest('[data-rub]') : null;
+    if(!b || !el.contains(b)) return;
+    var val = b.getAttribute('data-rub');
+    // Volver a tocar la activa saca el filtro: el mismo gesto para ida y vuelta.
+    el.setAttribute('data-rubro', val === el.getAttribute('data-rubro') ? '' : val);
+    alCambiar();
+  });
+}
+
 // Un solo listener en #catbody: cevenActEl() devuelve el elemento accionable más
 // cercano, así que el clic sobre un botón NO cae además en el handler de la fila.
 function _catBindDelegation(){
+  bindRubros(document.getElementById('frubro'), renderCat);
   cevenDelegate('catbody', 'click', function(ev){
     var el = cevenActEl(ev, this);
     if(!el) return;

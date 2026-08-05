@@ -51,7 +51,9 @@ body.dark .pk-lista thead th{background:var(--ch)!important}
 body.dark .pk-step{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark .qstep{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark .qstep:hover{background:#48484a!important}
-body.dark .q-del:hover{background:rgba(255,69,58,.15)!important}
+body.dark .q-del{background:rgba(255,69,58,.12)!important;border-color:rgba(255,69,58,.35)!important;color:#ff453a!important}
+body.dark .q-del:hover{background:#ff453a!important;color:#fff!important}
+body.dark .buscador textarea,body.dark .buscador input{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 /* Los globitos de categoria llevan color inline (pastel claro): sobre fondo
    oscuro se bajan de brillo en bloque en vez de recalcularlos uno por uno. */
 body.dark .pk-rub{filter:brightness(.72) saturate(1.15)}

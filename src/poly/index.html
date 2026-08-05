@@ -144,14 +144,28 @@
         </select>
       </div>
       <div><label class="lbl">Observaciones</label><input id="obs" type="text" placeholder="Notas de la cotización..."></div>
+      <!-- Moneda + TC. Vivían en la vista Catálogo, pero ahí no pintaban nada:
+           la tabla del catálogo muestra los niveles en USD crudo. Los leen dp()
+           y upUnitPrice(), que son de ESTA pantalla. Los ids no cambian. -->
+      <div>
+        <label class="lbl">Moneda</label>
+        <div style="display:flex;gap:8px">
+          <select id="cur" onchange="toggleTC()" style="width:auto">
+            <option value="USD">USD</option><option value="ARS">ARS</option>
+          </select>
+          <input type="number" id="tc" value="1200" style="display:none;flex:1" placeholder="Tipo de cambio">
+        </div>
+      </div>
     </div>
   </div>
   <div id="qbody-wrap" class="tw" style="margin-bottom:18px">
     <table style="table-layout:fixed;min-width:680px">
       <colgroup>
-        <col style="width:13%"><col style="width:31%"><col style="width:7%">
+        <!-- Qty en px y no en %: adentro va el stepper (− input +), que mide
+             ~100px fijos. Con 7% se recortaba y el + quedaba pisado por Nivel. -->
+        <col style="width:13%"><col style="width:28%"><col style="width:108px">
         <col style="width:15%"><col style="width:13%"><col style="width:11%">
-        <col style="width:11%"><col style="width:44px">
+        <col style="width:11%"><col style="width:48px">
       </colgroup>
       <thead>
         <tr>
@@ -194,24 +208,9 @@
 <!-- CATALOG -->
 <div id="p-catalog" class="pg">
   <div class="tb">
-    <button class="bo" onclick="goTo('quote')">← Volver</button>
-    <h2 class="h2" style="flex:1">Agregar productos</h2>
-    <button class="bo" onclick="clearCatalogFilters()" title="Limpiar búsqueda">✕ Filtros</button>
+    <h2 class="h2" style="flex:1">Catálogo <span class="sub" style="font-weight:400">— acá se ven y se editan los productos; para cotizar, usá “+ Agregar producto”</span></h2>
+    <button class="bo" onclick="clearCatalogFilters()" title="Limpiar búsqueda y categoría">✕ Filtros</button>
     <button class="bo" onclick="goTo('addprod')">+ Nuevo artículo</button>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:10px">
-    <div class="card" style="margin:0">
-      <div class="lbl">Moneda</div>
-      <select id="cur" onchange="toggleTC()" style="margin-bottom:6px"><option value="USD">USD</option><option value="ARS">ARS</option></select>
-      <input type="number" id="tc" value="1200" style="display:none" placeholder="Tipo de cambio">
-    </div>
-    <!-- Categoría: sale de la columna RUBRO del archivo del ERP. Las opciones
-         las llena renderCat() con los rubros que realmente hay en el catálogo
-         cargado — no hay lista fija, cambia con cada importación. -->
-    <div class="card" style="margin:0">
-      <div class="lbl">Categoría</div>
-      <select id="frubro" onchange="renderCat()"><option value="">Todas</option></select>
-    </div>
   </div>
   <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <div id="plbadge" class="bk bkw">Sin catálogo</div>
@@ -226,21 +225,23 @@
     <p style="color:#6e6e73;font-size:12px;margin-top:4px">Se guarda automáticamente para la próxima vez. No hace falta precio — se carga a mano en cada cotización.</p>
   </div>
   <div id="catui" style="display:none">
-    <div class="gf" style="margin-bottom:10px">
-      <div style="grid-column:1/-1">
-        <label class="lbl">Buscar / Pegar SKUs <span style="color:#6e6e73;font-weight:400">— pegá varios SKUs separados por enter, tab o coma</span></label>
-        <textarea id="fsearch" rows="1" placeholder="ej: poly studio x72  /  pegá varios SKUs aquí" oninput="handleSearchInput()" onpaste="handleSearchPaste(event, this)" style="width:100%;padding:8px 12px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;resize:vertical;min-height:36px;line-height:1.4"></textarea>
-      </div>
+    <label class="lbl">Buscar / Pegar SKUs <span style="color:#6e6e73;font-weight:400">— pegá varios SKUs separados por enter, tab o coma</span></label>
+    <div class="buscador" style="margin-bottom:10px">
+      <span class="buscador-lupa" aria-hidden="true">🔍</span>
+      <textarea id="fsearch" rows="1" placeholder="ej: poly studio x72  /  pegá varios SKUs aquí" oninput="handleSearchInput()" onpaste="handleSearchPaste(event, this)"></textarea>
     </div>
+    <!-- Categorías en burbujas. Salen de la columna RUBRO del archivo del ERP y
+         las pinta _pintarFiltroRubro(); la elegida vive en el `data-rubro` del
+         contenedor. No hay lista fija: cambia con cada importación. -->
+    <div class="pk-rubros" id="frubro" data-rubro="" style="padding:0 0 12px"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span id="catcount" style="color:#6e6e73"></span>
     </div>
     <div class="tw">
       <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:54px"><col style="width:15%"><col><col style="width:168px"><col style="width:62px"><col style="width:64px"></colgroup>
+        <colgroup><col style="width:15%"><col><col style="width:168px"><col style="width:62px"><col style="width:64px"></colgroup>
         <thead>
           <tr>
-            <th></th>
             <th>SKU</th><th>Descripción</th>
             <th style="text-align:right">Precios por nivel</th>
             <th style="text-align:center" title="Disponible (LocAvailable), sumando todos los depósitos">Stock</th>
@@ -457,7 +458,10 @@
     </div>
 
     <div class="pk-filtros">
-      <textarea id="pk-search" rows="1" placeholder="Buscar &mdash; o pegá varios SKUs separados por enter, tab o coma"></textarea>
+      <div class="buscador" style="flex:1">
+        <span class="buscador-lupa" aria-hidden="true">🔍</span>
+        <textarea id="pk-search" rows="1" placeholder="Buscar &mdash; o pegá varios SKUs separados por enter, tab o coma"></textarea>
+      </div>
     </div>
     <!-- Categorías como globitos y no como <select>: se ven todas de una y
          cambiar de rubro es un toque. La elegida vive en el `data-rubro` del
