@@ -153,5 +153,8 @@ function clearCatalogFilters(){
   var el = document.getElementById('fsearch');   if(el) el.value='';
   var fm = document.getElementById('fmodel');    if(fm) fm.value='Todos';
   var fc = document.getElementById('fcountry');  if(fc) fc.value='Todos';
+  // Categoría (solo Poly): '' es "Todas". Cada marca tiene sus filtros y los que
+  // no existen se saltean solos — por eso cada uno va con su guarda.
+  var fr = document.getElementById('frubro');    if(fr) fr.value='';
   renderCat();
 }

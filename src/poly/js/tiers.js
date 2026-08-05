@@ -26,14 +26,21 @@
    Depende de: brand.js (priceTiers), shared/clientes.js.
    ============================================================ */
 
+/* El valor GUARDADO sigue siendo 'MANUAL' aunque en pantalla diga "Custom".
+   Se muestra distinto de como se guarda a proposito: la clave viaja a la
+   columna `Nivel de precio` de `cquotes`, se sincroniza con todo el equipo y
+   quedo escrita en las cotizaciones que ya existen. Cambiarla obligaria a
+   migrar esas filas para ganar cero — la etiqueta se resuelve en un solo lugar
+   (cevenTierLabel) y es lo unico que ve el usuario. */
 var TIER_MANUAL = 'MANUAL';
+var TIER_MANUAL_LBL = 'Custom';
 
 function cevenTiers(){ return (window.CEVEN_BRAND && window.CEVEN_BRAND.priceTiers) || []; }
 
 function cevenTierLabel(v){
   var t = cevenTiers();
   for(var i=0;i<t.length;i++){ if(t[i].v === v) return t[i].lbl; }
-  return v === TIER_MANUAL ? 'Manual' : (v || '');
+  return v === TIER_MANUAL ? TIER_MANUAL_LBL : (v || '');
 }
 
 // El nivel elegido en el selector global ('' si no hay ninguno).
@@ -144,7 +151,7 @@ function tierSelectHTML(it){
     var txt = tiers[i].lbl + (typeof p === 'number' ? ' · ' + fD(p) : ' · —');
     h += '<option value="'+cevenEsc(v)+'"'+(v===actual?' selected':'')+'>'+cevenEsc(txt)+'</option>';
   }
-  h += '<option value="'+TIER_MANUAL+'"'+(actual===TIER_MANUAL?' selected':'')+'>Manual</option>';
+  h += '<option value="'+TIER_MANUAL+'"'+(actual===TIER_MANUAL?' selected':'')+'>'+cevenEsc(TIER_MANUAL_LBL)+'</option>';
   h += '</select>';
   return h;
 }

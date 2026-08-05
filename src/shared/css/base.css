@@ -279,6 +279,16 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 .crow{cursor:pointer}
 .crow:hover td{background:#fafafa}
 .crow.sel td{background:#e8f0fe}
+/* Ya está en la cotización. Verde tenue y un filete a la izquierda: se lee de
+   reojo mientras se recorre la lista, que es cuando importa. Va DESPUÉS de
+   .sel para que un producto agregado y además tildado se vea como agregado —
+   estar en la cotización es el estado que manda. */
+.crow.enq td{background:#eaf7ee}
+.crow.enq td:first-child{box-shadow:inset 3px 0 0 var(--cgreen)}
+.crow.enq:hover td{background:#dff2e6}
+.cat-sumar{white-space:nowrap}
+.cat-quitar{white-space:nowrap;color:#15863a!important;border-color:#34c759!important}
+.cat-quitar:hover{background:#eaf7ee!important}
 .si{text-align:right;padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:13px;font-family:inherit;background:#fff}
 .no-spin::-webkit-outer-spin-button,.no-spin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .no-spin{-moz-appearance:textfield}

@@ -175,9 +175,11 @@
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;font-weight:600">
       <span>Condición de pago:</span>
-      <select id="pay-mode" style="width:auto;font-weight:400">
+      <select id="pay-mode" onchange="cevenTogglePayOtra()" style="width:auto;font-weight:400">
         <option>Contado anticipado</option><option>30 días FF</option><option>45 días FF</option><option>60 días FF</option>
+        <option value="__otra">Otra…</option>
       </select>
+      <input id="pay-mode-otra" type="text" placeholder="Escribí la condición" style="display:none;width:auto;min-width:210px;font-weight:400">
       <span>– TC Dólar billete BNA del día del pago</span>
     </div>
     <div id="cond-cur" style="font-size:13px;font-weight:700;margin-bottom:7px">Precios unitarios expresados en dólares estadounidenses</div>
@@ -201,6 +203,13 @@
       <div class="lbl">Moneda</div>
       <select id="cur" onchange="toggleTC()" style="margin-bottom:6px"><option value="USD">USD</option><option value="ARS">ARS</option></select>
       <input type="number" id="tc" value="1200" style="display:none" placeholder="Tipo de cambio">
+    </div>
+    <!-- Categoría: sale de la columna RUBRO del archivo del ERP. Las opciones
+         las llena renderCat() con los rubros que realmente hay en el catálogo
+         cargado — no hay lista fija, cambia con cada importación. -->
+    <div class="card" style="margin:0">
+      <div class="lbl">Categoría</div>
+      <select id="frubro" onchange="renderCat()"><option value="">Todas</option></select>
     </div>
   </div>
   <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -228,13 +237,14 @@
     </div>
     <div class="tw">
       <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:32px"><col style="width:16%"><col><col style="width:13%"><col style="width:9%"><col style="width:44px"></colgroup>
+        <colgroup><col style="width:32px"><col style="width:15%"><col><col style="width:12%"><col style="width:8%"><col style="width:124px"><col style="width:64px"></colgroup>
         <thead>
           <tr>
             <th><input type="checkbox" id="chkall" onchange="toggleAll(this)"></th>
             <th>SKU</th><th>Descripción</th>
             <th style="text-align:right">Precios por nivel</th>
             <th style="text-align:center" title="Disponible (LocAvailable), sumando todos los depósitos">Stock</th>
+            <th style="text-align:center">Cotización</th>
             <th></th>
           </tr>
         </thead>

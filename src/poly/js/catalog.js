@@ -162,13 +162,48 @@ function initCat() {
 function getFiltered() {
   var s=document.getElementById('fsearch').value.toLowerCase().trim();
   var terms = s ? s.split(/\s+/).filter(function(t){return t.length>0;}) : [];
+  var rub = document.getElementById('frubro');
+  var rubV = rub ? rub.value : '';
   return products.filter(function(p){
+    // El rubro se compara exacto: las opciones salen de los propios productos,
+    // así que un "contiene" solo agregaría falsos positivos entre categorías con
+    // nombres parecidos.
+    if(rubV && String(p.rubro||'') !== rubV) return false;
     if(terms.length){
       var hay = ((p.sku||'')+' '+(p.description||'')).toLowerCase();
       for(var i=0;i<terms.length;i++){ if(hay.indexOf(terms[i])===-1) return false; }
     }
     return true;
   });
+}
+
+/* Opciones del filtro de categoría, sacadas del catálogo cargado. Se repuebla en
+   cada render porque importar un Excel nuevo cambia el juego de rubros.
+
+   Conserva la selección: renderCat() corre también al agregar un producto a la
+   cotización, y perder el filtro en ese momento —justo cuando estás recorriendo
+   una categoría— sería insufrible. Si el rubro elegido ya no existe (catálogo
+   nuevo), se cae a "Todas" en vez de dejar la tabla vacía sin explicación. */
+function _pintarFiltroRubro(){
+  var sel = document.getElementById('frubro');
+  if(!sel) return;
+  var actual = sel.value;
+  var vistos = {}, rubros = [];
+  for(var i=0;i<products.length;i++){
+    var r = String(products[i].rubro||'').trim();
+    if(r && !vistos[r]){ vistos[r] = 1; rubros.push(r); }
+  }
+  rubros.sort(function(a,b){ return a.localeCompare(b,'es'); });
+  if(actual && rubros.indexOf(actual) < 0) actual = '';
+  var h = '<option value="">Todas</option>';
+  for(var j=0;j<rubros.length;j++){
+    h += '<option value="'+cevenEsc(rubros[j])+'"'+(rubros[j]===actual?' selected':'')+'>'+cevenEsc(rubros[j])+'</option>';
+  }
+  sel.innerHTML = h;
+  sel.value = actual;
+  // Sin rubros en el catálogo (archivo viejo sin la columna) el filtro sobra.
+  var caja = sel.closest ? sel.closest('.card') : null;
+  if(caja) caja.style.display = rubros.length ? '' : 'none';
 }
 
 // Filas realmente pintadas en la última pasada de renderCat(). Los handlers
@@ -203,14 +238,24 @@ function _catPreciosHTML(p){
   return p.listPrice ? cevenEsc('USD '+fD(p.listPrice)) : '—';
 }
 
+/* ¿Este SKU ya está en la cotización? Se compara por SKU y no por id de ítem
+   porque el ítem de la cotización lleva un id propio generado al agregarlo, sin
+   relación con el del catálogo. */
+function _enCotizacion(sku){
+  for(var i=0;i<items.length;i++){ if(String(items[i].sku) === String(sku)) return true; }
+  return false;
+}
+
 function renderCat() {
+  _pintarFiltroRubro();
   var filtered=getFiltered(), html='';
   _catRendered = filtered;
   for(var i=0;i<filtered.length;i++){
     var p=filtered[i], sel=!!selIds[p.id];
+    var enq = _enCotizacion(p.sku);
     var hasStock = p.stock!==null && p.stock!==undefined;
     var stockColor = hasStock ? (p.stock<=0 ? '#d70015' : (p.stock<5 ? '#c84e00' : '#15863a')) : '#aeaeb2';
-    html+='<tr class="crow'+(sel?' sel':'')+'" data-act="row" data-i="'+i+'">'
+    html+='<tr class="crow'+(sel?' sel':'')+(enq?' enq':'')+'" data-act="row" data-i="'+i+'">'
       +'<td style="overflow:visible"><input type="checkbox"'+(sel?' checked':'')+' data-act="chk" data-i="'+i+'"></td>'
       +'<td style="font-weight:500">'+cevenEsc(p.sku)+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+'</td>'
       +'<td class="wrap">'+cevenEsc(p.description)
@@ -224,13 +269,22 @@ function renderCat() {
          nivel, pero ahí ya elegiste el producto. */
       +'<td style="text-align:right;color:#6e6e73;white-space:nowrap">'+_catPreciosHTML(p)+'</td>'
       +'<td style="text-align:center;font-weight:600;color:'+stockColor+'">'+(hasStock?cevenEsc(p.stock):'—')+'</td>'
+      /* Agregar/sacar de la cotización en un solo botón, sin pasar por el
+         checkbox ni por "Agregar (N)". El estado se lee del propio botón: si ya
+         está en la cotización dice "En cotización" y lo saca. Los checkboxes
+         siguen ahí para el alta en lote — los dos caminos conviven. */
+      +'<td style="text-align:center;white-space:nowrap;overflow:visible">'
+        +'<button class="'+(enq?'bs cat-quitar':'bd cat-sumar')+'" data-act="'+(enq?'unq':'addone')+'" data-i="'+i+'"'
+          +' title="'+(enq?'Sacar de la cotización':'Agregar a la cotización')+'"'
+          +' style="padding:3px 9px;font-size:12px">'+(enq?'✓ En cotización':'+ Agregar')+'</button>'
+      +'</td>'
       +'<td style="text-align:center;white-space:nowrap;overflow:visible">'
         +'<button class="bs" data-act="edit" data-i="'+i+'" title="Editar" style="padding:2px 6px;font-size:12px">✎</button> '
-        +'<button class="bsr" data-act="del" data-i="'+i+'" title="Eliminar">×</button>'
+        +'<button class="bsr" data-act="del" data-i="'+i+'" title="Eliminar del catálogo">×</button>'
       +'</td>'
       +'</tr>';
   }
-  document.getElementById('catbody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
+  document.getElementById('catbody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
   _catBindDelegation();
   var cnt=Object.keys(selIds).length;
   document.getElementById('catcount').textContent = filtered.length+' productos · '+cnt+' seleccionados';
@@ -251,13 +305,60 @@ function _catBindDelegation(){
     var p = _catRowAt(el.getAttribute('data-i'));
     if(!p) return;
     var act = el.getAttribute('data-act');
-    if(act === 'edit')      editManualProduct(p.id);
-    else if(act === 'del')  deleteManualProduct(p.id);
-    else                    toggleRow(p.id);   // 'row' y 'chk'
+    if(act === 'edit')        editManualProduct(p.id);
+    else if(act === 'del')    deleteManualProduct(p.id);
+    else if(act === 'addone') agregarUno(p);
+    else if(act === 'unq')    quitarDeCotizacion(p);
+    else                      toggleRow(p.id);   // 'row' y 'chk'
   });
 }
 
+/* Alta de UN producto, sin salir del catálogo. `addToQuote()` navega a la
+   cotización porque cierra un alta en lote; acá el gesto es "voy marcando
+   mientras recorro la lista", y sacarte de la pantalla en cada clic haría que
+   volver al catálogo sea el paso más repetido del flujo. */
+function agregarUno(p){
+  if(_enCotizacion(p.sku)) return;
+  items.push(_nuevoItemDeProducto(p, 0));
+  renderQ();
+  renderCat();
+  if(typeof showToast === 'function') showToast('Agregado: ' + p.sku + '.');
+}
+
+/* Saca de la cotización TODAS las líneas de ese SKU. Puede haber más de una (se
+   agregó dos veces, o vino de una cotización copiada), y dejar una a medias
+   contradiría el botón, que dice si el SKU está o no está. */
+function quitarDeCotizacion(p){
+  var antes = items.length;
+  items = items.filter(function(it){ return String(it.sku) !== String(p.sku); });
+  if(items.length === antes) return;
+  renderQ();
+  renderCat();
+  if(typeof showToast === 'function') showToast('Sacado de la cotización: ' + p.sku + '.');
+}
+
 // toggleRow(), toggleAll() y clearCatalogFilters() viven en shared/catalog-core.js.
+
+/* Una línea de cotización a partir de un producto del catálogo. Vive acá solo
+   —y no duplicada en cada camino de alta— porque es donde se decide el precio:
+   si el alta de a uno y el alta en lote se desincronizaran, un producto valdría
+   distinto según por dónde entró.
+
+   El precio NO arranca vacío: sale del nivel global (poly/js/tiers.js).
+   `tier:''` significa "sigue al global", que es lo que se quiere para un
+   producto recién agregado. Si el SKU no tiene ese nivel en el catálogo,
+   repricearLinea() lo deja vacío para completar a mano.
+
+   `j` desplaza el id cuando se agregan varios en el mismo milisegundo. */
+function _nuevoItemDeProducto(p, j){
+  var it = {
+    id: Date.now() + (j||0)*13 + Math.floor(Math.random()*1000),
+    sku: p.sku, description: p.description,
+    qty: 1, salePrice: '', stock: '', tier: ''
+  };
+  if(typeof repricearLinea === 'function') repricearLinea(it);
+  return it;
+}
 
 // ── AGREGAR A LA COTIZACIÓN (precio siempre en blanco: se tipea a mano) ──
 function addToQuote() {
@@ -277,14 +378,7 @@ function addToQuote() {
     editId=null;
   } else {
     for(var j=0;j<toAdd.length;j++){
-      var p2=toAdd[j];
-      /* El precio ya NO arranca vacío: sale del nivel global (poly/js/tiers.js).
-         `tier:''` significa "sigue al global", que es lo que se quiere para un
-         producto recién agregado. Si el SKU no tiene ese nivel en el catálogo,
-         repricearLinea() lo deja vacío para que se complete a mano, como antes. */
-      var newItem={id:Date.now()+j*13+Math.floor(Math.random()*1000),sku:p2.sku,description:p2.description,qty:1,salePrice:'',stock:'',tier:''};
-      if(typeof repricearLinea === 'function') repricearLinea(newItem);
-      items.push(newItem);
+      items.push(_nuevoItemDeProducto(toAdd[j], j));
     }
   }
   selIds={};

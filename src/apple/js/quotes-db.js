@@ -41,7 +41,7 @@ function doSave(overwrite){
   // historial (exportSelectedPDF) las leía como vacías y omitía el bloque entero
   // de "Condiciones Comerciales". Los nombres de clave son los que ese PDF espera.
   var _el = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
-  var payMode  = _el('pay-mode');
+  var payMode  = cevenPayMode();   // resuelve la opcion "Otra" (shared/ui-core.js)
   var effDate  = _el('eff-date');
   var delivery = _el('delivery');
   /* Proyecto y Observaciones son dos campos distintos desde 08/2026. Antes acá
@@ -197,8 +197,7 @@ function editQuoteFromHistory(qn, skipConfirm){
   // Condiciones comerciales guardadas con la cotización. Sin esto, reabrir una
   // cotización y volver a guardarla las pisaba con lo que hubiera en pantalla.
   (function(){
-    var pm = document.getElementById('pay-mode');
-    if(pm && first['Condición de pago']) pm.value = first['Condición de pago'];
+    if(first['Condición de pago']) cevenSetPayMode(first['Condición de pago']);
     var ed = document.getElementById('eff-date');
     if(ed && first['Propuesta efectiva hasta'] && first['Propuesta efectiva hasta'] !== '—') ed.value = first['Propuesta efectiva hasta'];
     var dv = document.getElementById('delivery');

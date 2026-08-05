@@ -106,7 +106,7 @@ function _snapshotQuoteState(){
     estado: document.getElementById('quote-estado') ? document.getElementById('quote-estado').value : 'Cotizado',
     obs: document.getElementById('obs').value,
     effDate: document.getElementById('eff-date').value,
-    payMode: document.getElementById('pay-mode').value,
+    payMode: cevenPayMode(),
     delivery: document.getElementById('delivery').value
   };
 }
@@ -133,7 +133,7 @@ function _restoreQuoteState(snap){
   if(document.getElementById('quote-estado')) document.getElementById('quote-estado').value = snap.estado;
   document.getElementById('obs').value = snap.obs;
   document.getElementById('eff-date').value = snap.effDate;
-  document.getElementById('pay-mode').value = snap.payMode;
+  cevenSetPayMode(snap.payMode);
   document.getElementById('delivery').value = snap.delivery;
   _qSortKey = null; _qSortDir = 1;
   renderQ();

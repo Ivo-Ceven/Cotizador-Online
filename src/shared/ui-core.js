@@ -203,6 +203,59 @@ function setMesCierre(v){
 })();
 function fD(n) { return n.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
+/* ── CONDICIÓN DE PAGO ──────────────────────────────────────────────────────
+   El `<select id="pay-mode">` tiene las cuatro condiciones de siempre más una
+   opción "Otra", que revela un campo de texto (#pay-mode-otra) para escribir
+   cualquier cosa.
+
+   Estas dos funciones existen para que el resto del código NO sepa de eso. Hay
+   ocho lugares que leen o escriben la condición (los dos PDF, los dos
+   quotes-db, warranties, boot); si cada uno resolviera el "Otra" por su cuenta,
+   alcanzaría con que uno se olvide para que el PDF salga diciendo "Otra" en vez
+   de lo que se escribió. Acá se resuelve una sola vez.
+
+   Lo que se guarda y se imprime es SIEMPRE el texto final, nunca el marcador:
+   así una cotización vieja se relee igual aunque el listado de opciones cambie. */
+var CEVEN_PAY_OTRA = '__otra';
+
+function cevenPayMode(){
+  var sel = document.getElementById('pay-mode');
+  if(!sel) return '';
+  if(sel.value !== CEVEN_PAY_OTRA) return sel.value;
+  var libre = document.getElementById('pay-mode-otra');
+  return libre ? String(libre.value || '').trim() : '';
+}
+
+/* Escribe la condición viniendo de una cotización guardada. Si el texto no es
+   una de las opciones del selector, entra por "Otra" — que es exactamente lo
+   que pasa al reabrir algo guardado con una condición escrita a mano. */
+function cevenSetPayMode(v){
+  var sel = document.getElementById('pay-mode');
+  if(!sel) return;
+  v = String(v == null ? '' : v);
+  for(var i = 0; i < sel.options.length; i++){
+    if(sel.options[i].value === v && v !== CEVEN_PAY_OTRA){
+      sel.value = v;
+      cevenTogglePayOtra();
+      return;
+    }
+  }
+  sel.value = CEVEN_PAY_OTRA;
+  var libre = document.getElementById('pay-mode-otra');
+  if(libre) libre.value = v;
+  cevenTogglePayOtra();
+}
+
+/* Muestra u esconde el campo libre. Lo llama el onchange del selector. */
+function cevenTogglePayOtra(){
+  var sel   = document.getElementById('pay-mode');
+  var libre = document.getElementById('pay-mode-otra');
+  if(!sel || !libre) return;
+  var otra = sel.value === CEVEN_PAY_OTRA;
+  libre.style.display = otra ? '' : 'none';
+  if(otra) libre.focus();
+}
+
 // ── MONEDA ──
 function getCur() { var el = document.getElementById('cur'); return el ? el.value : 'USD'; }
 

@@ -42,6 +42,8 @@ body.dark th{background:var(--ch)!important;color:var(--ct2)!important;border-co
 body.dark td{border-color:var(--cb2)!important;color:var(--ct1)!important;background:transparent!important}
 body.dark .crow:hover td{background:var(--c3)!important}
 body.dark .crow.sel td{background:rgba(10,132,255,.2)!important}
+body.dark .crow.enq td{background:rgba(52,199,89,.16)!important}
+body.dark .crow.enq:hover td{background:rgba(52,199,89,.24)!important}
 /* inputs / selects */
 body.dark input:not([type=file]){background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark select{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}

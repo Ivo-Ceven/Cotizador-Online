@@ -181,9 +181,11 @@
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;font-weight:600">
       <span>Condición de pago:</span>
-      <select id="pay-mode" style="width:auto;font-weight:400">
+      <select id="pay-mode" onchange="cevenTogglePayOtra()" style="width:auto;font-weight:400">
         <option>Contado anticipado</option><option>30 días FF</option><option>45 días FF</option><option>60 días FF</option>
+        <option value="__otra">Otra…</option>
       </select>
+      <input id="pay-mode-otra" type="text" placeholder="Escribí la condición" style="display:none;width:auto;min-width:210px;font-weight:400">
       <span>– TC Dólar billete BNA del día del pago</span>
     </div>
     <div id="cond-cur" style="font-size:13px;font-weight:700;margin-bottom:7px">Precios unitarios expresados en dólares estadounidenses</div>

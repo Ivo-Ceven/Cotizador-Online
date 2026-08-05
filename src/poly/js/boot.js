@@ -59,6 +59,13 @@ if(typeof cevenApplyVendorAutofill === 'function') cevenApplyVendorAutofill();
   var d = new Date(); d.setDate(d.getDate()+15);
   var yyyy = d.getFullYear(), mm = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
   document.getElementById('eff-date').value = yyyy+'-'+mm+'-'+dd;
+  /* Default de arranque. Se busca por texto y se saltea la opcion libre:
+     su etiqueta no tiene numeros, pero el dia que los tenga no puede
+     quedar seleccionada de entrada con el campo vacio. */
   var pm = document.getElementById('pay-mode');
-  for(var i=0;i<pm.options.length;i++){ if(pm.options[i].text.indexOf('30')!==-1){ pm.selectedIndex=i; break; } }
+  for(var i=0;i<pm.options.length;i++){
+    if(pm.options[i].value === CEVEN_PAY_OTRA) continue;
+    if(pm.options[i].text.indexOf('30')!==-1){ pm.selectedIndex=i; break; }
+  }
+  cevenTogglePayOtra();
 })();

@@ -136,7 +136,7 @@ function buildPDF(){
   var exec=document.getElementById('exec').value;
   var ob=document.getElementById('obs').value;
   var effDate=document.getElementById('eff-date').value||'—';
-  var payMode=document.getElementById('pay-mode').value;
+  var payMode=cevenPayMode();
   var delivery=document.getElementById('delivery').value||'—';
   var qn=String(qNum).padStart(4,'0');
   // ||0 para que un salePrice roto no imprima "NaN" como total en el PDF del cliente.

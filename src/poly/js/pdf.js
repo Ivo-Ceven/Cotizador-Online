@@ -87,7 +87,7 @@ function buildPDF(){
   var exec=document.getElementById('exec').value;
   var ob=document.getElementById('obs').value;
   var effDate=document.getElementById('eff-date').value||'—';
-  var payMode=document.getElementById('pay-mode').value;
+  var payMode=cevenPayMode();
   var delivery=document.getElementById('delivery').value||'—';
   var qn=String(qNum).padStart(4,'0');
   var gt=0; for(var i=0;i<items.length;i++) gt+=(items[i].salePrice||0)*items[i].qty;
