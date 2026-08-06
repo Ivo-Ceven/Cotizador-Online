@@ -149,6 +149,41 @@ Apple también escribe ahora la columna visible `IVA`; antes el dato estaba en l
 clave interna `_taxes`, que no sale al Excel ni la puede leer un módulo compartido
 sin saber que es de Apple. Se sigue leyendo `_taxes` como respaldo.
 
+### 4. El pipeline de Poly: de "número de factura" a "link de Netsuite"
+
+El botón de la columna Acciones llevaba el número de factura del proyecto. Ahora
+lleva el **link a Netsuite**:
+
+- **con link** → botón verde `Netsuite ↗`, y al hacer clic **abre Netsuite** en
+  otra pestaña. Al lado, un **✎ amarillo chico** para cambiar el link;
+- **sin link** → botón rojo `Netsuite —`, que al hacer clic lo pide (ahí el ✎
+  sobraría, porque el botón grande ya edita).
+
+Abrir el link lo puede hacer cualquiera —es de solo lectura—; editarlo lo sigue
+frenando `cevenCanEditPipelineRow()`, así que un ejecutivo no toca los proyectos
+de otro. El ✎ ni siquiera se dibuja si no tenés permiso.
+
+**El dato se sigue guardando en la clave `factura`**, igual que "sala" → Proyecto:
+esa columna existe en Supabase, viaja sincronizada y ya tiene valores. Renombrarla
+obligaría a migrar la tabla `pipeline` y los backups JSON para no ganar nada. Se
+renombró **solo lo que se lee en pantalla** (y el encabezado del Excel, que ahora
+dice "Netsuite").
+
+Dos cosas que resolvió `cevenNetsuiteURL()`, y que están en
+`check-poly-netsuite.js`:
+
+- **Solo http y https.** El pipeline se sincroniza con TODO el equipo, así que
+  ese valor no es de confianza: un `javascript:...` guardado como link correría
+  en la pantalla de quien apretara el botón. Es el mismo agujero que ya se cerró
+  en el resto de la app escapando lo que viene de la base, pero acá escapar no
+  alcanza — hay que validar el esquema. Se valida **al guardar y al abrir**.
+- **Un link pegado sin protocolo** ("app.netsuite.com/…") lo tomaría el navegador
+  como ruta relativa de la propia app. Se le antepone `https://`, pero solo si lo
+  que va antes de la primera barra parece un dominio: sin ese chequeo, las filas
+  viejas —que guardaban el NÚMERO de factura— se convertían en `https://0001-123`
+  y el botón salía **en verde** como si tuviera un link que no lleva a ningún
+  lado. Ahora esas filas quedan en rojo, que es la verdad: falta cargar el link.
+
 ### Lo que NO quedó resuelto
 
 - **La pestaña del PDF de la cotización.** El comprobante se abre solo; el 📄 PDF

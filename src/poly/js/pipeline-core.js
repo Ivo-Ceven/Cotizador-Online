@@ -78,7 +78,8 @@ function addToPipeline(){
     row.monto     = monto;
     row.ejecutivo = exec || row.ejecutivo;
     row.mesCierre = mesCierre || row.mesCierre;
-    // estado / id / factura NO se pisan: son seguimiento, no datos de la cotización.
+    // estado / id / factura (hoy el link de Netsuite) NO se pisan: son
+    // seguimiento del proyecto, no datos de la cotización.
   }
 
   savePipeline(pipe);

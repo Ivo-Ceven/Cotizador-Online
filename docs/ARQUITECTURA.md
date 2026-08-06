@@ -109,6 +109,8 @@ Poly tiene los mismos nombres donde el concepto es el mismo, pero su `pipeline-c
 
 > **Ojo con "sala" en el código de Poly.** Lo que la UI llama **Proyecto (cliente final)** se guarda con las claves viejas: el input es `#sala`, el array de la fila es `salas[]`, cada elemento tiene `.sala`, la columna en Supabase es `salas` (jsonb, declarada en `objCols`) y la clave dentro de `cquotes` es `'Sala'` (en `COLS`). Se renombró **solo lo que se lee en pantalla** (31/07/2026); tocar las claves obligaría a migrar `cquotes`, los backups JSON y la columna de la base. La traducción del encabezado de Excel se hace en `exportDB()` con un mapa `XLS_HD`.
 
+> **Ojo con `factura` en el pipeline de Poly.** Desde 08/2026 esa columna guarda el **link a Netsuite** del proyecto, no un número de factura. Mismo criterio que "sala": se renombró solo lo que se ve en pantalla, porque la columna existe en Supabase (`pipeCols`/`nullableCols` de `brand.js`), viaja sincronizada y ya tiene datos. El botón verde **abre** Netsuite y el ✎ amarillo de al lado **cambia** el link; sin link, el botón es rojo y lo pide. `cevenNetsuiteURL()` (en `poly/js/pipeline-detail.js`) le antepone `https://` al link pegado sin protocolo y **descarta todo lo que no sea http(s)** — el pipeline se sincroniza con todo el equipo, así que un `javascript:` guardado ahí correría en la pantalla de quien apriete el botón.
+
 `cevencare.html` + `js/cevencare.js` + `css/cevencare.css` son una mini-app aparte (sin Supabase): cotiza garantías por dispositivo/canal y envía los ítems elegidos al cotizador con `postMessage({type:'cevencare-add-warranty', items})`; `warranties.js` los recibe y los suma a `warrantyItems`.
 
 ## `src/tareas/`: el tablero del equipo
@@ -251,6 +253,7 @@ node scripts/check-globals.js        # una misma función definida dos veces en 
 node scripts/check-comprobante.js    # genera el comprobante en PDF y le lee el texto
 node scripts/check-poly-catalogo.js  # importador de Poly: tiers, stock e IVA
 node scripts/check-poly-tiers.js     # niveles de precio de Poly
+node scripts/check-poly-netsuite.js  # el link de Netsuite del pipeline
 node --check src/<archivo>.js        # sintaxis de lo que tocaste
 ```
 

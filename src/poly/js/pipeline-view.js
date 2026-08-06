@@ -325,13 +325,23 @@ function _pipeTablaHTML(filas, scope, opts){
         celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'});
         celdaEstado = '<select data-act="est" data-k="'+kA+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
           + cevenEstadoOptions(estado, false) + '</select>';
-        /* El número de factura vivía SOLO en el title del botón: en un celular
-           no hay hover, así que una fila con factura y otra sin factura se veían
-           idénticas salvo por el color. Ahora el número está en la etiqueta. */
-        var factTxt = r.factura ? ('Fact. ' + cevenEsc(r.factura)) : 'Fact. —';
-        celdaAcc = (r.factura
-            ? '<button class="bs" data-act="fact" data-k="'+kA+'" title="Clic para editar el número de factura" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">'+factTxt+'</button> '
-            : '<button class="bs" data-act="fact" data-k="'+kA+'" title="Cargar número de factura" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">'+factTxt+'</button> ')
+        /* Netsuite. Con link cargado el botón ABRE Netsuite (verde, con la
+           flechita de "sale de la app") y al lado aparece un ✎ amarillo chico
+           para cambiarlo. Sin link, el botón es rojo y lo que hace es pedirlo:
+           ahí el ✎ sobraría, porque el botón grande ya edita.
+
+           El link entero no entra en la etiqueta —es una URL larga—, así que va
+           en el `title`. El estado igual se distingue sin hover, por el color y
+           por la flechita, que es lo que faltaba cuando acá iba el número de
+           factura y solo se veía en el tooltip. */
+        var nsUrl = (typeof cevenNetsuiteURL === 'function') ? cevenNetsuiteURL(r.factura) : '';
+        celdaAcc = (nsUrl
+            ? '<button class="bs" data-act="ns-open" data-k="'+kA+'" title="Abrir en Netsuite: '+cevenEsc(r.factura)+'" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">Netsuite ↗</button>'
+              + (cevenCanEditPipelineRow(r.ejecutivo)
+                  ? ' <button class="bs" data-act="ns-edit" data-k="'+kA+'" title="Cambiar el link de Netsuite" style="background:#ffd60a;color:#5c4a00;border-color:#e0b800;padding:2px 5px;font-size:10px;font-weight:700;line-height:1.4">✎</button>'
+                  : '')
+              + ' '
+            : '<button class="bs" data-act="ns-edit" data-k="'+kA+'" title="Cargar el link de Netsuite de este proyecto" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">Netsuite —</button> ')
           + (cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rm" data-k="'+kA+'" title="Quitar este proyecto del pipeline">×</button>' : '');
       }
 
@@ -392,7 +402,10 @@ function pipeBindDelegation(){
     if(n.kind !== 'r') return;
 
     if(act === 'exp')          togglePipeNode(el.getAttribute('data-k'));
-    else if(act === 'fact')    editFactura(n.row.id);
+    // Abrir Netsuite lo puede hacer cualquiera (es de solo lectura); editar el
+    // link lo frena cevenCanEditPipelineRow() adentro de editNetsuiteLink().
+    else if(act === 'ns-open') abrirNetsuite(n.row.id);
+    else if(act === 'ns-edit') editNetsuiteLink(n.row.id);
     else if(act === 'rm')      removePipeline(n.row.id);
     else if(act === 'restore') restoreFromArchive(el.getAttribute('data-mk'), n.row.id);
   });

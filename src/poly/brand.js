@@ -25,7 +25,8 @@ window.CEVEN_BRAND = {
   /* Fila de pipeline = UN PROYECTO = UNA COTIZACION (08/2026). Antes era un OPG
      con un array `salas[]` adentro y el estado a nivel OPG; ahora el OPG es un
      dato informativo del proyecto y cada proyecto lleva su propio estado, mes de
-     cierre y factura. `salas` ya no existe.
+     cierre y link de Netsuite (columna `factura`, ver mas abajo). `salas` ya no
+     existe.
 
      Sin familias Apple (qMac/qIph/...) ni margen: eso sigue siendo de Apple. */
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','opg',
@@ -44,7 +45,12 @@ window.CEVEN_BRAND = {
   padCols: { qNum: 4 },
 
   // Escalares que aceptan NULL: hay que emitirlos explicitamente como null.
-  // `factura` es el caso que motivo esto: al vaciar el campo se seteaba null,
+  // OJO con `factura`: la columna se llama asi por historia, pero desde 08/2026
+  // guarda el LINK A NETSUITE del proyecto, no un numero de factura. Se renombro
+  // solo lo que se lee en pantalla — igual que "sala" -> "Proyecto" — porque la
+  // columna existe en Supabase y ya tiene datos. Ver poly/js/pipeline-detail.js.
+  //
+  // Es ademas el caso que motivo `nullableCols`: al vaciar el campo se seteaba null,
   // el upsert omitia la columna, PostgREST conservaba el numero viejo y el poll
   // lo revertia — re-renderizando la tabla cada 15s para siempre.
   nullableCols: ['opg','factura','mesCierre','proyecto'],

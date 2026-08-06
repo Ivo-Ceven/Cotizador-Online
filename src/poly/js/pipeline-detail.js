@@ -2,23 +2,71 @@
    cerrar lo hace togglePipeNode(clave), en shared/pipeline-group.js, que sirve
    igual para un grupo de cliente que para una fila. */
 
-// ── Factura del proyecto, se completa post-hoc (análogo al OV Link de Apple) ──
-function editFactura(id){
+/* ── LINK DE NETSUITE ────────────────────────────────────────────────────────
+   El botón de la fila del pipeline llevaba el NÚMERO de factura; ahora lleva el
+   link al proyecto en Netsuite. Con link cargado el botón abre Netsuite, y para
+   cambiarlo está el ✎ amarillo de al lado.
+
+   ⚠ **El dato se sigue guardando en la clave `factura`**, igual que "sala" en
+   Poly: esa columna existe en Supabase (`pipeCols` y `nullableCols` de
+   brand.js), viaja sincronizada a todo el equipo y ya tiene valores cargados.
+   Renombrarla obligaría a una migración de la tabla `pipeline` y de los backups
+   JSON para no ganar nada. Se renombró SOLO lo que se lee en pantalla. */
+
+/* Un link pegado a mano puede venir sin protocolo ("app.netsuite.com/…"), y
+   entonces el navegador lo trataría como una ruta relativa de la propia app.
+   Devuelve '' si el texto no puede ser una URL http(s) — ver por qué abajo. */
+function cevenNetsuiteURL(link){
+  var url = String(link == null ? '' : link).trim();
+  if(!url) return '';
+  /* Solo http y https. El pipeline se sincroniza con todo el equipo, así que
+     este valor NO es de confianza: un `javascript:...` guardado como link
+     correría en la pantalla de todos al hacer clic en el botón. Cualquier otro
+     esquema (javascript:, data:, file:) se descarta. */
+  if(/^[a-z][a-z0-9+.-]*:/i.test(url)) return /^https?:\/\//i.test(url) ? url : '';
+  /* Sin esquema se asume https, pero solo si lo que hay ANTES de la primera
+     barra parece un dominio. Sin este chequeo, las filas viejas —que en esta
+     columna guardaban el NÚMERO de factura— se convertían en "https://0001-123":
+     el botón salía en verde como si tuviera link y no llevaba a ningún lado.
+     Así quedan en rojo, que es la verdad: falta cargar el link. */
+  var host = url.split(/[/?#]/)[0];
+  if(host.indexOf('.') === -1) return '';
+  return 'https://' + url;
+}
+
+function abrirNetsuite(id){
+  var pipe = getPipeline();
+  for(var i=0;i<pipe.length;i++){
+    if(pipe[i].id !== id) continue;
+    var url = cevenNetsuiteURL(pipe[i].factura);
+    if(!url){ editNetsuiteLink(id); return; }   // sin link: se ofrece cargarlo
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+}
+
+function editNetsuiteLink(id){
   var pipe = getPipeline();
   var idx = -1;
   for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ idx = i; break; } }
   if(idx < 0) return;
   if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.'); return; }
   var current = pipe[idx].factura || '';
-  promptModal(current ? 'Editar número de factura' : 'Número de factura de este proyecto', current, function(val){
+  promptModal(current ? 'Editar el link de Netsuite' : 'Pegá el link de Netsuite de este proyecto', current, function(val){
     val = (val||'').trim();
     if(val === current) return;
+    // Se valida ACÁ además de al abrir: guardar algo que después no va a abrir
+    // deja el botón en verde mintiendo que hay un link usable.
+    if(val && !cevenNetsuiteURL(val)){
+      showToast('Ese link no sirve: tiene que ser una dirección http:// o https://.');
+      return;
+    }
     if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
     var pipe2 = getPipeline();
     for(var i=0;i<pipe2.length;i++){ if(pipe2[i].id === id){ pipe2[i].factura = val === '' ? null : val; break; } }
     savePipeline(pipe2);
     renderPipeline();
-    notifyUndo(val ? ('✓ Factura actualizada: '+val) : '✓ Factura quitada', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
+    notifyUndo(val ? '✓ Link de Netsuite actualizado' : '✓ Link de Netsuite quitado', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
   }, {okLabel:'Guardar'});
 }
 
@@ -162,7 +210,9 @@ function buildPipelineWorkbook(){
       'Cierre estimado': mesLabel,
       'Estado': cevenEstadoLabel(r.estado || 'Cotizado'),
       'Monto USD': r.monto,
-      'Factura': r.factura || ''
+      // La clave sigue siendo `factura` (columna de Supabase); lo que cambió es
+      // qué guarda y cómo se llama en pantalla. Ver el comentario de arriba.
+      'Netsuite': r.factura || ''
     };
   });
   var ws = XLSX.utils.json_to_sheet(data);
