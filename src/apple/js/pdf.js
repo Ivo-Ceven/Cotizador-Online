@@ -169,12 +169,12 @@ function buildPDF(){
         +'</tr>';
     }
   }
-  // Armar nombre de archivo: Cotizacion_XXXX_NombreCliente
-  var clientSlug = client.trim()
-    .replace(/[<>:"/\\|?*]/g,'')   // caracteres inválidos en nombres de archivo
-    .replace(/\s+/g,'_')           // espacios → guión bajo
-    .substring(0,40);              // máx 40 chars
-  var docTitle = 'Cotizacion_' + qn + (clientSlug ? '_' + clientSlug : '');
+  // "<cliente> - <proyecto> - Ceven - <validez>" (shared/pdf-core.js)
+  var docTitle = cevenNombreDocumento(
+    client,
+    document.getElementById('proyecto').value,
+    document.getElementById('eff-date').value
+  );
   var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+cevenEsc(docTitle)+'</title>'
     +cevenPdfDocCSS(
       '.col-sku{width:12%}.col-desc{width:35%}.col-qty{width:6%}.col-pv{width:13%}.col-tot{width:13%}.col-iva{width:10%}.col-disp{width:11%}',

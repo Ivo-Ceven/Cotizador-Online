@@ -126,11 +126,32 @@ ok(ctx.cevenComprobanteIVA(FILAS[0]) === '10.5%', 'lee el IVA de la columna `IVA
 ok(ctx.cevenComprobanteIVA(FILAS[1]) === '21%', 'cae a `_taxes` en cotizaciones viejas de Apple');
 ok(ctx.cevenComprobanteIVA({}) === '—', 'sin ningún IVA guardado muestra "—"');
 
-/* ---- El nombre del archivo ------------------------------------------------ */
-ok(ctx.cevenComprobanteNombre('0563', 'Vista Energy') === 'Comprobante_0563_Vista_Energy.pdf',
-   'el nombre del archivo lleva número y cliente', ctx.cevenComprobanteNombre('0563', 'Vista Energy'));
-ok(ctx.cevenComprobanteNombre('0563', 'A/B: "C"') === 'Comprobante_0563_AB_C.pdf',
-   'saca los caracteres que Windows no acepta', ctx.cevenComprobanteNombre('0563', 'A/B: "C"'));
+/* ---- El nombre del archivo: "<cliente> - <proyecto> - Ceven - <validez>" --- */
+ok(ctx.cevenComprobanteNombre(FILAS[0]) === 'Vista Energy - Sala Directorio - Ceven - 2026-08-20.pdf',
+   'cliente, proyecto, Ceven y validez, en ese orden', ctx.cevenComprobanteNombre(FILAS[0]));
+// Los espacios del nombre SÍ se conservan (son válidos y el formato ya los usa);
+// lo que se saca es < > : " / \ | ? * y los caracteres de control.
+ok(ctx.cevenNombreDocumento('A/B: "C"', 'D|E', '2026-01-02') === 'AB C - DE - Ceven - 2026-01-02',
+   'saca los caracteres que Windows no acepta en un nombre de archivo',
+   ctx.cevenNombreDocumento('A/B: "C"', 'D|E', '2026-01-02'));
+ok(ctx.cevenNombreDocumento('Hospital  Italiano\tSA', 'Sala 1', '2026-01-02')
+     === 'Hospital Italiano SA - Sala 1 - Ceven - 2026-01-02',
+   'los espacios de más y los tabs de un Excel quedan en un solo espacio',
+   ctx.cevenNombreDocumento('Hospital  Italiano\tSA', 'Sala 1', '2026-01-02'));
+/* Los tramos sin dato se omiten enteros: si no, quedaba "Vista Energy -  - Ceven - ". */
+ok(ctx.cevenNombreDocumento('Vista Energy', '', '') === 'Vista Energy - Ceven',
+   'sin proyecto ni validez no quedan separadores colgando',
+   ctx.cevenNombreDocumento('Vista Energy', '', ''));
+ok(ctx.cevenNombreDocumento('Vista Energy', '—', '2026-08-20') === 'Vista Energy - Ceven - 2026-08-20',
+   'el "—" de "sin dato" de cquotes no entra en el nombre',
+   ctx.cevenNombreDocumento('Vista Energy', '—', '2026-08-20'));
+ok(ctx.cevenNombreDocumento('', '', '') === 'Cotizacion Ceven',
+   'sin ningún dato cae a un nombre genérico y no a "Ceven" a secas',
+   ctx.cevenNombreDocumento('', '', ''));
+/* En Poly el proyecto es el cliente final; sin él se usa el OPG. */
+ok(ctx.cevenComprobanteNombre({'Cliente':'Vista Energy','OPG':'OPG-77','Propuesta efectiva hasta':'2026-08-20'})
+     === 'Vista Energy - OPG-77 - Ceven - 2026-08-20.pdf',
+   'sin proyecto se usa el OPG');
 
 /* ---- Generar el PDF ------------------------------------------------------- */
 let doc = null, err = null;
@@ -164,16 +185,34 @@ if(doc){
   ok(ctx.cevenCompSan('Descripción · N° ñ á') === 'Descripción · N° ñ á',
      'cevenCompSan() NO toca acentos, ñ, «°» ni «·»', ctx.cevenCompSan('Descripción · N° ñ á'));
 
-  ok(tiene('COMPROBANTE'), 'el título está en el PDF');
+  ok(tiene('COTIZACIÓN'), 'el título dice COTIZACIÓN');
+  ok(!tiene('COMPROBANTE'), 'ya no dice COMPROBANTE en ningún lado');
   ok(tiene('Ceven S.A'), 'la razón social del emisor está');
-  ok(tiene('30-69669295-1'), 'el CUIT del emisor está');
-  ok(tiene('0563'), 'el número de comprobante está');
+  ok(tiene('30-69669295-1'), 'el CUIT del EMISOR sigue en el encabezado');
+  // El renglón en blanco de CUIT/DNI del cliente se sacó: es de un comprobante
+  // fiscal, no de una propuesta.
+  ok(!tiene('CUIT / DNI'), 'no queda el renglón de CUIT/DNI del cliente');
+  ok(tiene('0563'), 'el número de cotización está');
   ok(tiene('Vista Energy'), 'el cliente está');
-  ok(tiene('Sala Directorio'), 'la organización (Proyecto en Poly) está');
+  ok(tiene('Sala Directorio'), 'el proyecto está debajo del cliente');
   // Entero y en un solo renglón: con la columna a 26 mm salía "A4LZ8AA#AB" + "M".
   ok(tiene('A4LZ8AA#ABM'), 'el SKU más largo entra sin partirse en dos renglones');
   ok(tiene('875K5AA'), 'el SKU de la segunda línea está');
   ok(tiene('10.5%') && tiene('21%'), 'las dos alícuotas de IVA están en la tabla');
+
+  /* El IVA va ÚLTIMO, después del subtotal. Los encabezados se dibujan en orden,
+     así que alcanza con comparar dónde aparece cada uno; ninguna de las dos
+     palabras vuelve a salir en el resto del documento. */
+  const iSub = texto.indexOf('Subtotal'), iIva = texto.indexOf('IVA');
+  ok(iSub !== -1 && iIva !== -1 && iIva > iSub,
+     'la columna IVA es la última, después de Subtotal',
+     'Subtotal en ' + iSub + ', IVA en ' + iIva);
+
+  // El ejecutivo pasó del pie a la caja del encabezado, junto al N° y la fecha.
+  const iEjec = texto.indexOf('Ejecutivo'), iDetalle = texto.indexOf('Detalle');
+  ok(iEjec !== -1 && iDetalle !== -1 && iEjec < iDetalle,
+     'el ejecutivo está arriba, antes del detalle', 'Ejecutivo en ' + iEjec + ', Detalle en ' + iDetalle);
+
   ok(tiene('TOTAL'), 'la fila de TOTAL está');
   ok(tiene('11.820,00'), 'el total suma las dos líneas (11.100 + 720)');
   ok(tiene('Condiciones Comerciales'), 'el bloque de condiciones comerciales está');
@@ -181,7 +220,7 @@ if(doc){
      'la condición de pago sale completa, con el guión antes del TC');
   ok(tiene('2026-08-20'), 'la fecha efectiva guardada está');
   ok(tiene('NO incluyen Impuestos'), 'la línea de impuestos está');
-  ok(tiene('Tsu Rivas'), 'el ejecutivo está en el pie');
+  ok(tiene('Tsu Rivas'), 'el nombre del ejecutivo está impreso');
   ok(!tiene('Forma de pago'), 'ya no queda el renglón en blanco de "Forma de pago"');
 
   if(process.argv.indexOf('--guardar') !== -1){

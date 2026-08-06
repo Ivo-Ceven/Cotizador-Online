@@ -31,10 +31,17 @@
    `<img onerror=…>` corría. Un PDF no tiene ese sink.
 
    ── NO ES UNA FACTURA ─────────────────────────────────────────────────────
-   El título es COMPROBANTE a propósito. Una factura argentina necesita CAE de
-   AFIP, punto de venta y tipo (A/B/C): nada de eso sale de una cotización, y un
-   papel que diga "FACTURA" sin CAE no es válido. Si algún día se emite de
-   verdad, es integrar la API de AFIP, no cambiarle el título a este archivo.
+   El título dice COTIZACIÓN (antes decía COMPROBANTE) y eso NO es cosmético:
+   una factura argentina necesita CAE de AFIP, punto de venta y tipo (A/B/C).
+   Nada de eso sale de una cotización, y un papel que diga "FACTURA" sin CAE no
+   es válido. Si algún día se emite de verdad, es integrar la API de AFIP, no
+   cambiarle el título a este archivo.
+
+   Por la misma razón el documento no lleva renglón de CUIT/DNI del cliente:
+   ese dato es de un comprobante fiscal, no de una propuesta.
+
+   El archivo se llama "<cliente> - <proyecto> - Ceven - <validez>.pdf", igual
+   que el PDF de la cotización (ver cevenNombreDocumento en shared/pdf-core.js).
 
    Lo comparten las dos marcas: usa solo campos que existen en las dos
    (`cquotes` con Cliente / Ejecutivo / Fecha / SKU / Descripción / Cantidad /
@@ -209,63 +216,65 @@ function cevenComprobanteDoc(qn, filas, emisor){
   doc.setFont('times', 'bold');
   doc.setFontSize(20);
   doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
-  _compTxt(doc, 'COMPROBANTE', M, y);
+  _compTxt(doc, 'COTIZACIÓN', M, y);
   y += 7;
 
-  /* ── CAJA N° + FECHA ────────────────────────────────────────────────────── */
+  /* ── CAJA N° + FECHA + EJECUTIVO ─────────────────────────────────────────
+     Tres celdas. El ejecutivo estaba al pie, en letra chica: acá arriba es
+     donde el cliente lo busca, junto al número y la fecha. */
   var hCaja = 8;
+  var wCelda = CEVEN_COMP_AU / 3;
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.2);
   doc.rect(M, y, CEVEN_COMP_AU, hCaja);
-  doc.line(M + CEVEN_COMP_AU / 2, y, M + CEVEN_COMP_AU / 2, y + hCaja);
+  doc.line(M + wCelda,     y, M + wCelda,     y + hCaja);
+  doc.line(M + wCelda * 2, y, M + wCelda * 2, y + hCaja);
   doc.setFontSize(10.5);
   doc.setTextColor(0, 0, 0);
   /* Los anchos se miden con la fuente EN NEGRITA, que es con la que se dibuja el
      rótulo. Medirlos después del setFont('normal') dejaba el valor pegado al
      rótulo ("Fecha:06/08/2026"), porque la negrita es más ancha. */
   doc.setFont('times', 'bold');
-  var xFecha = M + CEVEN_COMP_AU / 2 + 3;
-  var wRot   = doc.getTextWidth('Comprobante N°: ');
-  var wFecha = doc.getTextWidth('Fecha: ');
-  _compTxt(doc, 'Comprobante N°:', M + 3, y + 5.4);
-  _compTxt(doc, 'Fecha:', xFecha, y + 5.4);
+  var celdas = [
+    ['Cotización N°: ', String(qn || ''),               M + 3],
+    ['Fecha: ',         String(p['Fecha'] || '—'),      M + wCelda + 3],
+    ['Ejecutivo: ',     String(p['Ejecutivo'] || '—'),  M + wCelda * 2 + 3]
+  ];
+  var anchos = celdas.map(function(c){ return doc.getTextWidth(c[0]); });
+  celdas.forEach(function(c){ _compTxt(doc, c[0].trim(), c[2], y + 5.4); });
   doc.setFont('times', 'normal');
-  _compTxt(doc, String(qn || ''), M + 3 + wRot, y + 5.4);
-  _compTxt(doc, String(p['Fecha'] || '—'), xFecha + wFecha, y + 5.4);
+  celdas.forEach(function(c, i){ _compTxt(doc, c[1], c[2] + anchos[i], y + 5.4); });
   y += hCaja + 8;
 
-  /* ── DATOS DEL CLIENTE ──────────────────────────────────────────────────── */
+  /* ── DATOS DEL CLIENTE ────────────────────────────────────────────────────
+     El nombre del cliente en grande y el proyecto abajo, sin rótulos: son los
+     dos datos que identifican el trabajo y se leen de un vistazo. Acá había
+     además un renglón "CUIT / DNI" en blanco para completar a mano — se sacó:
+     una cotización no lo necesita (no es un comprobante fiscal). */
   doc.setFont('times', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
   _compTxt(doc, 'Datos del cliente', M, y);
-  y += 5.5;
+  y += 7;
 
-  /* "Organización": en Poly el proyecto/OPG es lo que identifica al trabajo; en
-     Apple no existe ese campo y queda el guión. Se leen los dos sin preguntar
-     por la marca — el que no aplica viene undefined. */
-  var organizacion = p['Proyecto'] || p['OPG'] || '—';
-  doc.setFontSize(10.5);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(16);
   doc.setTextColor(0, 0, 0);
-  [['Recibe', p['Cliente'] || '—'], ['Organización', organizacion], ['CUIT / DNI', '']]
-    .forEach(function(par){
-      doc.setFont('times', 'bold');
-      _compTxt(doc, par[0] + ':', M, y);
-      var wr = doc.getTextWidth(par[0] + ': ');
-      var val = String(par[1] == null ? '' : par[1]).trim();
-      if(val){
-        doc.setFont('times', 'normal');
-        doc.setTextColor(CEVEN_COMP_GRIS[0], CEVEN_COMP_GRIS[1], CEVEN_COMP_GRIS[2]);
-        _compTxt(doc, val, M + wr, y);
-        doc.setTextColor(0, 0, 0);
-      } else {
-        // Renglón para completar a mano, como en el modelo impreso.
-        doc.setDrawColor(102, 102, 102);
-        doc.setLineWidth(0.2);
-        doc.line(M + wr, y + 1, M + wr + 55, y + 1);
-      }
-      y += 6;
-    });
+  _compTxt(doc, String(p['Cliente'] || '—'), M, y);
+  y += 6;
+
+  /* En Poly el proyecto (cliente final) es lo que identifica al trabajo, con el
+     OPG como respaldo; en Apple hay Proyecto pero no OPG. Se leen los dos sin
+     preguntar por la marca — el que no aplica viene undefined. Si no hay
+     ninguno no se imprime nada: un guión suelto debajo del nombre no aporta. */
+  var proyecto = String(p['Proyecto'] || p['OPG'] || '').trim();
+  if(proyecto && proyecto !== '—'){
+    doc.setFont('times', 'normal');
+    doc.setFontSize(11.5);
+    doc.setTextColor(CEVEN_COMP_GRIS[0], CEVEN_COMP_GRIS[1], CEVEN_COMP_GRIS[2]);
+    _compTxt(doc, proyecto, M, y);
+    y += 5.5;
+  }
   y += 3;
 
   /* ── DETALLE ────────────────────────────────────────────────────────────── */
@@ -285,21 +294,23 @@ function cevenComprobanteDoc(qn, filas, emisor){
     var unit = parseFloat(r['P. Venta Unitario']) || 0;
     var sub  = parseFloat(r['Total']) || 0;
     total += sub;
+    /* El IVA va ÚLTIMO, después del subtotal: es un dato informativo y no tiene
+       por qué separar la cantidad del precio, que es lo que se lee junto. */
     return [
       cevenCompSan(r['SKU'] || ''),
       cevenCompSan(r['Descripción'] || ''),
       String(qty),
-      cevenCompSan(cevenComprobanteIVA(r)),
       'USD ' + fD(unit),
-      'USD ' + fD(sub)
+      'USD ' + fD(sub),
+      cevenCompSan(cevenComprobanteIVA(r))
     ];
   });
 
   doc.autoTable({
     startY: y,
-    head: [['SKU', 'Descripción', 'Cantidad', 'IVA', 'Precio unitario', 'Subtotal']],
+    head: [['SKU', 'Descripción', 'Cantidad', 'Precio unitario', 'Subtotal', 'IVA']],
     body: cuerpo,
-    foot: [['', '', '', '', 'TOTAL', 'USD ' + fD(total)]],
+    foot: [['', '', '', 'TOTAL', 'USD ' + fD(total), '']],
     margin: { left: M, right: M },
     styles: { font: 'times', fontSize: 9.5, cellPadding: 2, lineColor: [183, 196, 221], lineWidth: 0.1 },
     headStyles: {
@@ -317,14 +328,15 @@ function cevenComprobanteDoc(qn, filas, emisor){
       // en dos renglones. La Descripción no lleva ancho y se queda con el resto.
       0: { cellWidth: 30 },
       2: { cellWidth: 17, halign: 'center' },
-      3: { cellWidth: 16, halign: 'center' },
+      3: { cellWidth: 29, halign: 'right' },
       4: { cellWidth: 29, halign: 'right' },
-      5: { cellWidth: 29, halign: 'right' }
+      5: { cellWidth: 16, halign: 'center' }
     },
     didParseCell: function(data){
-      // Las cuatro celdas vacías del pie van en blanco, como en el modelo: la
-      // barra navy arranca recién en "TOTAL".
-      if(data.section === 'foot' && data.column.index < 4){
+      // Las celdas vacías del pie van en blanco, como en el modelo: la barra
+      // navy es solo "TOTAL" + importe. La de IVA (la última) también queda
+      // afuera, o la barra terminaría en un bloque de color sin nada adentro.
+      if(data.section === 'foot' && (data.column.index < 3 || data.column.index === 5)){
         data.cell.styles.fillColor = [255, 255, 255];
         data.cell.styles.lineColor = [255, 255, 255];
       }
@@ -375,7 +387,10 @@ function cevenComprobanteDoc(qn, filas, emisor){
     y += lineasObs.length * 5 + 4;
   }
 
-  /* ── PIE ────────────────────────────────────────────────────────────────── */
+  /* ── PIE ──────────────────────────────────────────────────────────────────
+     Acá decía "Cotización N° X · Ejecutivo: Y". Quedó redundante cuando esos
+     dos datos subieron a la caja del encabezado, así que ahora el pie es la
+     identificación del emisor y nada más. */
   y = _compEspacio(doc, y, 12);
   doc.setDrawColor(CEVEN_COMP_LINEA[0], CEVEN_COMP_LINEA[1], CEVEN_COMP_LINEA[2]);
   doc.setLineWidth(0.2);
@@ -384,19 +399,21 @@ function cevenComprobanteDoc(qn, filas, emisor){
   doc.setFont('times', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(68, 68, 68);
-  _compTxt(doc, 'Cotización N° ' + qn + ' · Ejecutivo: ' + (p['Ejecutivo'] || '—'), M, y);
+  _compTxt(doc, String(emisor.razonSocial || 'Ceven'), M, y);
 
   return doc;
 }
 
-/* Nombre del archivo: Comprobante_0563_Vista_Energy.pdf. Se limpian los
-   caracteres que Windows no acepta en un nombre de archivo. */
-function cevenComprobanteNombre(qn, cliente){
-  var slug = String(cliente || '').trim()
-    .replace(/[<>:"/\\|?*]/g, '')
-    .replace(/\s+/g, '_')
-    .substring(0, 40);
-  return 'Comprobante_' + qn + (slug ? '_' + slug : '') + '.pdf';
+/* Nombre del archivo: "<cliente> - <proyecto> - Ceven - <validez>.pdf", igual
+   que el PDF de la cotización. Lo arma cevenNombreDocumento() en
+   shared/pdf-core.js — acá solo se eligen los campos de la fila guardada. */
+function cevenComprobanteNombre(fila){
+  fila = fila || {};
+  return cevenNombreDocumento(
+    fila['Cliente'],
+    fila['Proyecto'] || fila['OPG'],
+    fila['Propuesta efectiva hasta']
+  ) + '.pdf';
 }
 
 /* Punto de entrada del botón del historial. */
@@ -417,5 +434,5 @@ function cevenImprimirComprobante(qn){
   }
   var doc = cevenComprobanteDoc(qn, filas);
   if(!doc) return;
-  cevenDescargarYAbrir(doc.output('blob'), cevenComprobanteNombre(qn, filas[0]['Cliente']));
+  cevenDescargarYAbrir(doc.output('blob'), cevenComprobanteNombre(filas[0]));
 }

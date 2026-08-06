@@ -84,6 +84,41 @@ function cevenCondicionesHTML(row){
   return h;
 }
 
+/* ── NOMBRE DE ARCHIVO ──────────────────────────────────────────────────────
+   Los documentos que se le mandan al cliente se llaman
+
+       <cliente> - <proyecto> - Ceven - <validez>
+
+   La validez es la "Propuesta efectiva hasta" (formato YYYY-MM-DD, que además
+   ordena bien por nombre en el explorador). Los tramos que no tienen dato se
+   omiten enteros, para no terminar con "Vista Energy -  - Ceven - ".
+
+   Un solo lugar lo arma: lo usan el PDF de la cotización de las dos marcas y el
+   comprobante. Antes cada uno tenía su propio `clientSlug` copiado. */
+function cevenLimpiarNombreArchivo(txt){
+  var s = String(txt == null ? '' : txt).trim();
+  // '—' es el marcador de "sin dato" en las filas guardadas de cquotes.
+  if(!s || s === '—') return '';
+  return s
+    .replace(/[<>:"/\\|?*]/g, '')     // inválidos en un nombre de archivo Windows
+    /* Los caracteres de control se cambian por un espacio y NO se borran: un
+       tab pegado desde un Excel separa dos palabras ("Hospital\tItaliano"), y
+       borrarlo daba "HospitalItaliano". El colapso va después, por eso. */
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 60);
+}
+
+function cevenNombreDocumento(cliente, proyecto, validez){
+  var partes = [cliente, proyecto, 'Ceven', validez]
+    .map(cevenLimpiarNombreArchivo)
+    .filter(function(p){ return !!p; });
+  // Si no hay ni cliente ni proyecto ni validez queda solo "Ceven", que no
+  // identifica nada: ahí conviene un nombre genérico antes que uno engañoso.
+  return partes.length > 1 ? partes.join(' - ') : 'Cotizacion Ceven';
+}
+
 /* ── DESCARGAR + ABRIR ──────────────────────────────────────────────────────
    Un solo objectURL sirve para las dos cosas: se descarga con un <a download> y
    se abre en una pestana. Lo usan el PDF de la cotizacion y el comprobante.

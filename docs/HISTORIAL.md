@@ -23,6 +23,160 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 06/08/2026 · El comprobante pasa a PDF, condiciones comerciales en todos lados e IVA desde el Excel
+
+Tres pedidos que resultaron estar encadenados.
+
+### 1. El comprobante se descarga y se abre
+
+Hasta hoy el botón 🧾 armaba un HTML, lo escribía en una ventana nueva y disparaba
+`window.print()`: para quedarse con el archivo había que elegir "Guardar como PDF"
+en el diálogo. Ahora se **descarga solo y se abre** en otra pestaña.
+
+Se dibuja con **jsPDF + autotable**, no con html2canvas. La razón por la que en su
+momento se eligió imprimir en vez de generar un PDF sigue siendo válida —
+html2canvas rasteriza y el texto queda como imagen, sin poder seleccionarse ni
+buscarse— pero se puede tener las dos cosas: este documento es texto y una tabla,
+y jsPDF lo dibuja como texto real. El plugin ya estaba en `vendor/` y precacheado
+(lo usaba solo `cevencare.html`); hubo que cargarlo en los dos `index.html`.
+
+Efecto lateral que terminó siendo la clave del punto siguiente: al ser todo
+**sincrónico**, el `window.open` cae dentro del gesto del click y el navegador no
+lo bloquea.
+
+**Dos cosas que costaron y quedaron en `check-comprobante.js`**:
+
+- Las 14 fuentes base del PDF codifican **WinAnsi**, y los caracteres del bloque
+  0x80–0x9F de CP1252 (`– — “ ” … •`) **no se dibujan: desaparecen sin ningún
+  aviso**. La condición de pago salía "30 días FF  TC Dólar billete BNA" —con el
+  guión comido y dos espacios— y nadie lo habría notado hasta que el cliente
+  recibiera el papel. Se normaliza todo lo que se imprime con `cevenCompSan()`,
+  no solo los textos fijos: las descripciones vienen de un Excel del ERP. Los
+  acentos, la `ñ`, el `°` y el `·` sí están en Latin-1 y salen bien.
+- Con la columna SKU a 26 mm, `A4LZ8AA#ABM` se partía en dos renglones. Está a 30.
+
+`check-comprobante.js` genera el PDF de verdad en Node y le lee el texto (jsPDF no
+comprime los content streams). Existe porque un error de dibujo **no tira
+excepción**: sale un PDF con una columna corrida y eso se ve recién en el cliente.
+
+**Segunda pasada de diseño, el mismo día**, sobre el documento ya funcionando:
+
+- El título dice **COTIZACIÓN**, no "COMPROBANTE". No es cosmético: sin CAE de
+  AFIP esto no es un comprobante fiscal, y "cotización" es lo que realmente es.
+  Por lo mismo se sacó el renglón en blanco de **CUIT / DNI** del cliente (el CUIT
+  del *emisor* sigue en el encabezado).
+- **Datos del cliente**: el nombre en cuerpo 16 y el proyecto abajo en gris, sin
+  rótulos "Recibe:" / "Organización:". Si no hay proyecto no se imprime nada — un
+  guión suelto debajo del nombre no aporta.
+- El **ejecutivo subió al encabezado**, como tercera celda de la caja junto al N° y
+  la fecha (antes estaba al pie, en letra chica). El pie quedaba repitiendo esos
+  dos datos, así que ahora es solo la razón social.
+- La columna **IVA pasó al final**, después del Subtotal: es informativa y no tiene
+  por qué separar la cantidad del precio, que se leen juntos.
+
+### El nombre de los archivos
+
+Los dos PDF que se le mandan al cliente pasaron a llamarse
+
+    <cliente> - <proyecto> - Ceven - <validez>.pdf
+
+(la validez es "Propuesta efectiva hasta", en `YYYY-MM-DD`, que además ordena bien
+por nombre). Antes eran `Cotizacion_0563_Vista_Energy.pdf` y
+`Comprobante_0563_Vista_Energy.pdf`, con el slug copiado en tres lugares. Ahora lo
+arma `cevenNombreDocumento()` en `shared/pdf-core.js`.
+
+Detalles que están en `check-comprobante.js`: los tramos sin dato se **omiten
+enteros** (si no quedaba `Vista Energy -  - Ceven - `), el `—` de "sin dato" de
+`cquotes` no entra, en Poly se cae al OPG si no hay proyecto, y los caracteres de
+control se cambian por **un espacio** en vez de borrarse — un tab pegado desde un
+Excel separa dos palabras, y borrarlo daba "HospitalItaliano".
+
+> ⚠ **Los dos botones producen ahora el MISMO nombre de archivo**, porque ni el
+> número de cotización ni el tipo de documento entran en el formato pedido.
+> Bajar los dos para la misma cotización deja el segundo como "… (1).pdf", y dos
+> cotizaciones distintas del mismo cliente/proyecto con la misma validez también
+> chocan. Es una consecuencia del formato, no un descuido: si molesta, la
+> solución es agregar un tramo (el N° o una palabra que distinga los documentos).
+
+### 2. Condiciones comerciales: un solo lugar, y en todos los documentos
+
+Estaban escritas cuatro veces y ya se habían despegado entre sí:
+
+- el **comprobante no las tenía**: solo un renglón "Forma de pago: ____" en blanco;
+- el PDF del historial (las dos marcas) **omitía el bloque entero** si faltaban los
+  tres campos editables — incluidas las líneas fijas, que son ciertas siempre;
+- **en Poly no salían nunca desde el historial**, porque `doSave()` no guardaba
+  `Condición de pago` / `Propuesta efectiva hasta` / `Entrega`. El PDF los leía de
+  esas claves y siempre venían vacías. Apple ya lo había arreglado; Poly no.
+
+Ahora las arma `cevenCondiciones()` en `shared/pdf-core.js`, a partir de la fila de
+`cquotes` (documento guardado) o de los campos de la pantalla (cotización en vivo).
+Las líneas que dependen de un dato salen con `—` si no lo hay, en vez de
+desaparecer: un bloque que cambia de tamaño según lo que se cargó se lee como si
+faltara algo.
+
+Lo propio de cada marca va en **`brand.js` → `condicionesFijas`** (Apple: el
+enrolamiento en Apple Business Manager; Poly: ninguna, todavía), nunca un `if` por
+marca adentro de `shared/`.
+
+Poly también guarda ahora esos tres campos y los repone al reabrir del historial.
+
+### 3. IVA desde el Excel del ERP (Poly)
+
+El export trae la columna **"Programa fiscal"** con dos valores: `IVA GENERAL` e
+`IVA REDUCIDO` (520 y 44 filas del último archivo, que son 67 y 10 SKUs). La regla
+es la del negocio, tal cual: **si dice reducido es 10,5 %; todo lo demás, 21 %** —
+incluido un artículo cargado a mano, que no tiene programa fiscal y cae en la
+general. El match es `/reducid/i` y no el texto entero: nada garantiza que mañana
+el ERP no exporte "Reducido".
+
+El dato ya se importaba pero moría en una pastilla "IVA reducido" al lado de la
+descripción, que solo aparecía en los reducidos: no había forma de ver la alícuota
+del resto. Ahora es una **columna propia** en el catálogo, en la subpantalla de
+productos, en la cotización, en los dos PDF, en el comprobante y en el historial, y
+viaja a `cquotes` en la columna `IVA` (que sale al Excel).
+
+**Por ahora solo se muestra**: no se suma a los precios ni se discrimina en un
+total. Los documentos siguen diciendo "Los precios expresados NO incluyen
+Impuestos".
+
+La alícuota **viaja con la línea de la cotización**, no se rebusca en el catálogo:
+el catálogo se reimporta y una cotización guardada tiene que seguir diciendo con
+qué IVA se cotizó. Al reabrir una cotización vieja (sin la columna) se deduce del
+catálogo, que es mejor que dejarla en blanco.
+
+Apple también escribe ahora la columna visible `IVA`; antes el dato estaba en la
+clave interna `_taxes`, que no sale al Excel ni la puede leer un módulo compartido
+sin saber que es de Apple. Se sigue leyendo `_taxes` como respaldo.
+
+### Lo que NO quedó resuelto
+
+- **La pestaña del PDF de la cotización.** El comprobante se abre solo; el 📄 PDF
+  no puede: se arma con html2canvas, que es asincrónico, y para cuando termina el
+  gesto del usuario ya se consumió — **comprobado en Chrome, incluso apretando el
+  botón a mano**. La salida fue abrir la pestaña ANTES de generar, todavía dentro
+  del click, con un cartel de "⏳ Generando el PDF…", y mandarla al archivo cuando
+  está listo (`cevenPestanaEnEspera()`). Si el navegador la bloquea igual, el
+  archivo se descarga y el cartel ofrece un botón "Abrir".
+  **Este camino es el único que no se llegó a ver terminar en el navegador**: al
+  abrirse, la pestaña nueva toma el foco y manda la original al fondo, y la prueba
+  quedó a mitad. html2canvas no usa `requestAnimationFrame` (0 apariciones en el
+  bundle), así que una pestaña oculta lo ralentiza pero no debería trabarlo —
+  igual, hay que apretar 📄 PDF en las dos marcas y confirmar que la pestaña
+  termina mostrando el PDF.
+- Poly no tiene ninguna condición comercial propia. Si la tiene (garantía del
+  fabricante, plazo de RMA), el lugar es `condicionesFijas` en su `brand.js`.
+
+### De paso
+
+Dos chequeos del repo estaban rotos **desde antes** y reportaban en falso:
+`check-poly-catalogo.js` moría con `el.getAttribute is not a function` (al stub del
+DOM le faltaban `getAttribute`/`setAttribute`/`closest`, que usa el filtro de
+rubros) y `check-poly-tiers.js` buscaba la etiqueta `Manual`, que se había
+renombrado a `Custom`. Los dos arreglados.
+
+---
+
 ## 05/08/2026 · `promptModal` y `confirmModal` nunca funcionaron
 
 `APP_VERSION` 5.5 → 5.6. Una línea de `shared/notify.js`.

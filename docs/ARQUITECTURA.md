@@ -248,8 +248,17 @@ No hay tests. Lo mínimo que conviene correr:
 ```bash
 node scripts/check-precache.js       # rutas del service worker vs. archivos reales
 node scripts/check-globals.js        # una misma función definida dos veces en un bundle
+node scripts/check-comprobante.js    # genera el comprobante en PDF y le lee el texto
+node scripts/check-poly-catalogo.js  # importador de Poly: tiers, stock e IVA
+node scripts/check-poly-tiers.js     # niveles de precio de Poly
 node --check src/<archivo>.js        # sintaxis de lo que tocaste
 ```
+
+`check-comprobante.js` corre jsPDF de verdad en Node y busca el texto esperado
+dentro del archivo (jsPDF no comprime los content streams, así que se puede leer
+con una expresión regular). Existe porque un error de dibujo **no tira
+excepción**: sale un PDF con una columna corrida o sin condiciones comerciales, y
+eso lo ve recién el cliente. Con `--guardar` deja el PDF para mirarlo.
 
 `check-globals.js` existe porque acá todos los `<script>` comparten scope: si dos archivos definen la misma función, **el que carga después pisa al anterior sin ningún error**. Pasó con `openSkuOvLink`/`editSkuOvLink`, duplicadas en `pipeline-detail.js` desde el corte del monolito hasta que un review las encontró; la que corría era la de abajo y la otra era código muerto que alguien podía leer y creer vigente. El riesgo creció con `shared/`: una función movida a compartido puede chocar con una copia que quedó en la marca.
 

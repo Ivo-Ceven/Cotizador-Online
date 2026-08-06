@@ -106,12 +106,13 @@ function buildPDF(){
       +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.stock||'—')+'</td>'
       +'</tr>';
   }
-  // Armar nombre de archivo: Cotizacion_XXXX_NombreCliente
-  var clientSlug = client.trim()
-    .replace(/[<>:"/\\|?*]/g,'')   // caracteres inválidos en nombres de archivo
-    .replace(/\s+/g,'_')           // espacios → guión bajo
-    .substring(0,40);              // máx 40 chars
-  var docTitle = 'Cotizacion_' + qn + (clientSlug ? '_' + clientSlug : '');
+  // "<cliente> - <proyecto> - Ceven - <validez>" (shared/pdf-core.js). En Poly
+  // el proyecto es el cliente final; si está vacío se cae al OPG.
+  var docTitle = cevenNombreDocumento(
+    client,
+    proyecto || opg,
+    document.getElementById('eff-date').value
+  );
   var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+cevenEsc(docTitle)+'</title>'
     // El ':' de sobra en '.col-qty:' invalidaba el selector y Chrome descartaba
     // TODA la regla: la columna Qty quedaba sin ancho y el resto de la tabla se
