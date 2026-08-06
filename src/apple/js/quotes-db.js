@@ -73,12 +73,12 @@ function doSave(overwrite){
   cevenEditandoQNum(qn);
   for(var j=0;j<items.length;j++){
     var it=items[j];
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin});
+    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','IVA':it.taxes||'','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin});
   }
   for(var k=0;k<warrantyItems.length;k++){
     var w=warrantyItems[k];
     var wp=Math.round((w.precio||0)*100)/100;
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':w.sku,'Descripción':w.equipo+' — '+(w.canal==='CC'?'Complete Care':'Gta. Limitada Ext.')+' ('+w.años+(w.años===1?' año':' años')+')','Cantidad':w.cantidad,'Disponibilidad':'—','Margen %':'—','P. Venta Unitario':wp,'Total':wp*w.cantidad,'Tipo':'garantia','_wdata':JSON.stringify(w),'_estado':estadoQ});
+    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':w.sku,'Descripción':w.equipo+' — '+(w.canal==='CC'?'Complete Care':'Gta. Limitada Ext.')+' ('+w.años+(w.años===1?' año':' años')+')','Cantidad':w.cantidad,'Disponibilidad':'—','IVA':'21%','Margen %':'—','P. Venta Unitario':wp,'Total':wp*w.cantidad,'Tipo':'garantia','_wdata':JSON.stringify(w),'_estado':estadoQ});
   }
   // Guardar overrides de Nac de la cotización si existen
   if(Object.keys(quoteNacOverrides).length){
@@ -229,9 +229,12 @@ function editQuoteFromHistory(qn, skipConfirm){
     var nac  = (r['_nac'] !== undefined && r['_nac'] !== null && r['_nac'] !== '') ? parseFloat(r['_nac']) : 0;
     var lob  = r['_lob'] || '';
     // Preferir el IVA guardado con la cotización; recalcular desde el modelo
-    // solo si la cotización es vieja y nunca se guardó ese campo.
-    var hasSavedTaxes = r['_taxes'] !== undefined && r['_taxes'] !== null && r['_taxes'] !== '';
-    var taxesVal = hasSavedTaxes ? r['_taxes'] : (lob ? getIVA(lob) : '');
+    // solo si la cotización es vieja y nunca se guardó ese campo. La columna
+    // visible 'IVA' es de 08/2026; '_taxes' es donde vivía antes.
+    var savedTaxes = r['IVA'];
+    if(savedTaxes === undefined || savedTaxes === null || savedTaxes === '') savedTaxes = r['_taxes'];
+    var hasSavedTaxes = savedTaxes !== undefined && savedTaxes !== null && savedTaxes !== '';
+    var taxesVal = hasSavedTaxes ? savedTaxes : (lob ? getIVA(lob) : '');
     // Restaurar si el margen fue negociado a mano. Sin esto toda cotización
     // recuperada quedaba como "margen automático" y el primer toque al slider
     // global le pisaba el precio negociado a todos los ítems.
@@ -280,7 +283,7 @@ function exportDB(){
   var ws=XLSX.utils.json_to_sheet(data,{header:COLS});
   // Un ancho por columna de COLS (antes eran 13 para 15 columnas).
   ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:18},{wch:28},{wch:40},{wch:12},
-               {wch:18},{wch:20},{wch:18},{wch:16},{wch:40},{wch:10},{wch:14},{wch:10},{wch:20},{wch:14}];
+               {wch:18},{wch:20},{wch:18},{wch:16},{wch:40},{wch:10},{wch:14},{wch:8},{wch:10},{wch:20},{wch:14}];
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cotizaciones');
   XLSX.writeFile(wb,'Ceven_Base_Cotizaciones.xlsx');
 }

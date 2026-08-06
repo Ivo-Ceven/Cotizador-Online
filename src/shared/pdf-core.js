@@ -14,6 +14,147 @@
    (showToast). Se carga ANTES de <marca>/js/pdf.js.
    ============================================================ */
 
+/* ── CONDICIONES COMERCIALES ────────────────────────────────────────────────
+   Las lineas del bloque "Condiciones Comerciales", en el orden en que salen
+   impresas. Un solo lugar las arma y las usan los CUATRO documentos que las
+   muestran: el PDF de la cotizacion activa, el PDF del historial (una marca
+   por vez), el comprobante y cualquiera que venga despues.
+
+   Antes vivia copiado en los dos pdf.js, con cuatro copias que ya se habian
+   despegado entre si:
+     · el comprobante no tenia el bloque (solo un renglon "Forma de pago:" en
+       blanco para completar a mano);
+     · el PDF del historial omitia el bloque ENTERO cuando no habia fecha,
+       condicion de pago ni entrega — incluidas las lineas fijas, que son
+       ciertas siempre;
+     · en Poly el bloque no salia nunca desde el historial, porque doSave() no
+       guardaba esos tres campos (ver poly/js/quotes-db.js).
+
+   `row` es una fila de `cquotes` (documento ya guardado) o null/undefined para
+   leer los campos de la pantalla de cotizacion. Las lineas que dependen de un
+   dato salen con "—" si no lo hay, en vez de desaparecer: un bloque que cambia
+   de tamano segun lo que se cargo se lee como si faltara algo.
+
+   Lo propio de cada marca va en `CEVEN_BRAND.condicionesFijas` — nunca un `if`
+   por marca aca adentro. */
+function cevenCondiciones(row){
+  var dato = function(clave, campoId){
+    if(row){
+      var v = row[clave];
+      return (v === undefined || v === null || v === '—') ? '' : String(v).trim();
+    }
+    var el = (typeof document !== 'undefined') ? document.getElementById(campoId) : null;
+    return el ? String(el.value || '').trim() : '';
+  };
+
+  var eff = dato('Propuesta efectiva hasta', 'eff-date');
+  var del = dato('Entrega', 'delivery');
+  var pay = row ? dato('Condición de pago')
+                : (typeof cevenPayMode === 'function' ? cevenPayMode() : '');
+
+  /* La moneda del documento guardado es SIEMPRE USD: `P. Venta Unitario` se
+     persiste en dolares y el TC vive en un input de la pantalla, asi que
+     reimprimir una cotizacion vieja con el TC de hoy daria otro numero. Solo el
+     documento en vivo puede salir en pesos. */
+  var moneda = (!row && typeof getCur === 'function' && getCur() === 'ARS')
+    ? 'Precios unitarios expresados en pesos argentinos'
+    : 'Precios unitarios expresados en dólares estadounidenses';
+
+  var lineas = [
+    'Propuesta efectiva hasta: ' + (eff || '—'),
+    'Condición de pago: ' + (pay || '—') + ' – TC Dólar billete BNA del día del pago',
+    moneda,
+    'Los precios expresados NO incluyen Impuestos'
+  ];
+
+  var propias = (typeof window !== 'undefined' && window.CEVEN_BRAND && window.CEVEN_BRAND.condicionesFijas) || [];
+  for(var i = 0; i < propias.length; i++) lineas.push(propias[i]);
+
+  lineas.push('Entrega: ' + (del || '—'));
+  return lineas;
+}
+
+/* El mismo bloque como HTML, para los documentos que se arman concatenando
+   strings (los dos pdf.js). El comprobante lo dibuja con jsPDF y usa la lista. */
+function cevenCondicionesHTML(row){
+  var esc = (typeof cevenEsc === 'function') ? cevenEsc : function(s){ return String(s); };
+  var lineas = cevenCondiciones(row);
+  var h = '<p class="sec">Condiciones Comerciales</p>';
+  for(var i = 0; i < lineas.length; i++) h += '<p class="cd">' + esc(lineas[i]) + '</p>';
+  return h;
+}
+
+/* ── DESCARGAR + ABRIR ──────────────────────────────────────────────────────
+   Un solo objectURL sirve para las dos cosas: se descarga con un <a download> y
+   se abre en una pestana. Lo usan el PDF de la cotizacion y el comprobante.
+
+   ── EL PROBLEMA DE LA PESTANA ──────────────────────────────────────────────
+   El navegador solo permite `window.open` DENTRO del gesto del usuario. El PDF
+   de la cotizacion se arma con html2canvas, que es asincrono y tarda uno o dos
+   segundos: para cuando termina, el gesto ya se consumio y Chrome bloquea la
+   pestana — comprobado, incluso apretando el boton a mano.
+
+   La salida es abrir la pestana ANTES de generar, todavia dentro del click, con
+   un cartel de "generando", y recien mandarla al PDF cuando esta listo. Eso es
+   cevenPestanaEnEspera(): el que la necesita la abre temprano y la pasa aca.
+
+   El comprobante no la necesita: se dibuja con jsPDF de forma sincronica y su
+   `window.open` cae dentro del gesto.
+
+   Si igual no hay pestana (el usuario tiene los emergentes bloqueados del todo)
+   NO se insiste: el archivo ya se descargo y el cartel ofrece un boton "Abrir",
+   que si es un gesto y nunca lo bloquean.
+
+   El objectURL NO se revoca. Revocarlo rompe la pestana que lo esta mostrando
+   si el usuario la recarga, y son unos pocos cientos de KB por documento. */
+
+/* Abre la pestana de destino mientras todavia vale el gesto del usuario y le
+   deja un cartel para que no se vea una hoja en blanco sin explicacion.
+   Devuelve la ventana, o null si el navegador la bloqueo igual. */
+function cevenPestanaEnEspera(titulo){
+  var w = null;
+  try{ w = window.open('', '_blank'); }catch(e){}
+  if(!w) return null;
+  try{
+    w.document.open();
+    w.document.write('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+      + '<title>' + cevenEsc(titulo || 'Generando PDF…') + '</title></head>'
+      + '<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;'
+      + 'font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#6e6e73;background:#f5f5f7">'
+      + '<p>⏳ Generando el PDF…</p></body></html>');
+    w.document.close();
+  }catch(e){ /* la pestana existe igual; sin cartel, pero sirve */ }
+  return w;
+}
+
+function cevenDescargarYAbrir(blob, fileName, ventana){
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  // Con pestaña ya abierta se la manda al PDF; si no, se intenta abrirla ahora
+  // (es lo que hace el comprobante, que llega acá dentro del mismo gesto).
+  var w = ventana || null;
+  if(w){
+    try{ w.location.replace(url); }catch(e){ w = null; }
+  } else {
+    try{ w = window.open(url, '_blank'); }catch(e){}
+  }
+
+  if(w){
+    showToast('✓ ' + fileName + ' — descargado y abierto en otra pestaña.');
+    return;
+  }
+  showToast('✓ ' + fileName + ' descargado. El navegador bloqueó la pestaña nueva.', {
+    actionLabel: 'Abrir',
+    onAction: function(){ window.open(url, '_blank'); }
+  });
+}
+
 /* Hoja de estilos del PDF de UNA cotizacion (buildPDF).
    `cols`  = anchos de columna, que dependen de cuantas tiene cada marca.
    `extra` = reglas propias de la marca (badges de garantia, separador de
@@ -66,6 +207,10 @@ function downloadQuotePDF(fullHtml, fileName){
     showToast('Error: jsPDF no cargó. Verificá tu conexión a internet.');
     return;
   }
+  /* La pestaña se abre ACÁ y no al final: todavía estamos dentro del click que
+     llamó a buildPDF(), y después de html2canvas el navegador ya la bloquea. */
+  var pestana = cevenPestanaEnEspera(fileName);
+
   var doc = new DOMParser().parseFromString(fullHtml, 'text/html');
   var stage = document.createElement('div');
   // Render a ~A4 landscape width (1060px ≈ 280mm @ 96dpi) fuera de pantalla
@@ -106,10 +251,14 @@ function downloadQuotePDF(fullHtml, fileName){
       var x = mL + (pW - iW) / 2;
       var y = mT + (pH - iH) / 2;
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.97), 'JPEG', x, y, iW, iH);
-      pdf.save(fileName + '.pdf');
-      showToast('✓ PDF descargado');
+      // Se descarga Y se abre. `output('blob')` en vez de `pdf.save()` para que
+      // la descarga y la pestana compartan el mismo archivo generado una sola vez.
+      cevenDescargarYAbrir(pdf.output('blob'), fileName + '.pdf', pestana);
     }).catch(function(err){
       stage.remove();
+      // Se cierra la pestaña de espera: dejarla con el "⏳ Generando" para
+      // siempre se lee como que el PDF sigue en camino.
+      if(pestana){ try{ pestana.close(); }catch(e){} }
       showToast('Error generando PDF: ' + (err && err.message ? err.message : err));
     });
   }

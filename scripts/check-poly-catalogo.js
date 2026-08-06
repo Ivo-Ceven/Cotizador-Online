@@ -81,11 +81,20 @@ function cargarCatalogo(){
     },
     /* Un elemento permisivo en vez de null: initCat()/renderCat() son las
        funciones REALES (no stubs) y tocan el DOM. Lo que se verifica es el
-       plegado de datos, no el render. */
+       plegado de datos, no el render.
+
+       `getAttribute`/`setAttribute`/`closest` los necesita el filtro de rubros
+       (_pintarFiltroRubro → _rubroElegido), que guarda la categoría elegida en
+       un `data-rubro` del contenedor. Sin ellos este chequeo tiraba
+       "el.getAttribute is not a function" y no llegaba a correr nada. */
     document: {
       getElementById: () => ({
         style: {}, classList: { add(){}, remove(){} },
         value: '', textContent: '', innerHTML: '', checked: false,
+        tagName: 'DIV', _attrs: {},
+        getAttribute(k){ return this._attrs[k] !== undefined ? this._attrs[k] : null; },
+        setAttribute(k, v){ this._attrs[k] = String(v); },
+        closest: () => null,
         appendChild(){}, addEventListener(){}, querySelectorAll: () => []
       }),
       querySelectorAll: () => []
@@ -170,6 +179,36 @@ ok(raros.length > 0, 'se conservan los precios que rompen el orden esperado (' +
 const a4 = porSku['A4LZ8AA'];
 if(a4) ok(a4.precios['Ceven - Tier 2'] === 4346 && a4.precios['Ceven - Tier 1'] === 3983.85,
           'A4LZ8AA · Tier 2 (4346) sale MÁS caro que Tier 1 (3983,85), tal cual el archivo');
+
+/* ---- IVA: la columna "Programa fiscal" resuelta a alícuota -----------------
+   La regla del negocio es "si dice reducido es 10,5 %, si no 21 %". Lo que se
+   verifica acá es que se aplique sobre el archivo real (520 generales y 44
+   reducidos) y que el porcentaje viaje en el producto — es lo que después
+   termina en la cotización, en el PDF y en el comprobante. */
+ok(ctx.cevenIvaPct('IVA REDUCIDO') === '10.5%', '"IVA REDUCIDO" → 10.5%', ctx.cevenIvaPct('IVA REDUCIDO'));
+ok(ctx.cevenIvaPct('IVA GENERAL')  === '21%',   '"IVA GENERAL" → 21%',   ctx.cevenIvaPct('IVA GENERAL'));
+ok(ctx.cevenIvaPct('Reducido')     === '10.5%', 'el match no depende de mayúsculas ni del texto entero');
+ok(ctx.cevenIvaPct('')             === '21%',   'sin dato fiscal → 21% (la alícuota general)');
+ok(ctx.cevenIvaPct(undefined)      === '21%',   'undefined → 21%, no rompe');
+
+const reducidos = prods.filter(p => p.ivaPct === '10.5%');
+const generales = prods.filter(p => p.ivaPct === '21%');
+ok(reducidos.length + generales.length === prods.length,
+   'los 77 productos quedaron con una alícuota (ninguno sin IVA)',
+   'reducidos ' + reducidos.length + ' + generales ' + generales.length);
+ok(reducidos.every(p => /reducid/i.test(p.iva)),
+   'todos los 10,5% vienen de un "Programa fiscal" que dice reducido');
+ok(generales.every(p => !/reducid/i.test(p.iva)),
+   'ningún 21% salió de una fila que decía reducido');
+ok(reducidos.length > 0 && generales.length > 0,
+   'el archivo trae de los dos tipos (' + reducidos.length + ' reducidos, ' + generales.length + ' generales)');
+if(s1) ok(s1.ivaPct === '21%', '772D0AA · "IVA GENERAL" quedó en 21%', 'dio ' + s1.ivaPct);
+
+/* Un producto cargado a mano no tiene programa fiscal: cae en la general. */
+ok(ctx.cevenProductoIva({ sku: 'MANUAL-1', manual: true }) === '21%',
+   'un artículo manual (sin programa fiscal) cotiza al 21%');
+ok(ctx.cevenIvaDeCatalogo('772D0AA') === '21%', 'cevenIvaDeCatalogo() encuentra el SKU en el catálogo');
+ok(ctx.cevenIvaDeCatalogo('NO-EXISTE') === '21%', 'un SKU que no está en el catálogo cae al 21%');
 
 console.log('\n' + (fallos
   ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')

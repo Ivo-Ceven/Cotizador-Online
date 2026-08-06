@@ -45,6 +45,12 @@ function renderQ() {
         +'</div>'
       +'</td>'
       +'<td style="text-align:right;font-weight:500">'+cevenEsc(dp(lineTotal))+'</td>'
+      /* IVA de la línea. Se muestra, no se edita: sale del "Programa fiscal" del
+         Excel del ERP (10,5 % si dice reducido, 21 % si no — ver
+         poly/js/catalog.js) y por ahora no entra en ningún cálculo. */
+      +'<td style="text-align:center;white-space:nowrap;font-size:12px;'
+        +(it.iva===CEVEN_IVA_REDUCIDO?'color:#7a5800;font-weight:600':'color:#6e6e73')+'">'
+        +cevenEsc(it.iva||'—')+'</td>'
       +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc(it.stock||'')+'" placeholder="—" style="width:100%" data-act="nota" data-id="'+idA+'"></td>'
       /* Una sola acción: sacar la línea. Antes había además un ✎ que abría el
          modal de edición de ítem; se sacó porque en esta tabla ya se editan a
@@ -56,12 +62,12 @@ function renderQ() {
       +'</td>'
       +'</tr>';
   }
-  html+='<tr><td colspan="8" style="padding:9px 10px"><button class="al" onclick="abrirPicker()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
+  html+='<tr><td colspan="9" style="padding:9px 10px"><button class="al" onclick="abrirPicker()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
   if(items.length){
     html+='<tr>'
       +'<td colspan="5" style="text-align:right;color:#6e6e73;font-size:13px;font-weight:500;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">Total</td>'
       +'<td style="text-align:right;font-size:15px;font-weight:600;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">'+dp(gt)+'</td>'
-      +'<td colspan="2" style="background:#f5f5f7;border-top:1px solid #d2d2d7"></td>'
+      +'<td colspan="3" style="background:#f5f5f7;border-top:1px solid #d2d2d7"></td>'
       +'</tr>';
   }
   document.getElementById('qbody').innerHTML=html;

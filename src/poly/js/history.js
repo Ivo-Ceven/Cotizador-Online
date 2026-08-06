@@ -123,6 +123,7 @@ function renderHistory(){
       trows+='<tr><td>'+cevenEsc(r['SKU'])+'</td><td class="wrap">'+cevenEsc(r['Descripción'])+'</td>'
         +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
         +'<td style="text-align:center">'+cevenEsc(r['Nota']||'—')+'</td>'
+        +'<td style="text-align:center">'+cevenEsc(r['IVA']||'—')+'</td>'
         +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
         +'<td style="text-align:right;font-weight:500">USD '+fI(parseFloat(r['Total'])||0)+'</td></tr>';
     }
@@ -135,7 +136,7 @@ function renderHistory(){
         +'<input type="checkbox"'+(histSel[qn]?' checked':'')+' data-act="sel" data-qn="'+qnA+'" style="width:auto;accent-color:#1d1d1f">'
         +'<div style="font-size:15px;font-weight:600;flex:1">Cotización #'+cevenEsc(qn)+'</div>'
         +'<div style="font-size:11px;color:#6e6e73">'+cevenEsc(first['Fecha']||'')+' '+cevenEsc(first['Hora']||'')+'</div>'
-        +'<button class="bs" data-act="comp" data-qn="'+qnA+'" title="Abrir el comprobante imprimible de esta cotización" style="color:#1f3864;border-color:#1f3864">🧾 Comprobante</button>'
+        +'<button class="bs" data-act="comp" data-qn="'+qnA+'" title="Descargar el comprobante de esta cotización en PDF y abrirlo" style="color:#1f3864;border-color:#1f3864">🧾 Comprobante</button>'
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bs" data-act="edit" data-qn="'+qnA+'" style="color:#0071e3;border-color:#0071e3">✎ Editar</button>' : '')
         +'<button class="bs" data-act="copy" data-qn="'+qnA+'" title="Copiar como cotización nueva y abrirla para editar" style="color:#15863a;border-color:#34c759">⧉ Copiar</button>'
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bsr" data-act="del" data-qn="'+qnA+'">✕</button>' : '')
@@ -147,8 +148,8 @@ function renderHistory(){
         +'<div><span class="lbl">Ejecutivo</span>'+cevenEsc(first['Ejecutivo']||'—')+'</div>'
         +'<div style="margin-left:auto;text-align:right"><span class="lbl">Total</span><strong style="font-size:15px">USD '+fI(gt)+'</strong></div>'
       +'</div>'
-      +'<div style="overflow-x:auto"><table style="min-width:520px">'
-        +'<thead><tr><th>SKU</th><th>Descripción</th><th style="text-align:center">Qty</th><th style="text-align:center">Nota</th><th style="text-align:right">P. Venta Unit.</th><th style="text-align:right">Total</th></tr></thead>'
+      +'<div style="overflow-x:auto"><table style="min-width:560px">'
+        +'<thead><tr><th>SKU</th><th>Descripción</th><th style="text-align:center">Qty</th><th style="text-align:center">Nota</th><th style="text-align:center">IVA</th><th style="text-align:right">P. Venta Unit.</th><th style="text-align:right">Total</th></tr></thead>'
         +'<tbody>'+trows+'</tbody></table></div>'
     +'</div>';
   }

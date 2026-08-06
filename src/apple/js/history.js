@@ -143,7 +143,7 @@ function renderHistory(){
         +'<input type="checkbox"'+(histSel[qn]?' checked':'')+' data-hact="sel"'+qnA+' style="width:auto;accent-color:#1d1d1f">'
         +'<div style="font-size:15px;font-weight:600;flex:1">Cotización #'+cevenEsc(qn)+'</div>'
         +'<div style="font-size:11px;color:#6e6e73">'+cevenEsc(first['Fecha']||'')+' '+cevenEsc(first['Hora']||'')+'</div>'
-        +'<button class="bs" data-hact="comp"'+qnA+' title="Abrir el comprobante imprimible de esta cotización" style="color:#1f3864;border-color:#1f3864">🧾 Comprobante</button>'
+        +'<button class="bs" data-hact="comp"'+qnA+' title="Descargar el comprobante de esta cotización en PDF y abrirlo" style="color:#1f3864;border-color:#1f3864">🧾 Comprobante</button>'
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bs" data-hact="edit"'+qnA+' style="color:#0071e3;border-color:#0071e3">✎ Editar</button>' : '')
         +'<button class="bs" data-hact="copy"'+qnA+' title="Copiar como cotización nueva y abrirla para editar" style="color:#15863a;border-color:#34c759">⧉ Copiar</button>'
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bsr" data-hact="del"'+qnA+'>✕</button>' : '')

@@ -77,6 +77,18 @@ window.CEVEN_BRAND = {
   // Apple no cotiza por niveles: el precio sale del costo + margen por item.
   priceTiers: [],
 
+  /* --- Condiciones comerciales (shared/pdf-core.js) ----------------- */
+
+  /* Lineas FIJAS del bloque "Condiciones Comerciales" propias de esta marca.
+     Van despues de "Los precios expresados NO incluyen Impuestos" y antes de
+     "Entrega"; las otras cuatro son iguales en todas las marcas y las arma
+     cevenCondiciones().
+
+     El enrolamiento en Apple Business Manager es un servicio de Apple: no
+     significa nada en una cotizacion de Poly, y por eso vive aca y no adentro
+     de shared/. */
+  condicionesFijas: ['Incluye enrolamiento en Apple Business Manager'],
+
   /* --- Navegacion (shared/navbar.js) -------------------------------- */
 
   // Vistas que aparecen en la barra superior, en orden. `alsoFor` son las

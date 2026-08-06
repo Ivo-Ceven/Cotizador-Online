@@ -44,6 +44,43 @@ function _num(v){
   return parseFloat(String(v==null?'':v).replace(/[^0-9,\.]/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.')) || 0;
 }
 
+/* ── IVA ────────────────────────────────────────────────────────────────────
+   El Excel del ERP trae la columna "Programa fiscal" con dos valores:
+   "IVA GENERAL" e "IVA REDUCIDO". Son las dos alícuotas argentinas: la general
+   es 21 % y la reducida 10,5 %.
+
+   La regla es la del negocio, tal cual: si dice "reducido" es 10,5 %; TODO lo
+   demás —incluido un producto sin dato fiscal, como los que se cargan a mano—
+   es 21 %, que es la alícuota general. Se compara con /reducid/i y no con el
+   texto entero porque el ERP escribe "IVA REDUCIDO" pero nada garantiza que
+   mañana no exporte "Reducido" o "IVA Reducido 10.5".
+
+   Por ahora el porcentaje SOLO se muestra: no se suma a los precios ni se
+   discrimina en un total. Los documentos siguen diciendo "Los precios
+   expresados NO incluyen Impuestos". */
+var CEVEN_IVA_REDUCIDO = '10.5%';
+var CEVEN_IVA_GENERAL  = '21%';
+
+function cevenIvaPct(programaFiscal){
+  return /reducid/i.test(String(programaFiscal||'')) ? CEVEN_IVA_REDUCIDO : CEVEN_IVA_GENERAL;
+}
+
+/* El % de un producto del catálogo. `ivaPct` lo escribe el importador; el `||`
+   cubre los productos guardados antes de que la columna existiera y los que se
+   cargan a mano (que no tienen programa fiscal y caen en la general). */
+function cevenProductoIva(p){
+  return (p && p.ivaPct) || cevenIvaPct(p && p.iva);
+}
+
+/* El IVA de un SKU según el catálogo cargado. Lo usa quotes-db.js al reabrir
+   una cotización guardada antes de que la columna `IVA` existiera. */
+function cevenIvaDeCatalogo(sku){
+  for(var i=0;i<products.length;i++){
+    if(String(products[i].sku) === String(sku)) return cevenProductoIva(products[i]);
+  }
+  return CEVEN_IVA_GENERAL;
+}
+
 /* El export nuevo del ERP viene en formato LARGO: una fila por
    (SKU, ubicación, nivel de precio). 564 filas = 141 combos × 4 niveles, para 77
    SKUs reales. Acá se pliega a un producto por SKU.
@@ -76,8 +113,12 @@ function _processRowsTiers(rows, sK, dK, nivelK){
         description: String(r[dK]||'').trim(),
         precios: {},
         stock: null,
-        iva:   ivaK ? String(r[ivaK]||'').trim() : '',
-        rubro: rubK ? String(r[rubK]||'').trim() : ''
+        // `iva` es el texto crudo del ERP ("IVA GENERAL"), que se muestra como
+        // ayuda al pasar el mouse; `ivaPct` es la alícuota ya resuelta, que es
+        // lo que viaja a la cotización y a los documentos.
+        iva:    ivaK ? String(r[ivaK]||'').trim() : '',
+        ivaPct: cevenIvaPct(ivaK ? r[ivaK] : ''),
+        rubro:  rubK ? String(r[rubK]||'').trim() : ''
       };
       orden.push(sku);
       ubiVistas[sku] = {};
@@ -119,12 +160,16 @@ function processRows(rows) {
   } else {
     var pK=fk(f,'Precio Unitario','Precio','Selling Price','Price');
     var stK=fk(f,'Stock','Existencia');
+    // Los archivos tipo "LP y Stock" no traen programa fiscal, pero si alguno
+    // lo trae se aprovecha igual; sin la columna, cevenIvaPct('') da 21 %.
+    var ivaK2=fk(f,'Programa fiscal','Programa Fiscal','IVA');
     var seen = {};
     for(var i=0;i<rows.length;i++) {
       var r=rows[i], sku=String(r[sK]||'').trim();
       if(!sku) continue;
       var stock = stK ? (parseInt(String(r[stK]||'').replace(/[^0-9]/g,''))||0) : null;
-      seen[sku] = {id:sku, sku:sku, description:r[dK]||'', precios:{}, listPrice: pK?_num(r[pK]):0, stock:stock, iva:'', rubro:''}; // último duplicado gana
+      var ivaRaw = ivaK2 ? String(r[ivaK2]||'').trim() : '';
+      seen[sku] = {id:sku, sku:sku, description:r[dK]||'', precios:{}, listPrice: pK?_num(r[pK]):0, stock:stock, iva:ivaRaw, ivaPct:cevenIvaPct(ivaRaw), rubro:''}; // último duplicado gana
     }
     nuevos = Object.keys(seen).map(function(k){ return seen[k]; });
   }
@@ -321,6 +366,7 @@ function _catRowHTML(p, idx, idAttr, opts){
      agregar. En la vista Catálogo la cotización no es el tema, y pintar filas
      de verde ahí sería ruido. */
   var enq = !!opts.agregar && _enCotizacion(p.sku);
+  var ivaPct = cevenProductoIva(p);
   var hasStock = p.stock!==null && p.stock!==undefined;
   var stockColor = hasStock ? (p.stock<=0 ? '#d70015' : (p.stock<5 ? '#c84e00' : '#15863a')) : '#aeaeb2';
   var ref = ' '+idAttr+'="'+idx+'"';
@@ -339,15 +385,22 @@ function _catRowHTML(p, idx, idAttr, opts){
       : '')
     +'<td style="font-weight:500">'+cevenEsc(p.sku)+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+'</td>'
     +'<td class="wrap">'+cevenEsc(p.description)
-      // Rubro e IVA vienen del archivo del ERP (RUBRO y Programa fiscal). Son
-      // informativos: el IVA no entra en ningún cálculo de la cotización.
+      // El rubro viene de la columna RUBRO del archivo del ERP y es informativo.
       +(p.rubro ? ' <span style="font-size:10px;color:#6e6e73;background:#f0f0f3;padding:1px 6px;border-radius:8px;white-space:nowrap">'+cevenEsc(p.rubro)+'</span>' : '')
-      +(p.iva && /reducid/i.test(p.iva) ? ' <span style="font-size:10px;color:#7a5800;background:#fff8e1;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Programa fiscal: '+cevenEsc(p.iva)+'">IVA reducido</span>' : '')
     +'</td>'
     /* Los 4 niveles, uno debajo del otro: es la única vista donde se pueden
        comparar. El selector de la cotización muestra el precio al lado de cada
        nivel, pero ahí ya elegiste el producto. */
     +'<td style="text-align:right;color:#6e6e73;white-space:nowrap">'+_catPreciosHTML(p)+'</td>'
+    /* IVA: columna propia desde 08/2026. Antes era una pastilla "IVA reducido"
+       metida al lado de la descripción, que solo aparecía en los 44 SKUs
+       reducidos — no había forma de ver la alícuota del resto, y el dato tiene
+       que llegar hasta la cotización. El reducido va resaltado porque es la
+       excepción (44 de 564 filas del último archivo). */
+    +'<td style="text-align:center;white-space:nowrap;'
+      + (ivaPct === CEVEN_IVA_REDUCIDO ? 'color:#7a5800;font-weight:600' : 'color:#6e6e73') + '"'
+      + (p.iva ? ' title="Programa fiscal: '+cevenEsc(p.iva)+'"' : '')
+      + '>'+cevenEsc(ivaPct)+'</td>'
     +'<td style="text-align:center;font-weight:600;color:'+stockColor+'">'+(hasStock?cevenEsc(p.stock):'—')+'</td>'
     +(opts.admin
       ? '<td style="text-align:center;white-space:nowrap;overflow:visible">'
@@ -363,7 +416,7 @@ function renderCat() {
   var filtered=getFiltered(), html='';
   _catRendered = filtered;
   for(var i=0;i<filtered.length;i++) html += _catRowHTML(filtered[i], i, 'data-i', {admin:true});
-  document.getElementById('catbody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
+  document.getElementById('catbody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#aeaeb2;padding:24px">Sin resultados</td></tr>';
   _catBindDelegation();
   document.getElementById('catcount').textContent = filtered.length+' productos';
   // La flotante puede estar mostrando la misma lista: si no se repinta, queda
@@ -445,6 +498,10 @@ function _nuevoItemDeProducto(p, j){
   var it = {
     id: Date.now() + (j||0)*13 + Math.floor(Math.random()*1000),
     sku: p.sku, description: p.description,
+    // La alícuota viaja con la línea, no se vuelve a buscar en el catálogo: el
+    // catálogo se reimporta y una cotización guardada tiene que seguir diciendo
+    // con qué IVA se cotizó.
+    iva: cevenProductoIva(p),
     qty: 1, salePrice: '', stock: '', tier: ''
   };
   if(typeof repricearLinea === 'function') repricearLinea(it);

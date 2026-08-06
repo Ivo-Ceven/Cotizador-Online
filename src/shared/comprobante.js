@@ -1,29 +1,34 @@
 /* ============================================================================
-   COMPROBANTE  ·  documento imprimible por cotización
+   COMPROBANTE  ·  documento por cotización
    ----------------------------------------------------------------------------
-   Un botón en cada tarjeta del historial abre este documento listo para
-   imprimir. El diseño replica el recibo modelo que trajo el equipo (serif azul
-   marino, filete bajo el emisor, caja de N° + Fecha, tabla con cabecera navy y
-   fila TOTAL destacada, y los renglones de Forma de pago / Observaciones).
+   Un botón en cada tarjeta del historial genera este documento, lo DESCARGA y
+   lo abre en otra pestaña. El diseño replica el recibo modelo que trajo el
+   equipo (serif azul marino, filete bajo el emisor, caja de N° + Fecha, tabla
+   con cabecera navy y fila TOTAL destacada).
 
-   ── POR QUÉ SE IMPRIME Y NO SE ARMA UN PDF ────────────────────────────────
+   ── POR QUÉ jsPDF Y NO html2canvas ────────────────────────────────────────
    El PDF de la cotización (shared/pdf-core.js) pasa por html2canvas: rasteriza
    la pantalla y la mete en un jsPDF. Sirve ahí porque tiene que reproducir una
    vista compleja, pero el resultado es una IMAGEN — el texto no se puede
    seleccionar ni buscar, y en impresora se ve blando.
 
-   Este documento es texto y una tabla, así que va por la impresión nativa del
-   navegador: sale nítido a cualquier tamaño, y el diálogo de imprimir ya trae
-   "Guardar como PDF" para quien quiera el archivo. Cero librerías.
+   Este documento es texto y una tabla, así que se dibuja con jsPDF + autotable:
+   sale nítido a cualquier tamaño, el texto se selecciona y busca, y el archivo
+   pesa una fracción de lo que pesaría la captura.
 
-   ── POR QUÉ EN UNA VENTANA APARTE ─────────────────────────────────────────
-   Un contenedor `@media print` dentro de la app obligaría a esconder TODO lo
-   demás y a pelear con los estilos heredados de base.css en cada regla. La
-   ventana nueva arranca sin nada: lo único que hay adentro es este documento.
+   ── POR QUÉ YA NO ES UNA VENTANA QUE SE IMPRIME ───────────────────────────
+   Hasta el 06/08/2026 esto armaba un HTML, lo escribía en una ventana nueva y
+   disparaba window.print(): el usuario tenía que elegir "Guardar como PDF" en
+   el diálogo para quedarse con el archivo. Ahora el archivo se descarga solo y
+   se abre; imprimir sigue estando, en el visor de PDF del navegador.
 
-   Ojo con las rutas: la ventana se abre en `about:blank`, donde una URL
-   relativa no resuelve contra la página que la abrió. El logo va con URL
-   absoluta (ver logoURL()).
+   Efecto lateral bueno: todo el armado es SÍNCRONO (no hay html2canvas de por
+   medio), así que el window.open cae dentro del gesto del click y el navegador
+   no lo bloquea. Ver cevenDescargarYAbrir() en shared/pdf-core.js.
+
+   Otro efecto: acá ya no se escapa nada. El escapado con cevenEsc() estaba
+   porque el documento era HTML inyectado en otra ventana — un SKU con
+   `<img onerror=…>` corría. Un PDF no tiene ese sink.
 
    ── NO ES UNA FACTURA ─────────────────────────────────────────────────────
    El título es COMPROBANTE a propósito. Una factura argentina necesita CAE de
@@ -33,30 +38,56 @@
 
    Lo comparten las dos marcas: usa solo campos que existen en las dos
    (`cquotes` con Cliente / Ejecutivo / Fecha / SKU / Descripción / Cantidad /
-   P. Venta Unitario / Total), así que acá no hay ningún `if` por marca.
+   IVA / P. Venta Unitario / Total), así que acá no hay ningún `if` por marca.
+
+   Depende de: vendor/jspdf + vendor/jspdf.plugin.autotable, shared/pdf-core.js
+   (cevenCondiciones, cevenDescargarYAbrir), shared/ui-core.js (fD),
+   shared/config.js (CEVEN_EMISOR), notify.js (showToast) y el getDB() de la marca.
    ============================================================================ */
 
-/* Paleta del modelo: el azul de Word "Azul oscuro, Texto 2, Oscuro 25%" y su
-   relleno claro para las filas. Van acá y no en un CSS aparte porque el
-   documento viaja entero como un string a otra ventana. */
-var CEVEN_COMP_NAVY  = '#1f3864';
-var CEVEN_COMP_TINT  = '#d9e2f3';
+/* Paleta del modelo: el azul de Word "Azul oscuro, Texto 2, Oscuro 25%" (#1f3864)
+   y su relleno claro para las filas, en RGB porque jsPDF no toma hex. */
+var CEVEN_COMP_NAVY  = [31, 56, 100];
+var CEVEN_COMP_TINT  = [238, 242, 249];
+var CEVEN_COMP_GRIS  = [51, 51, 51];
+var CEVEN_COMP_LINEA = [153, 153, 153];
 
-/* URL absoluta del logo. La ventana nueva no tiene base para resolver rutas
-   relativas, y las páginas que llaman a esto cuelgan un nivel abajo de la raíz
-   (apple/index.html, poly/index.html), igual que supone la navbar. */
+/* Márgenes y ancho útil de la hoja A4 vertical, en mm. */
+var CEVEN_COMP_M  = 16;
+var CEVEN_COMP_W  = 210;
+var CEVEN_COMP_H  = 297;
+var CEVEN_COMP_AU = CEVEN_COMP_W - CEVEN_COMP_M * 2;   // ancho útil: 178 mm
+
+/* El wordmark de Ceven, precargado a dataURL apenas carga la página.
+   jsPDF necesita los bytes de la imagen en el momento de dibujar, y bajarla
+   recién al hacer click volvería asíncrono todo el armado — que es justamente
+   lo que mantiene al window.open dentro del gesto del usuario.
+
+   Si no llegó a cargar (o el archivo no está), el documento sale sin logo y con
+   la razón social como única identificación: nunca con un ícono roto. */
+var _cevenCompLogo = null;
+
 function cevenComprobanteLogoURL(){
   try{ return new URL('../icons/ceven.png', location.href).href; }
   catch(e){ return ''; }
 }
 
-/* Un renglón del encabezado del emisor. Si el dato está vacío devuelve '': un
-   rótulo suelto ("Contacto:" sin nada al lado) queda peor que no estar. */
-function cevenComprobanteRenglon(rotulo, valor){
-  valor = String(valor == null ? '' : valor).trim();
-  if(!valor) return '';
-  return '<p>' + cevenEsc(rotulo) + ': ' + cevenEsc(valor) + '</p>';
-}
+(function(){
+  if(typeof document === 'undefined' || typeof Image === 'undefined') return;
+  var url = cevenComprobanteLogoURL();
+  if(!url) return;
+  var img = new Image();
+  img.onload = function(){
+    try{
+      var c = document.createElement('canvas');
+      c.width  = img.naturalWidth;
+      c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0);
+      _cevenCompLogo = { data: c.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight };
+    }catch(e){ /* canvas no disponible: se sigue sin logo */ }
+  };
+  img.src = url;
+})();
 
 /* Filas de una cotización del historial. getDB() lo define cada marca. */
 function cevenComprobanteFilas(qn){
@@ -68,168 +99,323 @@ function cevenComprobanteFilas(qn){
   });
 }
 
-function cevenComprobanteHTML(qn){
-  var filas = cevenComprobanteFilas(qn);
-  if(!filas.length) return null;
+/* El IVA de una línea. Las dos marcas lo guardan hoy en la columna `IVA`;
+   `_taxes` es donde lo escribía Apple antes de que fuera una columna visible y
+   sigue estando en las cotizaciones ya guardadas. */
+function cevenComprobanteIVA(r){
+  var v = r['IVA'];
+  if(v === undefined || v === null || v === '') v = r['_taxes'];
+  return (v === undefined || v === null || v === '') ? '—' : String(v);
+}
 
-  var esc = cevenEsc;
+/* ── CARACTERES QUE LAS FUENTES ESTÁNDAR NO TIENEN ──────────────────────────
+   jsPDF dibuja con las 14 fuentes base del PDF, que codifican WinAnsi. Los
+   caracteres del bloque 0x80–0x9F de CP1252 (– — “ ” … •) NO se dibujan: se
+   pierden sin ningún aviso. Se vio con la condición de pago, que salía
+   "30 días FF  TC Dólar billete BNA…" — con el guión comido y dos espacios.
+
+   Se normaliza TODO lo que se dibuja y no solo los textos fijos: las
+   descripciones vienen de un Excel del ERP y pueden traer cualquier cosa.
+   Lo que no entra en Latin-1 (emojis, alfabetos no latinos) se descarta: mejor
+   que salga sin ese carácter y no un cuadradito o un corrimiento.
+
+   Los acentos, la ñ, el «°» y el «·» SÍ están en Latin-1 y salen bien. */
+var CEVEN_COMP_MAP = {
+  '–': '-',  '—': '-',  '‘': "'", '’': "'",
+  '“': '"',  '”': '"',  '…': '...', '•': '*',
+  '→': '->', ' ': ' ',  '‹': '<', '›': '>',
+  '€': 'EUR', '™': '(TM)'
+};
+
+function cevenCompSan(txt){
+  var s = String(txt == null ? '' : txt), out = '';
+  for(var i = 0; i < s.length; i++){
+    var c = s.charAt(i);
+    if(CEVEN_COMP_MAP[c] !== undefined){ out += CEVEN_COMP_MAP[c]; continue; }
+    if(s.charCodeAt(i) <= 0xFF) out += c;
+  }
+  return out;
+}
+
+function _compTxt(doc, txt, x, y, opts){
+  var t = (Object.prototype.toString.call(txt) === '[object Array]')
+    ? txt.map(cevenCompSan)
+    : cevenCompSan(txt);
+  doc.text(t, x, y, opts || undefined);
+}
+
+/* Deja lugar para `alto` mm: si no entra en la hoja, abre una nueva y devuelve
+   la `y` de arriba. Lo que va después de la tabla (condiciones, observaciones,
+   pie) es corto pero no cabe siempre — depende de cuántas líneas tenga el detalle. */
+function _compEspacio(doc, y, alto){
+  if(y + alto <= CEVEN_COMP_H - CEVEN_COMP_M) return y;
+  doc.addPage();
+  return CEVEN_COMP_M;
+}
+
+/* Arma el documento. Separado del botón para poder generarlo sin DOM ni
+   navegador — lo usa scripts/check-comprobante.js. */
+function cevenComprobanteDoc(qn, filas, emisor){
+  var PDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf && window.jspdf.default);
+  if(!PDF) return null;
+
+  emisor = emisor || window.CEVEN_EMISOR || {};
   var p   = filas[0];
-  var emisor = window.CEVEN_EMISOR || {};
+  var doc = new PDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  var M   = CEVEN_COMP_M;
+  var y   = 18;
+
+  /* ── EMISOR ──────────────────────────────────────────────────────────────
+     El logo va a 11 mm de alto al lado de la razón social, que NO se agranda
+     como en el modelo justamente por eso: el modelo no tenía logo y el nombre
+     hacía de marca; repetir "ceven" en cuerpo grande al lado del mismo
+     wordmark quedaba redundante. */
+  var xTexto = M;
+  if(_cevenCompLogo){
+    var hLogo = 11;
+    var wLogo = hLogo * (_cevenCompLogo.w / _cevenCompLogo.h);
+    try{
+      doc.addImage(_cevenCompLogo.data, 'PNG', M, y - 3, wLogo, hLogo);
+      xTexto = M + wLogo + 6;
+    }catch(e){ /* imagen inválida: el documento sale sin ella */ }
+  }
+
+  doc.setFont('times', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+  _compTxt(doc, emisor.razonSocial || 'Ceven', xTexto, y + 2);
+  y += 6;
+
+  /* Los campos vacíos no se imprimen: un rótulo suelto ("Contacto:" sin nada al
+     lado) queda peor que no estar. */
+  doc.setFont('times', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(CEVEN_COMP_GRIS[0], CEVEN_COMP_GRIS[1], CEVEN_COMP_GRIS[2]);
+  [['Domicilio', emisor.domicilio], ['Contacto', emisor.contacto], ['CUIT', emisor.cuit]]
+    .forEach(function(par){
+      var v = String(par[1] == null ? '' : par[1]).trim();
+      if(!v) return;
+      _compTxt(doc, par[0] + ': ' + v, xTexto, y);
+      y += 4.4;
+    });
+
+  y = Math.max(y, 18 + 11) + 2;
+  doc.setDrawColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+  doc.setLineWidth(0.8);
+  doc.line(M, y, CEVEN_COMP_W - M, y);
+  y += 10;
+
+  /* ── TÍTULO ─────────────────────────────────────────────────────────────── */
+  doc.setFont('times', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+  _compTxt(doc, 'COMPROBANTE', M, y);
+  y += 7;
+
+  /* ── CAJA N° + FECHA ────────────────────────────────────────────────────── */
+  var hCaja = 8;
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.2);
+  doc.rect(M, y, CEVEN_COMP_AU, hCaja);
+  doc.line(M + CEVEN_COMP_AU / 2, y, M + CEVEN_COMP_AU / 2, y + hCaja);
+  doc.setFontSize(10.5);
+  doc.setTextColor(0, 0, 0);
+  /* Los anchos se miden con la fuente EN NEGRITA, que es con la que se dibuja el
+     rótulo. Medirlos después del setFont('normal') dejaba el valor pegado al
+     rótulo ("Fecha:06/08/2026"), porque la negrita es más ancha. */
+  doc.setFont('times', 'bold');
+  var xFecha = M + CEVEN_COMP_AU / 2 + 3;
+  var wRot   = doc.getTextWidth('Comprobante N°: ');
+  var wFecha = doc.getTextWidth('Fecha: ');
+  _compTxt(doc, 'Comprobante N°:', M + 3, y + 5.4);
+  _compTxt(doc, 'Fecha:', xFecha, y + 5.4);
+  doc.setFont('times', 'normal');
+  _compTxt(doc, String(qn || ''), M + 3 + wRot, y + 5.4);
+  _compTxt(doc, String(p['Fecha'] || '—'), xFecha + wFecha, y + 5.4);
+  y += hCaja + 8;
+
+  /* ── DATOS DEL CLIENTE ──────────────────────────────────────────────────── */
+  doc.setFont('times', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+  _compTxt(doc, 'Datos del cliente', M, y);
+  y += 5.5;
+
+  /* "Organización": en Poly el proyecto/OPG es lo que identifica al trabajo; en
+     Apple no existe ese campo y queda el guión. Se leen los dos sin preguntar
+     por la marca — el que no aplica viene undefined. */
+  var organizacion = p['Proyecto'] || p['OPG'] || '—';
+  doc.setFontSize(10.5);
+  doc.setTextColor(0, 0, 0);
+  [['Recibe', p['Cliente'] || '—'], ['Organización', organizacion], ['CUIT / DNI', '']]
+    .forEach(function(par){
+      doc.setFont('times', 'bold');
+      _compTxt(doc, par[0] + ':', M, y);
+      var wr = doc.getTextWidth(par[0] + ': ');
+      var val = String(par[1] == null ? '' : par[1]).trim();
+      if(val){
+        doc.setFont('times', 'normal');
+        doc.setTextColor(CEVEN_COMP_GRIS[0], CEVEN_COMP_GRIS[1], CEVEN_COMP_GRIS[2]);
+        _compTxt(doc, val, M + wr, y);
+        doc.setTextColor(0, 0, 0);
+      } else {
+        // Renglón para completar a mano, como en el modelo impreso.
+        doc.setDrawColor(102, 102, 102);
+        doc.setLineWidth(0.2);
+        doc.line(M + wr, y + 1, M + wr + 55, y + 1);
+      }
+      y += 6;
+    });
+  y += 3;
+
+  /* ── DETALLE ────────────────────────────────────────────────────────────── */
+  doc.setFont('times', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+  _compTxt(doc, 'Detalle', M, y);
+  y += 3;
 
   /* Los importes salen en USD, tal como se guardaron. No se convierten a pesos
      a propósito: el TC vive en un input de la pantalla de cotización y cambia
      todos los días, así que convertir haría que dos impresiones del mismo
      comprobante den totales distintos según el día. */
-  var total = 0, cuerpo = '';
-  filas.forEach(function(r){
+  var total = 0;
+  var cuerpo = filas.map(function(r){
     var qty  = parseFloat(r['Cantidad']) || 0;
     var unit = parseFloat(r['P. Venta Unitario']) || 0;
     var sub  = parseFloat(r['Total']) || 0;
     total += sub;
-    cuerpo += '<tr>'
-      + '<td class="c-sku">' + esc(r['SKU']) + '</td>'
-      + '<td>' + esc(r['Descripción']) + '</td>'
-      + '<td class="c-num">' + esc(qty) + '</td>'
-      + '<td class="c-money">USD ' + fD(unit) + '</td>'
-      + '<td class="c-money">USD ' + fD(sub) + '</td>'
-      + '</tr>';
+    return [
+      cevenCompSan(r['SKU'] || ''),
+      cevenCompSan(r['Descripción'] || ''),
+      String(qty),
+      cevenCompSan(cevenComprobanteIVA(r)),
+      'USD ' + fD(unit),
+      'USD ' + fD(sub)
+    ];
   });
 
-  /* "Organización" del modelo: en Poly el proyecto/OPG es lo que identifica al
-     trabajo; en Apple no existe ese campo y queda el guión. Se leen los dos sin
-     preguntar por la marca — el que no aplica viene undefined. */
-  var organizacion = p['Proyecto'] || p['OPG'] || '—';
+  doc.autoTable({
+    startY: y,
+    head: [['SKU', 'Descripción', 'Cantidad', 'IVA', 'Precio unitario', 'Subtotal']],
+    body: cuerpo,
+    foot: [['', '', '', '', 'TOTAL', 'USD ' + fD(total)]],
+    margin: { left: M, right: M },
+    styles: { font: 'times', fontSize: 9.5, cellPadding: 2, lineColor: [183, 196, 221], lineWidth: 0.1 },
+    headStyles: {
+      font: 'times', fontStyle: 'bold', fontSize: 9.5,
+      fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY
+    },
+    footStyles: {
+      font: 'times', fontStyle: 'bold', fontSize: 10.5,
+      fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY,
+      halign: 'right'
+    },
+    alternateRowStyles: { fillColor: CEVEN_COMP_TINT },
+    columnStyles: {
+      // 30 mm y no 26: con 26 el SKU más largo de Poly (A4LZ8AA#ABM) se partía
+      // en dos renglones. La Descripción no lleva ancho y se queda con el resto.
+      0: { cellWidth: 30 },
+      2: { cellWidth: 17, halign: 'center' },
+      3: { cellWidth: 16, halign: 'center' },
+      4: { cellWidth: 29, halign: 'right' },
+      5: { cellWidth: 29, halign: 'right' }
+    },
+    didParseCell: function(data){
+      // Las cuatro celdas vacías del pie van en blanco, como en el modelo: la
+      // barra navy arranca recién en "TOTAL".
+      if(data.section === 'foot' && data.column.index < 4){
+        data.cell.styles.fillColor = [255, 255, 255];
+        data.cell.styles.lineColor = [255, 255, 255];
+      }
+    }
+  });
 
-  var logo = cevenComprobanteLogoURL();
-  var titulo = 'Comprobante ' + (qn || '') + (p['Cliente'] ? ' — ' + p['Cliente'] : '');
+  y = doc.lastAutoTable.finalY + 9;
 
-  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
-  + '<title>' + esc(titulo) + '</title>'
-  + '<style>'
-  /* A4 con márgenes de documento. El navegador respeta @page al imprimir; en
-     pantalla se simula con el ancho del .hoja para que lo que se ve sea lo que
-     sale. */
-  + '@page{size:A4;margin:18mm 16mm}'
-  + '*{box-sizing:border-box;margin:0;padding:0}'
-  + 'body{font-family:"Times New Roman",Times,serif;font-size:11pt;color:#000;background:#f0f0f0;padding:24px}'
-  + '.hoja{background:#fff;max-width:190mm;margin:0 auto;padding:16mm 14mm;box-shadow:0 4px 18px rgba(0,0,0,.18)}'
+  /* ── CONDICIONES COMERCIALES ────────────────────────────────────────────────
+     Las mismas líneas que imprime el PDF de la cotización, armadas en un solo
+     lugar (shared/pdf-core.js) a partir de lo que se guardó con el documento.
+     Acá antes había un renglón "Forma de pago: ____" en blanco. */
+  var cond = (typeof cevenCondiciones === 'function') ? cevenCondiciones(p) : [];
+  y = _compEspacio(doc, y, 8 + cond.length * 5.4 + 22);
 
-  + '.emisor{display:flex;align-items:flex-start;gap:16px}'
-  /* El logo es el wordmark "ceven" (250×100). Va a 44px de alto — al lado de la
-     razón social, que NO se agranda como en el modelo justamente por eso: el
-     modelo no tenía logo y el nombre hacía de marca; acá repetir "ceven" en
-     cuerpo 17 al lado del mismo wordmark quedaba redundante y desbalanceado.
-     Si el archivo no está, el <img> se esconde solo (onerror) y el nombre queda
-     como única identificación — el documento nunca sale con el ícono roto. */
-  + '.emisor img{height:44px;width:auto;object-fit:contain;flex-shrink:0}'
-  + '.emisor h1{font-size:13pt;font-weight:bold;color:' + CEVEN_COMP_NAVY + ';letter-spacing:.2px;line-height:1.25;margin-bottom:2px}'
-  + '.emisor p{font-size:9.5pt;color:#333;line-height:1.4}'
-  + '.regla{border:0;border-top:2.5px solid ' + CEVEN_COMP_NAVY + ';margin:7px 0 16px}'
+  doc.setFont('times', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+  _compTxt(doc, 'Condiciones Comerciales', M, y);
+  y += 5.5;
 
-  + '.titulo{font-size:20pt;font-weight:bold;color:' + CEVEN_COMP_NAVY + ';margin-bottom:10px}'
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  cond.forEach(function(linea){
+    y = _compEspacio(doc, y, 6);
+    doc.setFont('times', 'bold');
+    // splitTextToSize por si una condición escrita a mano no entra en el ancho.
+    // Se normaliza ANTES de partir: si no, el ancho se mide con caracteres que
+    // después no se dibujan y el corte queda en el lugar equivocado.
+    var partes = doc.splitTextToSize(cevenCompSan(linea), CEVEN_COMP_AU);
+    _compTxt(doc, partes, M, y);
+    y += partes.length * 5.4;
+  });
+  y += 3;
 
-  + '.caja{width:100%;border-collapse:collapse;margin-bottom:16px}'
-  + '.caja td{border:1px solid #000;padding:5px 9px;font-size:10.5pt}'
-  + '.caja .der{text-align:right}'
-  + '.relleno{border-bottom:1px solid #666;display:inline-block;min-width:150px;padding:0 6px;color:#333}'
+  /* ── OBSERVACIONES ──────────────────────────────────────────────────────── */
+  var obs = String(p['Observaciones'] == null ? '' : p['Observaciones']).trim();
+  if(obs && obs !== '—'){
+    y = _compEspacio(doc, y, 12);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10);
+    _compTxt(doc, 'Observaciones:', M, y);
+    var wObs = doc.getTextWidth('Observaciones: ');
+    doc.setFont('times', 'normal');
+    doc.setTextColor(CEVEN_COMP_GRIS[0], CEVEN_COMP_GRIS[1], CEVEN_COMP_GRIS[2]);
+    var lineasObs = doc.splitTextToSize(cevenCompSan(obs), CEVEN_COMP_AU - wObs);
+    _compTxt(doc, lineasObs, M + wObs, y);
+    y += lineasObs.length * 5 + 4;
+  }
 
-  + 'h2{font-size:11pt;font-weight:bold;color:' + CEVEN_COMP_NAVY + ';margin:0 0 5px}'
-  + '.datos{margin-bottom:15px;font-size:10.5pt;line-height:1.55}'
-  + '.datos b{font-weight:bold}'
-  + '.datos span{color:#333}'
+  /* ── PIE ────────────────────────────────────────────────────────────────── */
+  y = _compEspacio(doc, y, 12);
+  doc.setDrawColor(CEVEN_COMP_LINEA[0], CEVEN_COMP_LINEA[1], CEVEN_COMP_LINEA[2]);
+  doc.setLineWidth(0.2);
+  doc.line(M, y, CEVEN_COMP_W - M, y);
+  y += 5;
+  doc.setFont('times', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(68, 68, 68);
+  _compTxt(doc, 'Cotización N° ' + qn + ' · Ejecutivo: ' + (p['Ejecutivo'] || '—'), M, y);
 
-  + 'table.det{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10pt}'
-  + 'table.det th{background:' + CEVEN_COMP_NAVY + ';color:#fff;font-weight:bold;padding:6px 8px;border:1px solid ' + CEVEN_COMP_NAVY + ';text-align:left}'
-  + 'table.det td{border:1px solid #b7c4dd;padding:5px 8px;vertical-align:top}'
-  /* Cebra tenue, como el modelo. nth-child sobre las filas de datos. */
-  + 'table.det tbody tr:nth-child(odd) td{background:#eef2f9}'
-  + 'table.det th.c-num,table.det td.c-num{text-align:center;width:62px}'
-  + 'table.det th.c-money,table.det td.c-money{text-align:right;width:98px;white-space:nowrap}'
-  + 'table.det th.c-sku,table.det td.c-sku{width:96px;white-space:nowrap}'
-  + 'tr.total td{background:' + CEVEN_COMP_NAVY + ';color:#fff;font-weight:bold;border-color:' + CEVEN_COMP_NAVY + '}'
-  + 'tr.total td.vacio{background:#fff;border-color:#fff}'
+  return doc;
+}
 
-  + '.renglones{font-size:10.5pt;line-height:2.1;margin-bottom:18px}'
-  + '.pie{border-top:1px solid #999;padding-top:8px;font-size:9pt;color:#444}'
-
-  /* La barra de acciones es de pantalla: no se imprime. */
-  + '.barra{max-width:190mm;margin:0 auto 14px;display:flex;gap:8px;justify-content:flex-end}'
-  + '.barra button{font-family:inherit;font-size:11pt;padding:7px 18px;border-radius:6px;cursor:pointer;border:1px solid ' + CEVEN_COMP_NAVY + ';background:' + CEVEN_COMP_NAVY + ';color:#fff}'
-  + '.barra button.sec{background:#fff;color:' + CEVEN_COMP_NAVY + '}'
-  + '@media print{body{background:#fff;padding:0}.hoja{box-shadow:none;max-width:none;margin:0;padding:0}.barra{display:none}}'
-  + '</style></head><body>'
-
-  + '<div class="barra">'
-  +   '<button class="sec" onclick="window.close()">Cerrar</button>'
-  +   '<button onclick="window.print()">Imprimir</button>'
-  + '</div>'
-
-  + '<div class="hoja">'
-  +   '<div class="emisor">'
-  +     (logo ? '<img src="' + esc(logo) + '" alt="" onerror="this.style.display=\'none\'">' : '')
-  +     '<div>'
-  +       '<h1>' + esc(emisor.razonSocial || 'Ceven') + '</h1>'
-  +       cevenComprobanteRenglon('Domicilio', emisor.domicilio)
-  +       cevenComprobanteRenglon('Contacto', emisor.contacto)
-  +       cevenComprobanteRenglon('CUIT', emisor.cuit)
-  +     '</div>'
-  +   '</div>'
-  +   '<hr class="regla">'
-
-  +   '<div class="titulo">COMPROBANTE</div>'
-
-  +   '<table class="caja"><tr>'
-  +     '<td><b>Comprobante N°:</b> ' + esc(qn) + '</td>'
-  +     '<td class="der"><b>Fecha:</b> <span class="relleno">' + esc(p['Fecha'] || '') + '</span></td>'
-  +   '</tr></table>'
-
-  +   '<h2>Datos del cliente</h2>'
-  +   '<div class="datos">'
-  +     '<div><b>Recibe:</b> <span>' + esc(p['Cliente'] || '—') + '</span></div>'
-  +     '<div><b>Organización:</b> <span>' + esc(organizacion) + '</span></div>'
-  +     '<div><b>CUIT / DNI:</b> <span class="relleno">&nbsp;</span></div>'
-  +   '</div>'
-
-  +   '<h2>Detalle</h2>'
-  +   '<table class="det">'
-  +     '<thead><tr>'
-  +       '<th class="c-sku">SKU</th><th>Descripción</th>'
-  +       '<th class="c-num">Cantidad</th><th class="c-money">Precio unitario</th><th class="c-money">Subtotal</th>'
-  +     '</tr></thead>'
-  +     '<tbody>' + cuerpo + '</tbody>'
-  +     '<tfoot><tr class="total">'
-  +       '<td class="vacio" colspan="2"></td>'
-  +       '<td colspan="2" style="text-align:right">TOTAL</td>'
-  +       '<td class="c-money">USD ' + fD(total) + '</td>'
-  +     '</tr></tfoot>'
-  +   '</table>'
-
-  +   '<div class="renglones">'
-  +     '<div><b>Forma de pago:</b> <span class="relleno" style="min-width:280px">&nbsp;</span></div>'
-  +     '<div><b>Observaciones:</b> <span class="relleno" style="min-width:280px">' + esc(p['Observaciones'] || '') + '</span></div>'
-  +   '</div>'
-
-  +   '<div class="pie">Cotización N° ' + esc(qn) + ' · Ejecutivo: ' + esc(p['Ejecutivo'] || '—') + '</div>'
-  + '</div></body></html>';
+/* Nombre del archivo: Comprobante_0563_Vista_Energy.pdf. Se limpian los
+   caracteres que Windows no acepta en un nombre de archivo. */
+function cevenComprobanteNombre(qn, cliente){
+  var slug = String(cliente || '').trim()
+    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 40);
+  return 'Comprobante_' + qn + (slug ? '_' + slug : '') + '.pdf';
 }
 
 /* Punto de entrada del botón del historial. */
 function cevenImprimirComprobante(qn){
-  var html = cevenComprobanteHTML(qn);
-  if(!html){
+  var filas = cevenComprobanteFilas(qn);
+  if(!filas.length){
     if(typeof showToast === 'function') showToast('No se encontraron líneas para la cotización #' + qn + '.');
     return;
   }
-  var w = window.open('', '_blank');
-  if(!w){
-    if(typeof showToast === 'function') showToast('El navegador bloqueó la ventana del comprobante. Permití las ventanas emergentes para este sitio.');
+  var PDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf && window.jspdf.default);
+  if(!PDF){
+    if(typeof showToast === 'function') showToast('Error: jsPDF no cargó. Verificá tu conexión a internet.');
     return;
   }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  /* El print va después del load: si se dispara con el documento a medio
-     parsear, Chrome imprime una hoja en blanco — y encima el logo todavía no
-     bajó, así que saldría sin él. */
-  w.onload = function(){ try{ w.focus(); w.print(); }catch(e){} };
+  if(typeof PDF.API === 'undefined' || typeof PDF.API.autoTable === 'undefined'){
+    if(typeof showToast === 'function') showToast('Error: el plugin autotable de jsPDF no cargó.');
+    return;
+  }
+  var doc = cevenComprobanteDoc(qn, filas);
+  if(!doc) return;
+  cevenDescargarYAbrir(doc.output('blob'), cevenComprobanteNombre(qn, filas[0]['Cliente']));
 }

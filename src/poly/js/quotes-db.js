@@ -46,6 +46,14 @@ function doSave(overwrite){
   var ob=document.getElementById('obs').value||'—';
   var mesC = getMesCierre();
   var estadoQ = (document.getElementById('quote-estado') && document.getElementById('quote-estado').value) || 'Cotizado';
+  /* Condiciones comerciales: hasta 08/2026 NO se guardaban, así que el PDF
+     regenerado desde el historial (exportSelectedPDF) las leía vacías y salía
+     sin el bloque entero. Los nombres de clave son los que espera
+     cevenCondiciones() en shared/pdf-core.js. */
+  var _el = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
+  var payMode  = cevenPayMode();   // resuelve la opción "Otra" (shared/ui-core.js)
+  var effDate  = _el('eff-date');
+  var delivery = _el('delivery');
   var qn=cevenQNumFmt(qNum);
   var db=getDB();
   var already=false; for(var i=0;i<db.length;i++){if(db[i]['N° Cotización']===qn){already=true;break;}}
@@ -71,7 +79,7 @@ function doSave(overwrite){
   for(var j=0;j<items.length;j++){
     var it=items[j];
     var sp = (it.salePrice===''||it.salePrice==null) ? 0 : it.salePrice;
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'OPG':opg,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Nivel de precio':(typeof tierDeLinea==='function'?tierDeLinea(it):''),'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ});
+    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'OPG':opg,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'Nivel de precio':(typeof tierDeLinea==='function'?tierDeLinea(it):''),'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','IVA':it.iva||'','P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ});
   }
   saveDB(db);
   /* Se recuerda el nivel con el que se le cotizo a este cliente. Es el germen de
@@ -255,6 +263,15 @@ function editQuoteFromHistory(qn, skipUndoToast){
   if(document.getElementById('mes-cierre-mY')) setMesCierre(first['Mes Cierre']||'');
   _setExecValue(first['Ejecutivo']!=='—'?first['Ejecutivo']:'');
   document.getElementById('obs').value    = first['Observaciones']!=='—'?first['Observaciones']:'';
+  // Condiciones comerciales guardadas con la cotización. Sin esto, reabrir una
+  // cotización y volver a guardarla las pisaba con lo que hubiera en pantalla.
+  (function(){
+    if(first['Condición de pago']) cevenSetPayMode(first['Condición de pago']);
+    var ed = document.getElementById('eff-date');
+    if(ed && first['Propuesta efectiva hasta'] && first['Propuesta efectiva hasta'] !== '—') ed.value = first['Propuesta efectiva hasta'];
+    var dv = document.getElementById('delivery');
+    if(dv) dv.value = (first['Entrega'] && first['Entrega'] !== '—') ? first['Entrega'] : '';
+  })();
   /* El nivel global de la cotizacion guardada: el mas frecuente entre sus
      lineas. No se guarda aparte a proposito — se deduce de lo que realmente se
      cotizo, asi que no puede quedar desfasado del precio de las lineas. */
@@ -285,6 +302,10 @@ function editQuoteFromHistory(qn, skipUndoToast){
       salePrice: sp,
       qty: parseInt(r['Cantidad']) || 1,
       stock: r['Nota'] !== '—' ? (r['Nota']||'') : '',
+      /* El IVA guardado con la línea manda. Las cotizaciones anteriores a que
+         existiera la columna no lo tienen: ahí se deduce del catálogo, que es
+         mejor que dejar la columna en blanco. */
+      iva: r['IVA'] || cevenIvaDeCatalogo(r['SKU']),
       /* Vacio = sigue al global. Se guarda el nivel EFECTIVO de cada linea, asi
          que reabrir una cotizacion vieja recupera exactamente con que nivel se
          armo cada una — incluidas las MANUAL, que no se repricean. */
@@ -311,7 +332,9 @@ function exportDB(){
   var heads=COLS.slice();
   var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++){var k=COLS[i];o[k]=r[k]!==undefined?r[k]:'';}return o;});
   var ws=XLSX.utils.json_to_sheet(data,{header:heads});
-  ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:14},{wch:20},{wch:18},{wch:28},{wch:12},{wch:18},{wch:16},{wch:36},{wch:10},{wch:16},{wch:14},{wch:14}];
+  // Un ancho por columna de COLS, en el mismo orden.
+  ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:14},{wch:20},{wch:18},{wch:28},{wch:12},
+               {wch:18},{wch:20},{wch:18},{wch:18},{wch:16},{wch:36},{wch:10},{wch:16},{wch:8},{wch:14},{wch:14}];
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cotizaciones');
   XLSX.writeFile(wb,'Ceven_Poly_Cotizaciones.xlsx');
 }

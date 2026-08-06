@@ -84,6 +84,21 @@ window.CEVEN_BRAND = {
     { v: 'Negocios Especiales', lbl: 'Neg. Especiales' }
   ],
 
+  /* --- Condiciones comerciales (shared/pdf-core.js) ----------------- */
+
+  /* Lineas FIJAS del bloque "Condiciones Comerciales" que son propias de esta
+     marca. Van despues de "Los precios expresados NO incluyen Impuestos" y
+     antes de "Entrega". Las otras cuatro lineas (fecha efectiva, condicion de
+     pago, moneda e impuestos) son iguales en todas las marcas y las arma
+     cevenCondiciones().
+
+     Poly no tiene ninguna. Apple pone aca "Incluye enrolamiento en Apple
+     Business Manager", que es un servicio de esa marca y no significa nada en
+     una cotizacion de audio y video. Si Poly llega a tener una condicion propia
+     (garantia del fabricante, plazo de RMA...), el lugar es esta lista: NO un
+     `if` por marca adentro de shared/. */
+  condicionesFijas: [],
+
   /* --- Navegacion (shared/navbar.js) -------------------------------- */
 
   // Vistas que aparecen en la barra superior, en orden. `alsoFor` son las

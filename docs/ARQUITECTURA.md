@@ -21,7 +21,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `catalog-core.js` | `parseCSV`, `fk`, búsqueda y pegado masivo de SKUs, selección de filas, limpieza de filtros |
 | `pipeline-store.js` | `getPipeline`/`savePipeline`/`getArchive`/`saveArchive`/`currentMonthKey` |
 | `pipeline-ui.js` | Filtros de mes/cliente/pills y orden de la tabla del pipeline |
-| `pdf-core.js` | `downloadQuotePDF()` (html2canvas + jsPDF) y las hojas de estilo del documento |
+| `pdf-core.js` | `downloadQuotePDF()` (html2canvas + jsPDF), las hojas de estilo del documento, el bloque **Condiciones Comerciales** (`cevenCondiciones`/`cevenCondicionesHTML`, único para los tres documentos) y `cevenDescargarYAbrir()`, que baja el archivo y lo abre en otra pestaña |
 | `undo.js` | Deshacer cambios del pipeline, incluidas inserciones y borrados de fila |
 | `nav.js` | `window.cevenNav`: integra el botón Atrás del navegador/celular y la tecla Escape (una sola pila de overlays, un solo listener `popstate`) |
 | `theme.js` | Copia `CEVEN_BRAND.theme` a las variables CSS `--acc`/`--acc-h`/`--acc-soft`/`--acc-dk`. Es todo el color de marca: filete de la barra superior, vista activa, botón Guardar, links y foco. El shell no tiene marca y se queda con el default de `base.css` |
@@ -29,7 +29,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `navbar.js` | Barra superior de todas las páginas: chip de marca, un ítem por vista (leídos de `CEVEN_BRAND.navItems`) y el bloque de cuenta (dark mode, usuarios, quién sos + rol, contraseña, salir). `cevenNavbarSync()` marca la vista activa y esconde lo que el rol no puede usar |
 | `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos |
 | `todos.js` | Tareas del equipo: **store y sincronización**, no UI (tablas `todos` y `equipos` + RPC `ceven_equipo`, poll cada 15 s). Expone `window.cevenTareas`. Lo usan el shell (solo para la pastilla de pendientes) y `tareas/js/board.js`. Ojo con los nombres: `personas()` es la **gente**, `equipos()` son los **tableros** |
-| `comprobante.js` | Comprobante imprimible de una cotización (botón 🧾 en cada tarjeta del historial, en las dos marcas). Arma el documento y lo abre en una ventana aparte para usar la impresión nativa — no es un PDF rasterizado como `pdf-core.js`. Los datos del emisor salen de `CEVEN_EMISOR` en `config.js` |
+| `comprobante.js` | Comprobante de una cotización (botón 🧾 en cada tarjeta del historial, en las dos marcas). **Se descarga como PDF y se abre solo.** Se dibuja con jsPDF + autotable, no con html2canvas: el texto se selecciona y se busca, a diferencia de `pdf-core.js`, que rasteriza. Al ser todo sincrónico el `window.open` cae dentro del gesto del click y el navegador no lo bloquea. Los datos del emisor salen de `CEVEN_EMISOR` en `config.js`. Ojo con `cevenCompSan()`: las fuentes estándar del PDF no dibujan `– — “ ” …`, hay que pasar por ahí todo lo que se imprima |
 | `pwa.js` | Registro del service worker, aviso de versión nueva, botón instalar, pastilla de cambios pendientes |
 | `init.js` | Pinta la versión y sincroniza el ícono de dark mode |
 | `css/base.css`, `css/dark.css` | Estilos, idénticos para todas las marcas. Los tokens de color (`:root`), la pila tipográfica (`--f-ui`/`--f-disp`) y la escala `.h1`/`.h2`/`.h3`/`.sub`/`.lbl` viven en `base.css`, porque el shell **no** carga `dark.css` — ahí quedó solo lo de `body.dark` |
@@ -56,6 +56,7 @@ Nació de dos HTML monolíticos (7.365 y 2.627 líneas) que en 07/2026 se partie
 | `idbKey`, `appTag`, `backupVersion`, `pipeFilePrefix`, `fullBackupFile`, `exportPrefix`, `backupExtraKeys` | identidad de los backups de la marca |
 | `plLabel` | cómo se llama el listado de productos en los carteles (`price list` / `catálogo`) |
 | `theme` | color de la marca: `{accent, hover, soft, dk}`. El criterio es **distinguirse entre marcas**, no imitar el logo — Apple azul, Poly violeta, HP naranja: los datos no se mezclan y equivocarse de cotizador es fácil. Si se cambia uno, hay que tocar también la tarjeta de esa marca en el shell (`.mcard[data-brand=…]`), que no carga ningún `brand.js` |
+| `condicionesFijas` | líneas del bloque "Condiciones Comerciales" propias de la marca, entre la de impuestos y la de entrega. Apple: enrolamiento en Apple Business Manager. Poly: ninguna. Las otras cuatro líneas son iguales en todas las marcas y las arma `cevenCondiciones()` |
 | `navItems` | vistas que muestra la barra superior, en orden: `{view, label, alsoFor?, needsPipeline?}`. `alsoFor` lista las vistas sin ítem propio que igual marcan a esta como activa (`addprod` cuelga de `catalog`, `qnac` de `quote`); `needsPipeline` esconde el ítem al rol lector |
 
 `window.cevenK(base)` devuelve `prefix + base`. **Todo** acceso a localStorage desde código compartido pasa por ahí.

@@ -92,7 +92,7 @@ function renderPicker(){
   var html = '';
   for(var i=0;i<filtered.length;i++) html += _catRowHTML(filtered[i], i, 'data-pi', {agregar:true});
   document.getElementById('pk-body').innerHTML = html
-    || '<tr><td colspan="5" style="text-align:center;color:#aeaeb2;padding:22px">Sin resultados</td></tr>';
+    || '<tr><td colspan="6" style="text-align:center;color:#aeaeb2;padding:22px">Sin resultados</td></tr>';
 
   var cnt = document.getElementById('pk-count');
   if(cnt) cnt.textContent = filtered.length + (filtered.length===1?' producto':' productos');

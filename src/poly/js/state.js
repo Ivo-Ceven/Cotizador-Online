@@ -10,8 +10,14 @@ function _nextSel(){ return ++_selSeq; }
 var histSel = {};
 var editId = null;
 
+/* Columnas del Excel de cotizaciones. 'Condición de pago', 'Propuesta efectiva
+   hasta' y 'Entrega' se agregaron cuando doSave() empezó a persistirlas: sin
+   eso, el PDF regenerado desde el historial salía sin el bloque de Condiciones
+   Comerciales (lo leía de estas claves, que nunca se escribían). 'IVA' llegó
+   con la columna "Programa fiscal" del Excel del ERP. */
 var COLS = ['N° Cotización','Fecha','Hora','Cliente','OPG','Proyecto','Ejecutivo','Observaciones',
-            'Mes Cierre','Nivel de precio','SKU','Descripción','Cantidad','Nota','P. Venta Unitario','Total'];
+            'Mes Cierre','Condición de pago','Propuesta efectiva hasta','Entrega',
+            'Nivel de precio','SKU','Descripción','Cantidad','Nota','IVA','P. Venta Unitario','Total'];
 
 // cevenDelegate()/cevenActEl() viven en shared/ui-core.js y _checkRecovery() en
 // shared/recovery.js: los tres eran identicos (o casi) en las dos marcas.

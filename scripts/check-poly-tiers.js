@@ -144,7 +144,12 @@ console.log('\n7 · El selector de línea muestra el precio de cada nivel');
   const h = e.tierSelectHTML({id:1, sku:'772D0AA', qty:1, salePrice:225, tier:''});
   ok(/Tier 1 · 235/.test(h),          'la opción Tier 1 muestra 235');
   ok(/Neg\. Especiales · 190/.test(h),'la opción Neg. Especiales muestra 190');
-  ok(/>Manual</.test(h),              'existe la opción Manual');
+  /* El valor guardado sigue siendo 'MANUAL' (viaja a `Nivel de precio` en
+     cquotes) pero en pantalla dice "Custom" desde que se separaron los dos
+     — ver TIER_MANUAL_LBL en poly/js/tiers.js. Este chequeo seguía buscando la
+     etiqueta vieja y fallaba con el código correcto. */
+  ok(/value="MANUAL"/.test(h),        'existe la opción de precio manual, guardada como MANUAL');
+  ok(/>Custom</.test(h),              'la opción manual se lee "Custom" en pantalla');
   const h2 = e.tierSelectHTML({id:2, sku:'SIN-TIER', qty:1, salePrice:'', tier:''});
   ok(/Tier 1 · —/.test(h2),           'un SKU sin precios muestra "—" en vez de 0');
 }

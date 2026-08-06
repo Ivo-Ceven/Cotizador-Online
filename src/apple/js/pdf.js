@@ -45,26 +45,23 @@ function exportSelectedPDF(){
           +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
           +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
           +'<td style="text-align:right;font-weight:600">USD '+fI(lineTot)+'</td>'
-          +'<td style="text-align:center">21%</td>'
+          +'<td style="text-align:center">'+cevenEsc(r['IVA']||r['_taxes']||'21%')+'</td>'
           +'<td style="text-align:center"><span class="badge-'+(String(wCanal).toLowerCase()==='cc'?'cc':'gl')+'">'+cevenEsc(wCanal)+'</span> · '+cevenEsc(wAnios)+' '+(wAnios===1?'año':'años')+'</td></tr>';
         continue;
       }
       gtProd += lineTot;
-      // doSave() guarda el IVA en '_taxes' y el modelo en '_lob'. Este bloque leía
-      // 'IVA/Imp.Int.' / 'taxes' / 'LOB', claves que nunca existieron: la columna
-      // salía siempre en "—".
+      // El IVA está en la columna 'IVA' desde 08/2026; '_taxes' es donde lo
+      // escribía doSave() antes y sigue estando en lo ya guardado. El modelo va
+      // en '_lob' y sirve para recalcularlo si la cotización es más vieja que
+      // las dos. Este bloque llegó a leer 'IVA/Imp.Int.' / 'taxes' / 'LOB',
+      // claves que nunca existieron: la columna salía siempre en "—".
       trows+='<tr><td>'+cevenEsc(r['SKU'])+'</td><td class="wrap">'+cevenEsc(r['Descripción'])+'</td>'
         +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
         +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
         +'<td style="text-align:right;font-weight:600">USD '+fI(lineTot)+'</td>'
-        +'<td style="text-align:center">'+cevenEsc(r['_taxes']||getIVA(r['_lob']||'')||'—')+'</td>'
+        +'<td style="text-align:center">'+cevenEsc(r['IVA']||r['_taxes']||getIVA(r['_lob']||'')||'—')+'</td>'
         +'<td style="text-align:center">'+cevenEsc(r['Disponibilidad']||'—')+'</td></tr>';
     }
-    // Estos tres campos ahora los persiste doSave(): antes no se guardaban y el
-    // bloque entero de "Condiciones Comerciales" desaparecía del PDF regenerado.
-    var payMode = first['Condición de pago']||'';
-    var effDate = first['Propuesta efectiva hasta']||'—';
-    var delivery = first['Entrega']||'—';
     allBlocks+='<div class="qb">'
       +'<p class="qn">Cotización #'+cevenEsc(qn)+'</p>'
       +'<h1>Productos recomendados para su operación</h1>'
@@ -98,15 +95,11 @@ function exportSelectedPDF(){
           +'<tr class="tr"><td colspan="4" style="text-align:right">Total garantías</td><td style="text-align:right">USD '+fI(gtWarr)+'</td><td></td><td></td></tr>'
         +'</tbody></table>'
       :'')
-      +(payMode||effDate!=='—'||delivery!=='—'?
-        '<p class="sec">Condiciones Comerciales</p>'
-        +(effDate!=='—'?'<p class="cd">Propuesta efectiva hasta: '+cevenEsc(effDate)+'</p>':'')
-        +(payMode?'<p class="cd">Condición de pago: '+cevenEsc(payMode)+' – TC Dólar billete BNA del día del pago</p>':'')
-        +'<p class="cd">Precios unitarios expresados en dólares estadounidenses</p>'
-        +'<p class="cd">Los precios expresados NO incluyen Impuestos</p>'
-        +'<p class="cd">Incluye enrolamiento en Apple Business Manager</p>'
-        +(delivery!=='—'?'<p class="cd">Entrega: '+cevenEsc(delivery)+'</p>':'')
-      :'')
+      /* Las condiciones se arman en shared/pdf-core.js, a partir de lo que
+         doSave() guardó con la cotización. Antes estaban escritas acá y el
+         bloque ENTERO se omitía cuando faltaban los tres campos editables —
+         incluidas las líneas fijas, que son ciertas siempre. */
+      +cevenCondicionesHTML(first)
     +'</div>';
   }
   var fname=keys.length===1?'Cotizacion_'+keys[0]:'Cotizaciones_'+keys.join('-');
@@ -135,13 +128,11 @@ function buildPDF(){
   var client=document.getElementById('client').value;
   var exec=document.getElementById('exec').value;
   var ob=document.getElementById('obs').value;
-  var effDate=document.getElementById('eff-date').value||'—';
-  var payMode=cevenPayMode();
-  var delivery=document.getElementById('delivery').value||'—';
+  // Las condiciones comerciales (fecha efectiva, condición de pago, moneda y
+  // entrega) las lee cevenCondicionesHTML() de los mismos campos, más abajo.
   var qn=String(qNum).padStart(4,'0');
   // ||0 para que un salePrice roto no imprima "NaN" como total en el PDF del cliente.
   var gt=0; for(var i=0;i<items.length;i++) gt+=(items[i].salePrice||0)*items[i].qty;
-  var curLabel=getCur()==='ARS'?'Precios unitarios expresados en pesos argentinos':'Precios unitarios expresados en dólares estadounidenses';
   var logoTag=_logo?'<img src="'+cevenEsc(_logo)+'" style="height:40px;object-fit:contain;display:block;margin:0 auto 20px">':'';
   // El mismo sort que está activo en pantalla. Este comparador estaba copiado
   // tres veces (acá, en renderQ y en getSortedItems): tres lugares donde tocar
@@ -249,13 +240,9 @@ function buildPDF(){
     }
   }
 
-  html += '<p class="sec">Condiciones Comerciales</p>'
-    +'<p class="cd">Propuesta efectiva hasta: '+cevenEsc(effDate)+'</p>'
-    +'<p class="cd">Condición de pago: '+cevenEsc(payMode)+' – TC Dólar billete BNA del día del pago</p>'
-    +'<p class="cd">'+curLabel+'</p>'
-    +'<p class="cd">Los precios expresados NO incluyen Impuestos</p>'
-    +'<p class="cd">Incluye enrolamiento en Apple Business Manager</p>'
-    +'<p class="cd">Entrega: '+cevenEsc(delivery)+'</p>'
+  // Sin argumento, cevenCondicionesHTML() lee los campos de la pantalla — que es
+  // lo que corresponde acá: se está exportando la cotización que está en vivo.
+  html += cevenCondicionesHTML()
     +'<p class="ft">Ceven S.A. · Apple Business Partner · Authorized Service Provider · Argentina &amp; Uruguay</p>'
     +'</body></html>';
   // Estilos de impresión / salto de página (landscape) + evitar cortar filas

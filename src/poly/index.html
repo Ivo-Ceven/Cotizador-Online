@@ -18,6 +18,9 @@
 <script src="../vendor/xlsx.full.min.js"></script>
 <script src="../vendor/html2canvas.min.js"></script>
 <script src="../vendor/jspdf.umd.min.js"></script>
+<!-- autotable dibuja la tabla del comprobante (shared/comprobante.js). Va
+     DESPUÉS de jspdf: es un plugin que se engancha a jsPDF.API. -->
+<script src="../vendor/jspdf.plugin.autotable.min.js"></script>
 <link rel="stylesheet" href="../shared/css/base.css">
 <link rel="stylesheet" href="../shared/css/dark.css">
 </head>
@@ -159,13 +162,13 @@
     </div>
   </div>
   <div id="qbody-wrap" class="tw" style="margin-bottom:18px">
-    <table style="table-layout:fixed;min-width:680px">
+    <table style="table-layout:fixed;min-width:740px">
       <colgroup>
         <!-- Qty en px y no en %: adentro va el stepper (− input +), que mide
              ~100px fijos. Con 7% se recortaba y el + quedaba pisado por Nivel. -->
-        <col style="width:13%"><col style="width:28%"><col style="width:108px">
-        <col style="width:15%"><col style="width:13%"><col style="width:11%">
-        <col style="width:11%"><col style="width:48px">
+        <col style="width:13%"><col style="width:25%"><col style="width:108px">
+        <col style="width:14%"><col style="width:12%"><col style="width:10%">
+        <col style="width:8%"><col style="width:10%"><col style="width:48px">
       </colgroup>
       <thead>
         <tr>
@@ -175,6 +178,9 @@
           <th>Nivel</th>
           <th class="qsrt" onclick="sortQBy('price')" style="text-align:right" title="Ordenar por precio">P. Venta Unit.</th>
           <th style="text-align:right">Total</th>
+          <!-- Sale de la columna "Programa fiscal" del Excel del ERP; no se
+               edita y por ahora no entra en ningún cálculo. -->
+          <th style="text-align:center" title="Alícuota de IVA del producto (10,5% reducido / 21% general)">IVA</th>
           <th>Nota</th>
           <th></th>
         </tr>
@@ -239,11 +245,12 @@
     </div>
     <div class="tw">
       <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:15%"><col><col style="width:168px"><col style="width:62px"><col style="width:64px"></colgroup>
+        <colgroup><col style="width:15%"><col><col style="width:168px"><col style="width:58px"><col style="width:62px"><col style="width:64px"></colgroup>
         <thead>
           <tr>
             <th>SKU</th><th>Descripción</th>
             <th style="text-align:right">Precios por nivel</th>
+            <th style="text-align:center" title="Alícuota de IVA, de la columna &quot;Programa fiscal&quot; del archivo del ERP (10,5% reducido / 21% general)">IVA</th>
             <th style="text-align:center" title="Disponible (LocAvailable), sumando todos los depósitos">Stock</th>
             <th></th>
           </tr>
@@ -470,11 +477,12 @@
 
     <div class="pk-lista">
       <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:54px"><col style="width:15%"><col><col style="width:168px"><col style="width:62px"></colgroup>
+        <colgroup><col style="width:54px"><col style="width:15%"><col><col style="width:168px"><col style="width:58px"><col style="width:62px"></colgroup>
         <thead>
           <tr>
             <th></th><th>SKU</th><th>Descripci&oacute;n</th>
             <th style="text-align:right">Precios por nivel</th>
+            <th style="text-align:center" title="Al&iacute;cuota de IVA (10,5% reducido / 21% general)">IVA</th>
             <th style="text-align:center">Stock</th>
           </tr>
         </thead>
