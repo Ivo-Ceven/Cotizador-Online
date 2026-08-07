@@ -37,7 +37,13 @@
 
    Lo propio de cada marca va en `CEVEN_BRAND.condicionesFijas` — nunca un `if`
    por marca aca adentro. */
-function cevenCondiciones(row){
+/* Devuelve las lineas con su formato: `{texto, destacar}`. `destacar` marca la
+   entrega inmediata, que los documentos imprimen en verde (ver mas abajo).
+
+   Existe aparte de cevenCondiciones() porque esa devuelve strings pelados y hay
+   codigo que depende de eso (scripts/check-comprobante.js compara linea por
+   linea). Los renderers que saben pintar usan esta; el resto sigue igual. */
+function cevenCondicionesDetalle(row){
   var dato = function(clave, campoId){
     if(row){
       var v = row[clave];
@@ -48,7 +54,13 @@ function cevenCondiciones(row){
   };
 
   var eff = dato('Propuesta efectiva hasta', 'eff-date');
-  var del = dato('Entrega', 'delivery');
+  /* La entrega de la PANTALLA no se puede leer del `.value` del <select>: la
+     opcion libre vale "__otra" y eso es lo que saldria impreso. cevenDelivery()
+     resuelve el texto final (shared/ui-core.js), igual que cevenPayMode() con
+     la condicion de pago. Desde un documento guardado se lee la columna. */
+  var del = row ? dato('Entrega')
+                : (typeof cevenDelivery === 'function' ? cevenDelivery()
+                                                       : dato('Entrega', 'delivery'));
   var pay = row ? dato('Condición de pago')
                 : (typeof cevenPayMode === 'function' ? cevenPayMode() : '');
 
@@ -65,22 +77,39 @@ function cevenCondiciones(row){
     'Condición de pago: ' + (pay || '—') + ' – TC Dólar billete BNA del día del pago',
     moneda,
     'Los precios expresados NO incluyen Impuestos'
-  ];
+  ].map(function(t){ return { texto: t, destacar: false }; });
 
   var propias = (typeof window !== 'undefined' && window.CEVEN_BRAND && window.CEVEN_BRAND.condicionesFijas) || [];
-  for(var i = 0; i < propias.length; i++) lineas.push(propias[i]);
+  for(var i = 0; i < propias.length; i++) lineas.push({ texto: propias[i], destacar: false });
 
-  lineas.push('Entrega: ' + (del || '—'));
+  lineas.push({
+    texto: 'Entrega: ' + (del || '—'),
+    /* Solo la entrega inmediata se destaca. El guard por typeof es para el
+       contexto sin ui-core.js (los scripts de chequeo corren estos modulos
+       sueltos en Node): ahi la linea sale igual, sin resaltar. */
+    destacar: (typeof cevenEntregaEsInmediata === 'function') && cevenEntregaEsInmediata(del)
+  });
   return lineas;
 }
 
+/* Las mismas lineas como strings pelados. Es la forma historica y la que usan
+   los chequeos; cevenCondicionesDetalle() es la que sabe que hay que destacar. */
+function cevenCondiciones(row){
+  return cevenCondicionesDetalle(row).map(function(l){ return l.texto; });
+}
+
 /* El mismo bloque como HTML, para los documentos que se arman concatenando
-   strings (los dos pdf.js). El comprobante lo dibuja con jsPDF y usa la lista. */
+   strings (los dos pdf.js). El comprobante lo dibuja con jsPDF y usa la lista.
+
+   La entrega inmediata sale en verde (`.cd-ok`): es un argumento de venta y el
+   cliente tiene que verlo sin leer las seis lineas del bloque. */
 function cevenCondicionesHTML(row){
   var esc = (typeof cevenEsc === 'function') ? cevenEsc : function(s){ return String(s); };
-  var lineas = cevenCondiciones(row);
+  var lineas = cevenCondicionesDetalle(row);
   var h = '<p class="sec">Condiciones Comerciales</p>';
-  for(var i = 0; i < lineas.length; i++) h += '<p class="cd">' + esc(lineas[i]) + '</p>';
+  for(var i = 0; i < lineas.length; i++){
+    h += '<p class="cd' + (lineas[i].destacar ? ' cd-ok' : '') + '">' + esc(lineas[i].texto) + '</p>';
+  }
   return h;
 }
 
@@ -205,6 +234,10 @@ function cevenPdfDocCSS(cols, extra){
     +'td.nowrap{white-space:nowrap}'
     +'.tr td{border-top:1.5px solid #d2d2d7;border-bottom:none;font-weight:700;font-size:14px;padding-top:9px}'
     +'.sec{font-size:13px;font-weight:700;margin:16px 0 8px;padding-top:14px;border-top:0.5px solid #d2d2d7}.cd{font-size:12px;font-weight:700;margin-bottom:6px}'
+    /* Entrega inmediata. Es un chip y no solo texto verde porque este documento
+       termina rasterizado por html2canvas y achicado para entrar en una hoja:
+       un cambio de color solo se pierde a ese tamano, el recuadro no. */
+    +'.cd-ok{color:#0f7a35;background:#e6f6ec;display:inline-block;padding:2px 9px;border-radius:5px}'
     +(extra||'')
     +'.ft{margin-top:20px;font-size:10px;color:#aeaeb2;text-align:center}'
     +'@media print{body{padding:18px}}</style>';
@@ -225,6 +258,7 @@ function cevenPdfListCSS(extra){
     +'.tr td{border-top:1.5px solid #d2d2d7;border-bottom:none;font-weight:700;font-size:14px;padding-top:9px}'
     +'.sec{font-size:13px;font-weight:700;margin:16px 0 8px;padding-top:14px;border-top:0.5px solid #d2d2d7}'
     +'.cd{font-size:12px;font-weight:700;margin-bottom:6px}'
+    +'.cd-ok{color:#0f7a35;background:#e6f6ec;display:inline-block;padding:2px 9px;border-radius:5px}'
     +(extra||'')
     +'.ft{margin-top:20px;font-size:10px;color:#aeaeb2;text-align:center}'
     +'@media print{.qb{page-break-after:always}.qb:last-child{page-break-after:avoid}body{padding:18px}}'

@@ -206,7 +206,18 @@
     <div id="cond-cur" style="font-size:13px;font-weight:700;margin-bottom:7px">Precios unitarios expresados en dólares estadounidenses</div>
     <div style="font-size:13px;font-weight:700;margin-bottom:7px">Los precios expresados NO incluyen Impuestos</div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:600">
-      <span>Entrega:</span><input id="delivery" type="text" placeholder="Ej: 5 a 7 días hábiles" style="flex:1;min-width:160px;font-weight:400">
+      <!-- Mismo mecanismo que la condición de pago: opciones fijas + "Otra…".
+           Lo resuelven cevenDelivery()/cevenSetDelivery() en shared/ui-core.js;
+           acá y en el resto del código nadie sabe del marcador "__otra". -->
+      <span>Entrega:</span>
+      <select id="delivery" onchange="cevenToggleDeliveryOtra(true)" style="width:auto;font-weight:400">
+        <option value="">— Elegir plazo —</option>
+        <option>Inmediata</option>
+        <option>3 días hábiles</option>
+        <option>Entre 5 y 7 días hábiles</option>
+        <option value="__otra">Otra…</option>
+      </select>
+      <input id="delivery-otra" type="text" placeholder="Escribí el plazo de entrega" style="display:none;width:auto;min-width:210px;font-weight:400">
     </div>
   </div>
 </div>

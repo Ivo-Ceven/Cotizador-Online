@@ -256,6 +256,89 @@ function cevenTogglePayOtra(){
   if(otra) libre.focus();
 }
 
+/* ── ENTREGA ────────────────────────────────────────────────────────────────
+   Mismo mecanismo que la condición de pago: un `<select id="delivery">` con los
+   plazos habituales más una opción libre (#delivery-otra) para cualquier otro.
+
+   Hasta 08/2026 esto era un `<input type="text">` y cada uno tipeaba el plazo a
+   mano. Dos consecuencias: el mismo plazo salía impreso de varias formas
+   ("inmediata", "Inmediata", "INMEDIATA", "entrega inmediata"), y no había
+   forma confiable de reconocer la entrega inmediata para destacarla en el PDF.
+
+   Igual que con el pago, lo que se guarda y se imprime es SIEMPRE el texto
+   final, nunca el marcador: una cotización vieja se relee bien aunque mañana
+   cambien las opciones del selector. Y por eso mismo el valor de cada <option>
+   es su propio texto — no un código.
+
+   La primera opción es vacía a propósito: antes el campo arrancaba en blanco y
+   el PDF imprimía "Entrega: —". Sin una opción vacía, toda cotización nueva
+   saldría afirmando un plazo que nadie eligió. */
+var CEVEN_ENTREGA_OTRA = '__otra';
+
+function cevenDelivery(){
+  var sel = document.getElementById('delivery');
+  if(!sel) return '';
+  if(sel.value !== CEVEN_ENTREGA_OTRA) return sel.value;
+  var libre = document.getElementById('delivery-otra');
+  return libre ? String(libre.value || '').trim() : '';
+}
+
+/* Escribe la entrega viniendo de una cotización guardada. Si el texto no es una
+   de las opciones del selector, entra por "Otra" — que es lo que pasa al
+   reabrir algo guardado cuando era un campo de texto libre. */
+function cevenSetDelivery(v){
+  var sel = document.getElementById('delivery');
+  if(!sel) return;
+  var libre = document.getElementById('delivery-otra');
+  v = String(v == null ? '' : v);
+
+  /* Sin dato: vuelve a la opción vacía y se limpia TAMBIÉN el campo libre.
+     Va antes del recorrido de opciones y no dentro, porque la opción vacía
+     también matchea por valor: saliendo por ahí, el texto de la cotización
+     anterior quedaba escondido en el input y reaparecía al elegir "Otra…". */
+  if(v === ''){
+    sel.value = '';
+    if(libre) libre.value = '';
+    cevenToggleDeliveryOtra();
+    return;
+  }
+
+  for(var i = 0; i < sel.options.length; i++){
+    if(sel.options[i].value === v && v !== CEVEN_ENTREGA_OTRA){
+      sel.value = v;
+      cevenToggleDeliveryOtra();
+      return;
+    }
+  }
+  sel.value = CEVEN_ENTREGA_OTRA;
+  if(libre) libre.value = v;
+  cevenToggleDeliveryOtra();
+}
+
+/* Muestra u esconde el campo libre. `foco` solo lo manda el onchange del
+   selector: al restaurar una cotización guardada, robarle el foco al usuario
+   sin que haya tocado nada mueve el scroll hasta las condiciones comerciales. */
+function cevenToggleDeliveryOtra(foco){
+  var sel   = document.getElementById('delivery');
+  var libre = document.getElementById('delivery-otra');
+  if(!sel || !libre) return;
+  var otra = sel.value === CEVEN_ENTREGA_OTRA;
+  libre.style.display = otra ? '' : 'none';
+  if(otra && foco) libre.focus();
+}
+
+/* La entrega inmediata es la única que los documentos destacan (en verde): es
+   un argumento de venta y conviene que salte a la vista.
+
+   Se compara con el texto completo, sin distinguir mayúsculas ni espacios de
+   más, así que también agarra a quien lo haya escrito a mano en el campo libre
+   o a una cotización vieja de cuando esto era un input. NO se busca la palabra
+   suelta adentro de la frase: "no inmediata" o "inmediata sujeta a stock" son
+   justamente los casos en los que pintar de verde engañaría. */
+function cevenEntregaEsInmediata(v){
+  return /^inmediata$/i.test(String(v == null ? '' : v).trim());
+}
+
 // ── MONEDA ──
 function getCur() { var el = document.getElementById('cur'); return el ? el.value : 'USD'; }
 

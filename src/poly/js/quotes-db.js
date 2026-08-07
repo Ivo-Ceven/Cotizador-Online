@@ -53,7 +53,7 @@ function doSave(overwrite){
   var _el = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
   var payMode  = cevenPayMode();   // resuelve la opción "Otra" (shared/ui-core.js)
   var effDate  = _el('eff-date');
-  var delivery = _el('delivery');
+  var delivery = cevenDelivery();  // ídem: el <select> vale "__otra", no el texto
   var qn=cevenQNumFmt(qNum);
   var db=getDB();
   var already=false; for(var i=0;i<db.length;i++){if(db[i]['N° Cotización']===qn){already=true;break;}}
@@ -115,7 +115,7 @@ function _snapshotQuoteState(){
     obs: document.getElementById('obs').value,
     effDate: document.getElementById('eff-date').value,
     payMode: cevenPayMode(),
-    delivery: document.getElementById('delivery').value
+    delivery: cevenDelivery()
   };
 }
 // Asigna un ejecutivo al <select>, agregando la opción si no está: sin esto,
@@ -142,7 +142,7 @@ function _restoreQuoteState(snap){
   document.getElementById('obs').value = snap.obs;
   document.getElementById('eff-date').value = snap.effDate;
   cevenSetPayMode(snap.payMode);
-  document.getElementById('delivery').value = snap.delivery;
+  cevenSetDelivery(snap.delivery);
   _qSortKey = null; _qSortDir = 1;
   renderQ();
 }
@@ -171,7 +171,7 @@ function nuevaCotizacion(){
   var d2 = new Date(); d2.setDate(d2.getDate()+15);
   var yyyy2=d2.getFullYear(), mm2=String(d2.getMonth()+1).padStart(2,'0'), dd2=String(d2.getDate()).padStart(2,'0');
   document.getElementById('eff-date').value = yyyy2+'-'+mm2+'-'+dd2;
-  document.getElementById('delivery').value = '';
+  cevenSetDelivery('');
   cevenApplyVendorAutofill();
   renderQ();
   if(hadItems){
@@ -269,8 +269,9 @@ function editQuoteFromHistory(qn, skipUndoToast){
     if(first['Condición de pago']) cevenSetPayMode(first['Condición de pago']);
     var ed = document.getElementById('eff-date');
     if(ed && first['Propuesta efectiva hasta'] && first['Propuesta efectiva hasta'] !== '—') ed.value = first['Propuesta efectiva hasta'];
-    var dv = document.getElementById('delivery');
-    if(dv) dv.value = (first['Entrega'] && first['Entrega'] !== '—') ? first['Entrega'] : '';
+    // Una cotización guardada cuando esto era un campo de texto libre entra por
+    // la opción "Otra…" con su texto intacto (ver cevenSetDelivery).
+    cevenSetDelivery((first['Entrega'] && first['Entrega'] !== '—') ? first['Entrega'] : '');
   })();
   /* El nivel global de la cotizacion guardada: el mas frecuente entre sus
      lineas. No se guarda aparte a proposito — se deduce de lo que realmente se

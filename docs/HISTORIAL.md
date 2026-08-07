@@ -23,6 +23,89 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 07/08/2026 · Encabezado del comprobante unificado y la entrega como selector
+
+Dos pedidos sobre los documentos que ve el cliente.
+
+### 1. El cliente entra a la misma tabla que el número de cotización
+
+El comprobante tenía el encabezado partido en dos: una caja con
+`Cotización N° | Fecha | Ejecutivo` y, más abajo, una sección **"Datos del
+cliente"** con el nombre en cuerpo 16 y el proyecto debajo. Los cinco datos que
+identifican el documento se leían en dos lugares distintos, y el nombre suelto en
+cuerpo grande competía con el título COTIZACIÓN.
+
+Ahora es **una sola tabla de tres filas**: la de arriba con N° / Fecha /
+Ejecutivo (sin cambios) y debajo `Cliente:` y `Proyecto:`, cada uno con su
+rótulo. El proyecto sigue leyéndose de `Proyecto` con `OPG` de respaldo, sin
+preguntar por la marca.
+
+Las filas se **miden antes de dibujar** (`splitTextToSize`) y crecen con el
+contenido: un cliente o un proyecto largo se parte en varios renglones en vez de
+recortarse. Recortar dejaría afuera parte de un dato que identifica el trabajo.
+
+Lo que **no** volvió es el renglón "CUIT / DNI" en blanco: ese dato es de un
+comprobante fiscal, y esto no lo es.
+
+### 2. La entrega deja de ser texto libre
+
+Era un `<input type="text">` donde cada uno tipeaba el plazo. Dos consecuencias:
+el mismo plazo salía impreso de varias formas ("inmediata", "Inmediata",
+"INMEDIATA"), y no había forma confiable de reconocer la entrega inmediata para
+destacarla.
+
+Ahora es un `<select id="delivery">` con **Inmediata / 3 días hábiles / Entre 5 y
+7 días hábiles / Otra…**, con el mismo mecanismo que la condición de pago:
+`cevenDelivery()` / `cevenSetDelivery()` / `cevenToggleDeliveryOtra()` en
+`shared/ui-core.js`, y el resto del código no sabe del marcador `__otra`. Está en
+las **dos marcas**.
+
+Tres cosas que valen la pena anotar:
+
+- **La primera opción es vacía.** Antes el campo arrancaba en blanco y el PDF
+  imprimía `Entrega: —`. Sin opción vacía, toda cotización nueva saldría
+  afirmando un plazo que nadie eligió.
+- **Las cotizaciones viejas entran por "Otra…"** con su texto intacto: se
+  guardaron cuando esto era texto libre y tienen cualquier cosa en la columna
+  `Entrega`.
+- `cevenSetDelivery('')` limpia **también** el campo libre. El chequeo lo
+  encontró: la opción vacía matchea por valor en el recorrido de opciones, así
+  que salía por ahí y el texto de la cotización anterior quedaba escondido en el
+  input, listo para reaparecer al elegir "Otra…".
+
+### 3. La entrega inmediata sale en verde
+
+En los tres documentos: el PDF de la cotización, el del historial y el
+comprobante. `cevenCondiciones()` devolvía strings pelados y hay código que
+depende de eso, así que se agregó **`cevenCondicionesDetalle()`**, que devuelve
+`{texto, destacar}`; `cevenCondiciones()` es ahora un `.map()` sobre ella y no
+cambió para nadie.
+
+Los dos HTML usan la clase `.cd-ok` (chip verde, definido en las **dos** hojas de
+`pdf-core.js`); el comprobante pinta el texto y un `roundedRect` de fondo con el
+mismo par de verdes. Es un chip y no solo texto de color porque el PDF de la
+cotización termina rasterizado por html2canvas y achicado para entrar en una
+hoja: a ese tamaño un cambio de color solo se pierde.
+
+Se destaca **solo** el texto exacto "inmediata" (sin distinguir mayúsculas ni
+espacios de más, para agarrar también lo escrito a mano). `"no inmediata"` o
+`"inmediata sujeta a stock"` son justamente los casos en los que pintar de verde
+engañaría al cliente.
+
+### Verificación
+
+`scripts/check-entrega.js` (nuevo, 37 chequeos): reconocimiento de la entrega
+inmediata, round-trip por el selector, que `cevenDelivery()` nunca devuelva
+`__otra`, que se destaque una sola línea, y que el comprobante escriba el verde
+—leyendo los operadores de color del PDF, comparados como **números**: jsPDF
+emite el color del texto con 3 decimales y el del relleno con 2, y clavar el
+formato hacía fallar un chequeo que estaba bien.
+
+Además, mirado en el navegador: el comprobante generado, el bloque de condiciones
+con y sin entrega inmediata, y el selector con la opción libre desplegada.
+
+---
+
 ## 06/08/2026 · El comprobante pasa a PDF, condiciones comerciales en todos lados e IVA desde el Excel
 
 Tres pedidos que resultaron estar encadenados.

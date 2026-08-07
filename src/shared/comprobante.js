@@ -59,6 +59,11 @@ var CEVEN_COMP_TINT  = [238, 242, 249];
 var CEVEN_COMP_GRIS  = [51, 51, 51];
 var CEVEN_COMP_LINEA = [153, 153, 153];
 
+/* Entrega inmediata. Es el mismo par de verdes que usa el PDF de la cotización
+   (`.cd-ok` en shared/pdf-core.js): el documento cambia, el código de color no. */
+var CEVEN_COMP_VERDE    = [15, 122, 53];
+var CEVEN_COMP_VERDE_BG = [230, 246, 236];
+
 /* Márgenes y ancho útil de la hoja A4 vertical, en mm. */
 var CEVEN_COMP_M  = 16;
 var CEVEN_COMP_W  = 210;
@@ -219,21 +224,65 @@ function cevenComprobanteDoc(qn, filas, emisor){
   _compTxt(doc, 'COTIZACIÓN', M, y);
   y += 7;
 
-  /* ── CAJA N° + FECHA + EJECUTIVO ─────────────────────────────────────────
-     Tres celdas. El ejecutivo estaba al pie, en letra chica: acá arriba es
-     donde el cliente lo busca, junto al número y la fecha. */
-  var hCaja = 8;
+  /* ── CAJA DE ENCABEZADO ───────────────────────────────────────────────────
+     Una sola tabla con el número de cotización Y los datos del cliente.
+
+     Hasta 08/2026 eran dos bloques separados: esta caja (N° | Fecha |
+     Ejecutivo) y, más abajo, una sección "Datos del cliente" con el nombre en
+     cuerpo 16 y el proyecto debajo. Separados, los cinco datos que identifican
+     el documento se leían en dos lugares distintos, y el nombre suelto en
+     cuerpo grande competía con el título COTIZACIÓN. Juntos son lo que son: el
+     encabezado del documento.
+
+     (Lo que NO volvió es el renglón "CUIT / DNI" en blanco que había acá: ese
+     dato es de un comprobante fiscal, y esto no lo es — ver el encabezado.)
+
+     Las filas se miden ANTES de dibujar. Un cliente o un proyecto largo se
+     parte en varios renglones y la fila crece con él: recortar al ancho de la
+     caja dejaría afuera parte de un dato que identifica el trabajo. */
   var wCelda = CEVEN_COMP_AU / 3;
+  var xVal   = M + 3;
+
+  doc.setFont('times', 'bold');
+  doc.setFontSize(10.5);
+  var wLblCli = doc.getTextWidth('Cliente: ');
+  var wLblPro = doc.getTextWidth('Proyecto: ');
+
+  // splitTextToSize mide con la fuente ACTIVA: cada uno se parte con la misma
+  // con la que después se dibuja, o el corte queda en el lugar equivocado.
+  doc.setFontSize(13);
+  var lineasCli = doc.splitTextToSize(cevenCompSan(String(p['Cliente'] || '—')),
+                                      CEVEN_COMP_AU - 6 - wLblCli);
+
+  /* En Poly el proyecto (cliente final) es lo que identifica al trabajo, con el
+     OPG como respaldo; en Apple hay Proyecto pero no OPG. Se leen los dos sin
+     preguntar por la marca — el que no aplica viene undefined. Si no hay
+     ninguno, la fila no se dibuja: un rótulo con un guión al lado no aporta. */
+  var proyecto = String(p['Proyecto'] || p['OPG'] || '').trim();
+  if(proyecto === '—') proyecto = '';
+  doc.setFont('times', 'normal');
+  doc.setFontSize(11);
+  var lineasPro = proyecto
+    ? doc.splitTextToSize(cevenCompSan(proyecto), CEVEN_COMP_AU - 6 - wLblPro)
+    : [];
+
+  var hF1 = 8;
+  var hF2 = 3.5 + lineasCli.length * 5.6;
+  var hF3 = lineasPro.length ? 3 + lineasPro.length * 5 : 0;
+
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.2);
-  doc.rect(M, y, CEVEN_COMP_AU, hCaja);
-  doc.line(M + wCelda,     y, M + wCelda,     y + hCaja);
-  doc.line(M + wCelda * 2, y, M + wCelda * 2, y + hCaja);
+  doc.rect(M, y, CEVEN_COMP_AU, hF1 + hF2 + hF3);
+  doc.line(M + wCelda,     y, M + wCelda,     y + hF1);   // divisiones de la fila 1
+  doc.line(M + wCelda * 2, y, M + wCelda * 2, y + hF1);
+  doc.line(M, y + hF1, CEVEN_COMP_W - M, y + hF1);        // fila 1 / cliente
+  if(hF3) doc.line(M, y + hF1 + hF2, CEVEN_COMP_W - M, y + hF1 + hF2);
+
+  /* Fila 1. Los anchos se miden con la fuente EN NEGRITA, que es con la que se
+     dibuja el rótulo. Medirlos después del setFont('normal') dejaba el valor
+     pegado al rótulo ("Fecha:06/08/2026"), porque la negrita es más ancha. */
   doc.setFontSize(10.5);
   doc.setTextColor(0, 0, 0);
-  /* Los anchos se miden con la fuente EN NEGRITA, que es con la que se dibuja el
-     rótulo. Medirlos después del setFont('normal') dejaba el valor pegado al
-     rótulo ("Fecha:06/08/2026"), porque la negrita es más ancha. */
   doc.setFont('times', 'bold');
   var celdas = [
     ['Cotización N°: ', String(qn || ''),               M + 3],
@@ -244,38 +293,32 @@ function cevenComprobanteDoc(qn, filas, emisor){
   celdas.forEach(function(c){ _compTxt(doc, c[0].trim(), c[2], y + 5.4); });
   doc.setFont('times', 'normal');
   celdas.forEach(function(c, i){ _compTxt(doc, c[1], c[2] + anchos[i], y + 5.4); });
-  y += hCaja + 8;
 
-  /* ── DATOS DEL CLIENTE ────────────────────────────────────────────────────
-     El nombre del cliente en grande y el proyecto abajo, sin rótulos: son los
-     dos datos que identifican el trabajo y se leen de un vistazo. Acá había
-     además un renglón "CUIT / DNI" en blanco para completar a mano — se sacó:
-     una cotización no lo necesita (no es un comprobante fiscal). */
+  /* Fila 2: el cliente. Rótulo chico en navy y el nombre en cuerpo grande — es
+     lo que se busca de un vistazo, junto con el número de arriba. */
+  var yCli = y + hF1 + 6;
   doc.setFont('times', 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
-  _compTxt(doc, 'Datos del cliente', M, y);
-  y += 7;
-
-  doc.setFont('times', 'bold');
-  doc.setFontSize(16);
+  _compTxt(doc, 'Cliente:', xVal, yCli);
+  doc.setFontSize(13);
   doc.setTextColor(0, 0, 0);
-  _compTxt(doc, String(p['Cliente'] || '—'), M, y);
-  y += 6;
+  _compTxt(doc, lineasCli, xVal + wLblCli, yCli);
 
-  /* En Poly el proyecto (cliente final) es lo que identifica al trabajo, con el
-     OPG como respaldo; en Apple hay Proyecto pero no OPG. Se leen los dos sin
-     preguntar por la marca — el que no aplica viene undefined. Si no hay
-     ninguno no se imprime nada: un guión suelto debajo del nombre no aporta. */
-  var proyecto = String(p['Proyecto'] || p['OPG'] || '').trim();
-  if(proyecto && proyecto !== '—'){
+  // Fila 3: el proyecto, solo si hay.
+  if(hF3){
+    var yPro = y + hF1 + hF2 + 5;
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+    _compTxt(doc, 'Proyecto:', xVal, yPro);
     doc.setFont('times', 'normal');
-    doc.setFontSize(11.5);
+    doc.setFontSize(11);
     doc.setTextColor(CEVEN_COMP_GRIS[0], CEVEN_COMP_GRIS[1], CEVEN_COMP_GRIS[2]);
-    _compTxt(doc, proyecto, M, y);
-    y += 5.5;
+    _compTxt(doc, lineasPro, xVal + wLblPro, yPro);
   }
-  y += 3;
+
+  y += hF1 + hF2 + hF3 + 9;
 
   /* ── DETALLE ────────────────────────────────────────────────────────────── */
   doc.setFont('times', 'bold');
@@ -349,7 +392,7 @@ function cevenComprobanteDoc(qn, filas, emisor){
      Las mismas líneas que imprime el PDF de la cotización, armadas en un solo
      lugar (shared/pdf-core.js) a partir de lo que se guardó con el documento.
      Acá antes había un renglón "Forma de pago: ____" en blanco. */
-  var cond = (typeof cevenCondiciones === 'function') ? cevenCondiciones(p) : [];
+  var cond = (typeof cevenCondicionesDetalle === 'function') ? cevenCondicionesDetalle(p) : [];
   y = _compEspacio(doc, y, 8 + cond.length * 5.4 + 22);
 
   doc.setFont('times', 'bold');
@@ -359,17 +402,32 @@ function cevenComprobanteDoc(qn, filas, emisor){
   y += 5.5;
 
   doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
   cond.forEach(function(linea){
     y = _compEspacio(doc, y, 6);
     doc.setFont('times', 'bold');
     // splitTextToSize por si una condición escrita a mano no entra en el ancho.
     // Se normaliza ANTES de partir: si no, el ancho se mide con caracteres que
     // después no se dibujan y el corte queda en el lugar equivocado.
-    var partes = doc.splitTextToSize(cevenCompSan(linea), CEVEN_COMP_AU);
+    var partes = doc.splitTextToSize(cevenCompSan(linea.texto), CEVEN_COMP_AU);
+
+    /* La entrega inmediata va destacada. El recuadro solo se dibuja cuando la
+       línea entró en un renglón: en dos o más habría que pintar un bloque
+       irregular detrás del texto, y ahí el color de la letra ya alcanza. */
+    if(linea.destacar){
+      if(partes.length === 1){
+        var wTxt = doc.getTextWidth(partes[0]);
+        doc.setFillColor(CEVEN_COMP_VERDE_BG[0], CEVEN_COMP_VERDE_BG[1], CEVEN_COMP_VERDE_BG[2]);
+        doc.roundedRect(M - 2, y - 4, wTxt + 6, 6.4, 1.2, 1.2, 'F');
+      }
+      doc.setTextColor(CEVEN_COMP_VERDE[0], CEVEN_COMP_VERDE[1], CEVEN_COMP_VERDE[2]);
+    } else {
+      doc.setTextColor(0, 0, 0);
+    }
+
     _compTxt(doc, partes, M, y);
     y += partes.length * 5.4;
   });
+  doc.setTextColor(0, 0, 0);
   y += 3;
 
   /* ── OBSERVACIONES ──────────────────────────────────────────────────────── */

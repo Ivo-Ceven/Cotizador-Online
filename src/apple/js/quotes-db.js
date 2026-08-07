@@ -43,7 +43,7 @@ function doSave(overwrite){
   var _el = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
   var payMode  = cevenPayMode();   // resuelve la opcion "Otra" (shared/ui-core.js)
   var effDate  = _el('eff-date');
-  var delivery = _el('delivery');
+  var delivery = cevenDelivery();  // idem: el <select> vale "__otra", no el texto
   /* Proyecto y Observaciones son dos campos distintos desde 08/2026. Antes acá
      decía `var proyecto = ob`, con el comentario "campo unificado": las dos
      claves de cquotes guardaban el MISMO texto, así que el pipeline agrupado
@@ -118,7 +118,7 @@ function nuevaCotizacion(){
   var d2 = new Date(); d2.setDate(d2.getDate()+15);
   var yyyy2=d2.getFullYear(), mm2=String(d2.getMonth()+1).padStart(2,'0'), dd2=String(d2.getDate()).padStart(2,'0');
   document.getElementById('eff-date').value = yyyy2+'-'+mm2+'-'+dd2;
-  document.getElementById('delivery').value = '';
+  cevenSetDelivery('');
   cevenApplyVendorAutofill();
   renderQ();
   renderWarranties();
@@ -200,8 +200,9 @@ function editQuoteFromHistory(qn, skipConfirm){
     if(first['Condición de pago']) cevenSetPayMode(first['Condición de pago']);
     var ed = document.getElementById('eff-date');
     if(ed && first['Propuesta efectiva hasta'] && first['Propuesta efectiva hasta'] !== '—') ed.value = first['Propuesta efectiva hasta'];
-    var dv = document.getElementById('delivery');
-    if(dv) dv.value = (first['Entrega'] && first['Entrega'] !== '—') ? first['Entrega'] : '';
+    // Una cotización guardada cuando esto era un campo de texto libre entra por
+    // la opción "Otra…" con su texto intacto (ver cevenSetDelivery).
+    cevenSetDelivery((first['Entrega'] && first['Entrega'] !== '—') ? first['Entrega'] : '');
   })();
   if(document.getElementById('quote-estado')){
     var _estLoad='Cotizado';
