@@ -238,6 +238,12 @@ function cevenPdfDocCSS(cols, extra){
        termina rasterizado por html2canvas y achicado para entrar en una hoja:
        un cambio de color solo se pierde a ese tamano, el recuadro no. */
     +'.cd-ok{color:#0f7a35;background:#e6f6ec;display:inline-block;padding:2px 9px;border-radius:5px}'
+    /* Opciones A/B de una cotizacion (shared/opciones.js). El rotulo va en negro
+       pleno para que sobreviva al achique de html2canvas, y el aviso de que son
+       excluyentes en amarillo: el riesgo concreto es que el cliente lea las dos
+       tablas como dos partes de la misma compra y sume los totales. */
+    +'.opc-tit{background:#1d1d1f;color:#fff;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:6px 10px;border-radius:6px;margin:16px 0 9px}'
+    +'.opc-nota{background:#fffbea;border:1px solid #f5c400;border-radius:6px;padding:7px 10px;font-size:11px;color:#5c4a00;margin-bottom:12px}'
     +(extra||'')
     +'.ft{margin-top:20px;font-size:10px;color:#aeaeb2;text-align:center}'
     +'@media print{body{padding:18px}}</style>';
@@ -253,6 +259,8 @@ function cevenPdfListCSS(extra){
     +'h1{font-size:17px;font-weight:600;text-align:center;margin-bottom:16px}'
     +'.cb{margin-bottom:14px}.cn{font-size:15px;font-weight:700;margin-bottom:3px}.cm{font-size:12px;color:#6e6e73;margin-bottom:2px}'
     +'table{width:100%;border-collapse:collapse;margin-bottom:12px}'
+    +'.opc-tit{background:#1d1d1f;color:#fff;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:6px 10px;border-radius:6px;margin:16px 0 9px}'
+    +'.opc-nota{background:#fffbea;border:1px solid #f5c400;border-radius:6px;padding:7px 10px;font-size:11px;color:#5c4a00;margin-bottom:12px}'
     +'th{text-align:left;border-bottom:1.5px solid #d2d2d7;padding:7px 8px;font-size:10px;color:#6e6e73;font-weight:600;text-transform:uppercase;letter-spacing:.4px}'
     +'td{padding:7px 8px;border-bottom:0.5px solid #f0f0f0}'
     +'.tr td{border-top:1.5px solid #d2d2d7;border-bottom:none;font-weight:700;font-size:14px;padding-top:9px}'

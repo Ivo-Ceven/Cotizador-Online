@@ -24,6 +24,13 @@ window.CEVEN_BRAND = {
   // dispositivo donde se borro (ver shared/papelera.js).
   settingKeys: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera'],
 
+  /* Listas que componen una cotizacion. shared/opciones.js las usa para borrar
+     la Opcion B entera sin conocer los arrays de cada marca. Poly cotiza solo
+     productos: las garantias CevenCare son de Apple. */
+  quoteLists: [
+    {nombre: 'items', get: function(){ return items; }, set: function(v){ items = v; }}
+  ],
+
   /* Fila de pipeline = UN PROYECTO = UNA COTIZACION (08/2026). Antes era un OPG
      con un array `salas[]` adentro y el estado a nivel OPG; ahora el OPG es un
      dato informativo del proyecto y cada proyecto lleva su propio estado, mes de

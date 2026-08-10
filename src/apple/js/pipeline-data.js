@@ -48,9 +48,7 @@ function archiveOldEntries(){
     var hasAnyOverride = (r.skuStatus && Object.keys(r.skuStatus).length)
                       || (r.skuMesCierre && Object.keys(r.skuMesCierre).length);
     if(!hasAnyOverride) return;
-    var lines = db.filter(function(x){
-      return x['N° Cotización']===r.qNum && (x['Tipo']==='producto'||x['Tipo']==='garantia');
-    });
+    var lines = cevenOpcFilasDeCotiz(db, r.qNum, ['producto','garantia']);
     if(!lines.length) return;
 
     var rootSt  = r.estado    || 'Cotizado';

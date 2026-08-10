@@ -17,9 +17,7 @@ function recalcPipelineUnits(){
   var changed = false;
   pipe.forEach(function(r){
     if(!r.qNum) return;
-    var lines = db.filter(function(x){
-      return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia');
-    });
+    var lines = cevenOpcFilasDeCotiz(db, r.qNum, ['producto','garantia']);
     if(!lines.length) return;
     var qM=0,qI=0,qP=0,qS=0,qA=0,monto=0,marW=0,marM=0;
     lines.forEach(function(ln, idx){
@@ -282,9 +280,7 @@ function renderPipeline(){
       return;
     }
     // Buscar todas las líneas de la cotización
-    var lines = pipeDB.filter(function(x){
-      return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia');
-    });
+    var lines = cevenOpcFilasDeCotiz(pipeDB, r.qNum, ['producto','garantia']);
     if(!lines.length){ virtualRows.push(r); return; }
 
     // Agrupar líneas por (estado, mesCierre)
@@ -782,7 +778,11 @@ function renderPipeline(){
         +cevenEsc(r.fecha)
       +'</td>'
       +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
-      +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+virtualBadge+'</div></td>'
+      +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+virtualBadge
+        /* Chapita de opción A/B: solo aparece si esa cotización tiene dos, y
+           desde ahí se cambia cuál suma (shared/opciones.js). */
+        +cevenOpcChipPipeHTML(pipeDB.filter(function(x){ return x['N° Cotización'] === r.qNum; }), ' data-pact="opc"'+rowA)
+      +'</div></td>'
       +'<td><div title="'+cevenEsc(r.proyecto||'')+'" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
       +'<td style="font-size:12px;white-space:nowrap">'+mesSel+'</td>'
       +'<td style="text-align:center">'+statusSel+'</td>'
@@ -885,6 +885,7 @@ function renderPipeline(){
         case 'ov-edit': e.stopPropagation(); editOVLink(c.id); break;
         case 'quote':   openPipelineQuote(el.getAttribute('data-pqnum')); break;
         case 'merge':   mergeBackVirtualRow(c.id, c.key); break;
+        case 'opc':     e.stopPropagation(); cambiarOpcionVigente(c.id); break;
         case 'del':     e.stopPropagation(); removePipeline(c.id); break;
       }
     });

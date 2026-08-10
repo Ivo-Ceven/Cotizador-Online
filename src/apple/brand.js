@@ -24,6 +24,16 @@ window.CEVEN_BRAND = {
   settingKeys: ['cquotes','cpl','carchive','cnac','cqc','cclientes','ctarget','ctarget_manual',
                 'clogo','clogo_dark','cnac_mac24_v2','cpapelera'],
 
+  /* Listas que componen una cotizacion. shared/opciones.js las usa para borrar
+     la Opcion B entera sin conocer los arrays de cada marca: Apple tiene
+     productos Y garantias CevenCare, Poly solo productos. Son closures y no
+     referencias directas porque `items` se reasigna (filter devuelve otro array),
+     asi que hay que leerlo y escribirlo en el momento. */
+  quoteLists: [
+    {nombre: 'items',         get: function(){ return items; },         set: function(v){ items = v; }},
+    {nombre: 'warrantyItems', get: function(){ return warrantyItems; }, set: function(v){ warrantyItems = v; }}
+  ],
+
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','ejecutivo','mesCierre','estado',
     'qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad','montoAcc','montoServ',
     'monto','margenPond','moneda','skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',

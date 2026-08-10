@@ -11,16 +11,38 @@ function exportSelectedPDF(){
   var allBlocks='';
   for(var ki=0;ki<keys.length;ki++){
     var qn=keys[ki], rows=grouped[qn]; if(!rows||!rows.length) continue;
-    var first=rows[0], gt=0; for(var ri=0;ri<rows.length;ri++) gt+=parseFloat(rows[ri]['Total'])||0;
-    var trows='';
-    for(var ri=0;ri<rows.length;ri++){
-      var r=rows[ri];
-      trows+='<tr><td>'+cevenEsc(r['SKU'])+'</td><td class="wrap">'+cevenEsc(r['Descripción'])+'</td>'
-        +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
-        +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
-        +'<td style="text-align:right;font-weight:600">USD '+fI(parseFloat(r['Total'])||0)+'</td>'
-        +'<td style="text-align:center">'+cevenEsc(r['IVA']||'—')+'</td>'
-        +'<td style="text-align:center">'+cevenEsc(r['Nota']||'—')+'</td></tr>';
+    var first=rows[0];
+    /* Una cotización puede llevar dos opciones alternativas: cada una va con su
+       tabla y su total. Sin separarlas, las líneas de las dos caían en la misma
+       tabla y el total era la suma de algo que nunca se va a facturar junto. */
+    var hayOpcB = cevenOpcHayBEnFilas(rows);
+    var bloquesOpc = '';
+    for(var opn=1; opn<=2; opn++){
+      var filasOpc = rows.filter(function(r){ return cevenOpcDe(r) === opn; });
+      if(!filasOpc.length) continue;
+      var trows='', gt=0;
+      for(var ri=0;ri<filasOpc.length;ri++){
+        var r=filasOpc[ri];
+        gt += parseFloat(r['Total'])||0;
+        trows+='<tr><td>'+cevenEsc(r['SKU'])+'</td><td class="wrap">'+cevenEsc(r['Descripción'])+'</td>'
+          +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
+          +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
+          +'<td style="text-align:right;font-weight:600">USD '+fI(parseFloat(r['Total'])||0)+'</td>'
+          +'<td style="text-align:center">'+cevenEsc(r['IVA']||'—')+'</td>'
+          +'<td style="text-align:center">'+cevenEsc(r['Nota']||'—')+'</td></tr>';
+      }
+      bloquesOpc += (hayOpcB ? '<p class="opc-tit">Opción '+cevenOpcLetra(opn)+'</p>' : '')
+        +'<table><thead><tr>'
+          +'<th>SKU</th><th>Descripción</th>'
+          +'<th style="text-align:center">Qty</th>'
+          +'<th style="text-align:right">P. Venta</th>'
+          +'<th style="text-align:right">Total</th>'
+          +'<th style="text-align:center">IVA</th>'
+          +'<th style="text-align:center">Nota</th>'
+        +'</tr></thead>'
+        +'<tbody>'+trows
+          +'<tr class="tr"><td colspan="4" style="text-align:right">Total'+(hayOpcB?' Opción '+cevenOpcLetra(opn):'')+'</td><td style="text-align:right">USD '+fI(gt)+'</td><td></td><td></td></tr>'
+        +'</tbody></table>';
     }
     allBlocks+='<div class="qb">'
       +'<p class="qn">Cotización #'+cevenEsc(qn)+'</p>'
@@ -32,17 +54,8 @@ function exportSelectedPDF(){
         +(first['Ejecutivo']&&first['Ejecutivo']!=='—'?'<p class="cm">Ejecutivo: '+cevenEsc(first['Ejecutivo'])+'</p>':'')
         +(first['Observaciones']&&first['Observaciones']!=='—'?'<p class="cm">'+cevenEsc(first['Observaciones'])+'</p>':'')
       +'</div>'
-      +'<table><thead><tr>'
-        +'<th>SKU</th><th>Descripción</th>'
-        +'<th style="text-align:center">Qty</th>'
-        +'<th style="text-align:right">P. Venta</th>'
-        +'<th style="text-align:right">Total</th>'
-        +'<th style="text-align:center">IVA</th>'
-        +'<th style="text-align:center">Nota</th>'
-      +'</tr></thead>'
-      +'<tbody>'+trows
-        +'<tr class="tr"><td colspan="4" style="text-align:right">Total</td><td style="text-align:right">USD '+fI(gt)+'</td><td></td><td></td></tr>'
-      +'</tbody></table>'
+      +(hayOpcB ? '<p class="opc-nota">'+cevenEsc(cevenOpcLeyenda())+'</p>' : '')
+      +bloquesOpc
       /* Las condiciones salen de shared/pdf-core.js, con lo que doSave() guardó
          junto a la cotización. Hasta 08/2026 Poly NO guardaba esos tres campos,
          así que este bloque estaba siempre vacío y el PDF regenerado desde el
@@ -86,25 +99,47 @@ function buildPDF(){
   // Las condiciones comerciales (fecha efectiva, condición de pago, moneda y
   // entrega) las lee cevenCondicionesHTML() de los mismos campos, más abajo.
   var qn=String(qNum).padStart(4,'0');
-  var gt=0; for(var i=0;i<items.length;i++) gt+=(items[i].salePrice||0)*items[i].qty;
   // Este HTML no sólo se descarga: downloadQuotePDF() lo mete en el DOM vivo
   // (wrap.innerHTML) para que html2canvas lo fotografíe, así que un onerror en
   // una descripción del catálogo se ejecutaba en la propia app. Todo escapado.
   var logoTag=_logo?'<img src="'+cevenEsc(_logo)+'" style="height:40px;object-fit:contain;display:block;margin:0 auto 20px">':'';
   var sortedItems = getSortedItems();
-  var rows='';
-  for(var i=0;i<sortedItems.length;i++){
-    var it=sortedItems[i];
-    var sp = (it.salePrice===''||it.salePrice==null) ? 0 : it.salePrice;
-    rows+='<tr><td class="nowrap" style="font-size:11px;font-family:monospace">'+cevenEsc(it.sku)+'</td><td>'+cevenEsc(it.description)+'</td>'
-      +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.qty)+'</td>'
-      +'<td class="nowrap" style="text-align:right">'+cevenEsc(dp(sp))+'</td>'
-      +'<td class="nowrap" style="text-align:right;font-weight:600">'+cevenEsc(dp(sp*it.qty))+'</td>'
-      // El % de IVA sale de la columna "Programa fiscal" del Excel del ERP
-      // (ver poly/js/catalog.js). Es informativo: no entra en ningún cálculo.
-      +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.iva||'—')+'</td>'
-      +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.stock||'—')+'</td>'
-      +'</tr>';
+  /* Con dos opciones el documento lleva DOS tablas, cada una con su total, y
+     arriba el aviso de que son excluyentes. Sin ese aviso, el cliente puede leer
+     las dos tablas como dos partes de la misma compra y sumar los totales. */
+  var hayOpcB = cevenOpcFiltrar(items, 2).length > 0;
+
+  // La tabla de UNA opción, con su fila de total.
+  function _tablaOpcion(n){
+    var lista = cevenOpcFiltrar(sortedItems, n);
+    if(!lista.length) return '';
+    var rows='', gt=0;
+    for(var i=0;i<lista.length;i++){
+      var it=lista[i];
+      var sp = (it.salePrice===''||it.salePrice==null) ? 0 : it.salePrice;
+      gt += sp*it.qty;
+      rows+='<tr><td class="nowrap" style="font-size:11px;font-family:monospace">'+cevenEsc(it.sku)+'</td><td>'+cevenEsc(it.description)+'</td>'
+        +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.qty)+'</td>'
+        +'<td class="nowrap" style="text-align:right">'+cevenEsc(dp(sp))+'</td>'
+        +'<td class="nowrap" style="text-align:right;font-weight:600">'+cevenEsc(dp(sp*it.qty))+'</td>'
+        // El % de IVA sale de la columna "Programa fiscal" del Excel del ERP
+        // (ver poly/js/catalog.js). Es informativo: no entra en ningún cálculo.
+        +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.iva||'—')+'</td>'
+        +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.stock||'—')+'</td>'
+        +'</tr>';
+    }
+    return (hayOpcB ? '<p class="opc-tit">Opción '+cevenOpcLetra(n)+'</p>' : '')
+      +'<table><colgroup><col class="col-sku"><col class="col-desc"><col class="col-qty"><col class="col-pv"><col class="col-tot"><col class="col-iva"><col class="col-nota"></colgroup><thead><tr>'
+        +'<th>SKU</th><th>Descripción</th>'
+        +'<th style="text-align:center">Qty</th>'
+        +'<th style="text-align:right">P. Venta</th>'
+        +'<th style="text-align:right">Total</th>'
+        +'<th style="text-align:center">IVA</th>'
+        +'<th style="text-align:center">Nota</th>'
+      +'</tr></thead>'
+      +'<tbody>'+rows
+        +'<tr class="tr"><td colspan="4" style="text-align:right">Total'+(hayOpcB?' Opción '+cevenOpcLetra(n):'')+'</td>'
+        +'<td style="text-align:right">'+dp(gt)+'</td><td></td><td></td></tr></tbody></table>';
   }
   // "<cliente> - <proyecto> - Ceven - <validez>" (shared/pdf-core.js). En Poly
   // el proyecto es el cliente final; si está vacío se cae al OPG.
@@ -123,15 +158,9 @@ function buildPDF(){
     +'<p class="qn">Cotización #'+cevenEsc(qn)+'</p>'
     +'<h1>Poly · Audio y video conferencia</h1>'
     +'<div class="cb">'+(client?'<p class="cn">'+cevenEsc(client)+'</p>':'')+(opg?'<p class="cm">OPG: '+cevenEsc(opg)+'</p>':'')+(proyecto?'<p class="cm">Proyecto: '+cevenEsc(proyecto)+'</p>':'')+(exec?'<p class="cm">Ejecutivo: '+cevenEsc(exec)+'</p>':'')+(ob?'<p class="cm">'+cevenEsc(ob)+'</p>':'')+'</div>'
-    +'<table><colgroup><col class="col-sku"><col class="col-desc"><col class="col-qty"><col class="col-pv"><col class="col-tot"><col class="col-iva"><col class="col-nota"></colgroup><thead><tr>'
-      +'<th>SKU</th><th>Descripción</th>'
-      +'<th style="text-align:center">Qty</th>'
-      +'<th style="text-align:right">P. Venta</th>'
-      +'<th style="text-align:right">Total</th>'
-      +'<th style="text-align:center">IVA</th>'
-      +'<th style="text-align:center">Nota</th>'
-    +'</tr></thead>'
-    +'<tbody>'+rows+'<tr class="tr"><td colspan="4" style="text-align:right">Total</td><td style="text-align:right">'+dp(gt)+'</td><td></td><td></td></tr></tbody></table>';
+    +(hayOpcB ? '<p class="opc-nota">'+cevenEsc(cevenOpcLeyenda())+'</p>' : '')
+    +_tablaOpcion(1)
+    +_tablaOpcion(2);
 
   // Sin argumento, cevenCondicionesHTML() lee los campos de la pantalla — que es
   // lo que corresponde acá: se está exportando la cotización que está en vivo.

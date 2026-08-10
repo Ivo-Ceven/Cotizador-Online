@@ -23,6 +23,92 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 10/08/2026 · Una cotización, dos opciones — y el pipeline que no las suma dos veces
+
+Se le ofrecen al cliente dos armados (uno más caro y uno más económico) y él
+elige uno. Hasta ahora eso eran **dos cotizaciones** con dos números, y las dos
+entraban al pipeline: el forecast del equipo contaba plata que nunca se iba a
+facturar. Ahora una cotización puede llevar **Opción A y Opción B** y guardarse
+como una sola.
+
+**La regla que sostiene todo: solo la opción vigente suma** al pipeline, al
+Target y al Excel. No es un detalle de implementación, es el motivo de la
+funcionalidad: si las dos sumaran no habría ninguna ganancia sobre cotizar dos
+veces. Y el error no se ve en pantalla — se ve a fin de mes, cuando el total no
+cierra.
+
+### El modelo, lo más chico posible
+
+Cada línea lleva `opc` (1 = A, 2 = B) y **lo que no diga 2 es 1**: por eso todas
+las cotizaciones guardadas hasta hoy siguen funcionando sin migración ni flags.
+En `cquotes` viajan dos campos: la columna visible **`Opción`** (que va al Excel)
+y **`_opcEf`**, la vigente, escrita en *todas* las filas de la cotización — igual
+que `_estado`, para no depender de filas "meta", que Poly no tiene.
+
+**En el pipeline no hizo falta ninguna columna nueva de Supabase.** La fila
+guarda los montos de la opción vigente, que es lo que siempre guardó; cuál es la
+vigente sale de `cquotes`, que ya se sincroniza. Una migración de base para un
+dato que ya viajaba habría sido trabajo y riesgo de más.
+
+### Dónde se filtra (y por qué en un solo lugar)
+
+Todo lo que lee `cquotes` para hacer cuentas o recorrer líneas pasa por
+`cevenOpcFilasDeCotiz(db, qn, tipos)`. Son doce lugares entre las dos marcas
+—pipeline, detalle por SKU, archivo mensual, Target, dashboards— y **tienen que
+filtrar todos igual**, no solo para no contar doble: el `lineKey` de los
+overrides por SKU del pipeline es `SKU|índice` sobre esa lista, así que si un
+lugar filtra y otro no, los índices se corren y el estado "Facturado" de una
+línea se le aplica a otra. Con una sola opción devuelve exactamente lo de
+siempre.
+
+### En pantalla
+
+Una barra de solapas sobre la grilla. Con una sola opción **no hay solapas**:
+queda un botón discreto "＋ Agregar Opción B", porque el 95 % de las cotizaciones
+va a tener una sola y no hay por qué cobrarles el ruido. Con dos, cada solapa
+muestra su total y la vigente lleva ★. La grilla, el carrito de la subpantalla
+flotante y las garantías CevenCare muestran **solo la opción activa** — y
+`_enCotizacion()` también, porque el mismo SKU suele estar en las dos y si no,
+agregarlo a la B quedaba bloqueado por estar en la A. Editar la opción que no es
+la vigente pinta un aviso amarillo: sin él se carga media cotización en la B, se
+agrega al pipeline y el monto que ve el equipo es el de la A, sin ninguna pista.
+
+**Desde la fila del pipeline se cambia la vigente sin reabrir la cotización**
+(la chapita `Opc. A`/`Opc. B`), que es el momento real en que el cliente define.
+El monto de la fila **se recalcula** con las líneas de la opción nueva: dejarlo
+como estaba sería peor que no tener la funcionalidad, porque la fila diría
+"Opción B" con la plata de la A. En Apple se recalculan además las cantidades por
+familia, las garantías y el margen ponderado, con la misma función que usa
+`addToPipeline()` (`_pipeAgregados()`) — si fueran dos cuentas distintas, cambiar
+de opción dejaría la fila con un total que no es el de ninguna de las dos.
+
+Si la opción vigente está **vacía**, agregar al pipeline se corta con un cartel
+en vez de meter una fila en 0.
+
+### El PDF, el comprobante y el historial
+
+El PDF y el comprobante imprimen **las dos opciones**, cada una con su tabla y su
+total, y arriba la leyenda: *"Opciones alternativas: A y B son propuestas
+excluyentes — se factura UNA sola."* Sin esa línea, un cliente puede leer las dos
+tablas como dos partes de la misma compra y sumar los totales. La tarjeta del
+historial muestra el total de la **vigente**, una chapita "2 opciones · vigente
+A" y las líneas de las dos, separadas por rótulo.
+
+### Verificación
+
+`scripts/check-opciones.js` (60 chequeos) corre las funciones reales de las dos
+marcas: que el pipeline tome solo la vigente —incluidas familias, garantías y
+margen ponderado en Apple—, que cambiar la vigente recalcule la fila, que borrar
+la Opción B se lleve también las garantías, y que una cotización **sin** opciones
+se comporte exactamente como antes. La última sección verifica el **cableado**
+(que `doSave()` siga sellando las filas, que `renderQ()` siga pintando la barra,
+que el PDF siga imprimiendo la leyenda…): son llamadas de una línea, fáciles de
+perder en un merge, y perderlas no rompe nada visible.
+
+`APP_VERSION` → 6.1.
+
+---
+
 ## 10/08/2026 · Apple se pone al día con Poly: sin diálogos nativos, con flotante y con la tabla legible
 
 Cuatro cosas que Poly ya tenía y Apple no. No son mejoras sueltas: eran la misma

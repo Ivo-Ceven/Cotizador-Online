@@ -23,9 +23,66 @@ function refreshOpgDatalist(){
 
    Ahora el OPG es un dato informativo del proyecto y la identidad de la fila es
    el número de cotización: una cotización, una fila, siempre. */
+/* El monto de una fila del pipeline a partir de un juego de líneas.
+
+   Vive suelto porque lo calculan DOS caminos —agregar al pipeline desde la
+   cotización y cambiar la opción vigente desde la fila— y tienen que dar
+   exactamente lo mismo: si se desincronizaran, cambiar de opción dejaría la fila
+   con un total que no es el de ninguna de las dos. */
+function _pipeMontoDeItems(its){
+  var monto = 0;
+  its = its || [];
+  for(var i=0;i<its.length;i++){ monto += (its[i].salePrice||0) * (its[i].qty||1); }
+  return Math.round(monto);
+}
+
+/* Cambia la opción vigente de una cotización desde su fila del pipeline, sin
+   reabrirla. Es el momento en que el cliente define cuál de las dos compra.
+
+   El monto de la fila se RECALCULA con las líneas de la opción nueva: dejarlo
+   como estaba sería peor que no tener la funcionalidad, porque la fila diría
+   "Opción B" con la plata de la A. */
+function cambiarOpcionVigente(id){
+  var pipe = getPipeline();
+  var row = null;
+  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ row = pipe[i]; break; } }
+  if(!row) return;
+  if(!cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.'); return; }
+
+  var rows = getDB().filter(function(r){ return r['N° Cotización'] === row.qNum; });
+  if(!rows.length){ showToast('No se encontró la cotización #'+row.qNum+' en el historial.'); return; }
+  if(!cevenOpcHayBEnFilas(rows)){ showToast('La cotización #'+row.qNum+' tiene una sola opción.'); return; }
+
+  var previa = cevenOpcEfectivaDeFilas(rows);
+  var nueva  = (previa === 1) ? 2 : 1;
+  // Se rehidrata lo justo para el monto: cantidad y precio de cada línea.
+  var lineas = rows.filter(function(r){ return r['Tipo'] === 'producto' && cevenOpcDe(r) === nueva; })
+                   .map(function(r){
+                     return {qty: parseInt(r['Cantidad'],10)||1, salePrice: parseFloat(r['P. Venta Unitario'])||0};
+                   });
+  if(!lineas.length){ showToast('La Opción '+cevenOpcLetra(nueva)+' de la #'+row.qNum+' no tiene líneas.'); return; }
+  if(!cevenOpcFijarEnDB(row.qNum, nueva)) return;   // no se guardó: no se toca el pipeline
+
+  if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
+  row.monto = _pipeMontoDeItems(lineas);
+  savePipeline(pipe);
+  renderPipeline();
+  notifyUndo('Cotización #'+row.qNum+': ahora suma la Opción '+cevenOpcLetra(nueva)+' — USD '+fI(row.monto)+'.', function(){
+    cevenOpcFijarEnDB(row.qNum, previa);
+    if(typeof undoPipelineChange === 'function') undoPipelineChange();
+  });
+}
+
 function addToPipeline(){
   if(!cevenCanUsePipeline()){ showToast('Tu rol no permite agregar al pipeline.'); return; }
   if(!items.length){ showToast('La cotización está vacía.'); return; }
+  /* Con dos opciones, la que va al pipeline es la vigente: si está vacía la fila
+     entraría en 0 y nadie entendería por qué. */
+  var _ef = cevenOpcEfectiva();
+  if(!cevenOpcFiltrar(items, _ef).length){
+    showToast('La Opción '+cevenOpcLetra(_ef)+' es la vigente y está vacía: cargale productos o marcá la otra como vigente.');
+    return;
+  }
   var client   = (document.getElementById('client').value||'').trim();
   var opg      = (document.getElementById('opg').value||'').trim();
   var proyecto = (document.getElementById('proyecto').value||'').trim();
@@ -40,9 +97,10 @@ function addToPipeline(){
   var estadoQ   = (document.getElementById('quote-estado') && document.getElementById('quote-estado').value) || 'Cotizado';
   var qn        = String(qNum).padStart(4,'0');
 
-  var monto = 0;
-  for(var i=0;i<items.length;i++){ monto += (items[i].salePrice||0) * (items[i].qty||1); }
-  monto = Math.round(monto);
+  /* SOLO la opción vigente. Si sumaran las dos, el pipeline del equipo quedaría
+     inflado con plata que nunca se va a facturar — y no se nota mirando la
+     pantalla, se nota a fin de mes cuando el total no cierra. */
+  var monto = _pipeMontoDeItems(cevenOpcFiltrar(items, _ef));
 
   var now = new Date();
   var fecha = now.toLocaleDateString('es-AR');

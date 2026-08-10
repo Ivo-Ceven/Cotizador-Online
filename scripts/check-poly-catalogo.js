@@ -65,6 +65,7 @@ const rows = crudas.slice(1).map(v => {
 
 /* ---- Cargar el importador real, con lo justo del entorno del navegador ----- */
 function cargarCatalogo(){
+  const opc  = fs.readFileSync(path.join(ROOT, 'src/shared/opciones.js'), 'utf8');
   const core = fs.readFileSync(path.join(ROOT, 'src/shared/catalog-core.js'), 'utf8');
   const cat  = fs.readFileSync(path.join(ROOT, 'src/poly/js/catalog.js'), 'utf8');
   const store = {};
@@ -114,6 +115,7 @@ function cargarCatalogo(){
   ctx.window = ctx;
   ctx.globalThis = ctx;
   vm.createContext(ctx);
+  vm.runInContext(opc, ctx);
   vm.runInContext(core, ctx);
   vm.runInContext(cat, ctx);
   return ctx;

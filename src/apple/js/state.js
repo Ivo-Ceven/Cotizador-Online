@@ -72,7 +72,9 @@ var IVA_MAP = {"Accessories":"21%","TV & Home":"21%","Mac":"10.5%","Mac English"
 // 'IVA' se agregó en 08/2026: el dato ya se guardaba, pero en la clave interna
 // '_taxes', que no sale al Excel ni la puede leer un módulo compartido sin saber
 // que es de Apple. Ahora las dos marcas escriben la misma columna visible.
-var COLS = ['N° Cotización','Fecha','Hora','Cliente','Proyecto','Ejecutivo','Observaciones','Mes Cierre','Condición de pago','Propuesta efectiva hasta','Entrega','SKU','Descripción','Cantidad','Disponibilidad','IVA','Margen %','P. Venta Unitario','Total'];
+// 'Opción' (A/B) va antes del SKU: identifica a qué alternativa pertenece la
+// línea. Una cotización de una sola opción tiene todas las filas en 1.
+var COLS = ['N° Cotización','Fecha','Hora','Cliente','Proyecto','Ejecutivo','Observaciones','Mes Cierre','Condición de pago','Propuesta efectiva hasta','Entrega','Opción','SKU','Descripción','Cantidad','Disponibilidad','IVA','Margen %','P. Venta Unitario','Total'];
 
 // _checkRecovery() vive en shared/recovery.js: era la misma funcion en las dos
 // marcas, con la lista de claves a restaurar escrita a mano y desincronizada de

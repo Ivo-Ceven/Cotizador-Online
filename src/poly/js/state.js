@@ -15,9 +15,11 @@ var editId = null;
    eso, el PDF regenerado desde el historial salía sin el bloque de Condiciones
    Comerciales (lo leía de estas claves, que nunca se escribían). 'IVA' llegó
    con la columna "Programa fiscal" del Excel del ERP. */
+// 'Opción' (A/B) va antes del SKU: identifica a qué alternativa pertenece la
+// línea. Una cotización de una sola opción tiene todas las filas en 1.
 var COLS = ['N° Cotización','Fecha','Hora','Cliente','OPG','Proyecto','Ejecutivo','Observaciones',
             'Mes Cierre','Condición de pago','Propuesta efectiva hasta','Entrega',
-            'Nivel de precio','SKU','Descripción','Cantidad','Nota','IVA','P. Venta Unitario','Total'];
+            'Nivel de precio','Opción','SKU','Descripción','Cantidad','Nota','IVA','P. Venta Unitario','Total'];
 
 // cevenDelegate()/cevenActEl() viven en shared/ui-core.js y _checkRecovery() en
 // shared/recovery.js: los tres eran identicos (o casi) en las dos marcas.

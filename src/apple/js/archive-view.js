@@ -234,7 +234,9 @@ function renderArchiveMonth(monthKey, entries){
 // significaba un JSON.parse del historial completo por cada fila expandida.
 function renderArchiveDetailRow(r, db){
   if(!db) db = getDB();
-  var lines = db.filter(function(x){ return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia'); });
+  // Solo la opción vigente (shared/opciones.js): con dos opciones, sin filtrar
+  // se listarían las líneas de las dos.
+  var lines = cevenOpcFilasDeCotiz(db, r.qNum, ['producto','garantia']);
   if(!lines.length){
     return '<tr class="pipe-detail"><td colspan="14" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">No se encontraron líneas para esta cotización (#'+cevenEsc(r.qNum||'—')+') en el historial.</td></tr>';
   }

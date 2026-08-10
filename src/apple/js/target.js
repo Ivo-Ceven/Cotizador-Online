@@ -121,7 +121,7 @@ function renderSkuDashboard(){
   pipe.forEach(function(r){
     var rootSt=r.estado||'Cotizado', rootMes=r.mesCierre||'';
     // Solo productos — excluir garantías de este análisis
-    var lines=db.filter(function(x){ return x['N° Cotización']===r.qNum && x['Tipo']==='producto'; });
+    var lines=cevenOpcFilasDeCotiz(db, r.qNum, ['producto']);
     lines.forEach(function(ln,idx){
       var sku=ln['SKU']||'—', desc=ln['Descripción']||'';
       var lk=sku+'|'+idx;
@@ -350,9 +350,7 @@ function renderTargetAnual(){
     }
 
     // Camino complejo: expandir línea por línea del DB
-    var lines = _tgtDB.filter(function(x){
-      return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia');
-    });
+    var lines = cevenOpcFilasDeCotiz(_tgtDB, r.qNum, ['producto','garantia']);
     if(!lines.length){ // sin líneas en DB → fallback simple
       var r2=Object.assign({},r); delete r2.skuStatus; delete r2.skuPartialQty; _acumFacturado(r2); return;
     }
@@ -518,9 +516,7 @@ function renderTargetAnual(){
     var hasOv  = (pr.skuStatus && Object.keys(pr.skuStatus).length)
               || (pr.skuPartialQty && Object.keys(pr.skuPartialQty).length);
     if(!hasOv){ _addRoot(defSt, pr); return; }
-    var pLines = _tgtDB.filter(function(x){
-      return x['N° Cotización']===pr.qNum && (x['Tipo']==='producto'||x['Tipo']==='garantia');
-    });
+    var pLines = cevenOpcFilasDeCotiz(_tgtDB, pr.qNum, ['producto','garantia']);
     if(!pLines.length){ _addRoot(defSt, pr); return; }
     pLines.forEach(function(ln,idx){
       var lk  = (ln['SKU']||'')+'|'+idx;

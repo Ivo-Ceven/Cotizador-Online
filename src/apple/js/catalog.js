@@ -592,10 +592,11 @@ function addToQuote() {
    se desincronizaran, un producto valdría distinto según por dónde entró. */
 function _sumarProductoAItems(p, calc){
   var nac = (calc.fob || p.nacIncluded) ? 0 : getNac(p);
+  // La línea nace en la opción que se está editando (shared/opciones.js).
   var newItem = {id:_nextItemId(), sku:p.sku, lob:p.lob, description:p.description,
                  sellingBase:p.sellingPrice, itemNac:nac, itemMargin:calc.mg,
                  salePrice:calcP(p.sellingPrice, nac, calc.mg), qty:1, stock:'',
-                 taxes:getIVA(p.lob), nacIncluded:!!p.nacIncluded};
+                 taxes:getIVA(p.lob), nacIncluded:!!p.nacIncluded, opc:cevenOpcActiva()};
   items.push(newItem);
   // Sugerir garantía si es Mac
   if(typeof suggestMacWarranty==='function') suggestMacWarranty(newItem);
@@ -610,10 +611,15 @@ function _prodPorId(pid){
   return null;
 }
 
-// ¿Este SKU ya está en la cotización? Lo usan la fila del catálogo y la
-// subpantalla flotante para saber si el botón va ＋ o ✓.
+/* ¿Este SKU ya está en la cotización? Lo usan la fila del catálogo y la
+   subpantalla flotante para saber si el botón va ＋ o ✓.
+
+   Mira SOLO la opción que se está editando: el mismo SKU puede (y suele) estar
+   en las dos alternativas, y si acá se miraran las dos, agregarlo a la B quedaría
+   bloqueado porque ya está en la A. */
 function _enCotizacion(sku){
-  for(var i=0;i<items.length;i++){ if(String(items[i].sku) === String(sku)) return true; }
+  var its = cevenOpcFiltrar(items, cevenOpcActiva());
+  for(var i=0;i<its.length;i++){ if(String(its[i].sku) === String(sku)) return true; }
   return false;
 }
 
@@ -636,7 +642,11 @@ function agregarUno(p){
    contradiría el botón, que dice si el SKU está o no está. */
 function quitarDeCotizacion(p){
   var antes = items.length;
-  items = items.filter(function(it){ return String(it.sku) !== String(p.sku); });
+  // Solo de la opción que se está editando: la otra alternativa no se toca.
+  var opc = cevenOpcActiva();
+  items = items.filter(function(it){
+    return !(String(it.sku) === String(p.sku) && cevenOpcDe(it) === opc);
+  });
   if(items.length === antes) return;
   renderQ();
   renderCat();

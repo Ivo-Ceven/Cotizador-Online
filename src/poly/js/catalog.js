@@ -343,8 +343,12 @@ function _catPreciosHTML(p){
 /* ¿Este SKU ya está en la cotización? Se compara por SKU y no por id de ítem
    porque el ítem de la cotización lleva un id propio generado al agregarlo, sin
    relación con el del catálogo. */
+/* Mira SOLO la opción que se está editando: el mismo SKU puede (y suele) estar
+   en las dos alternativas, y si acá se miraran las dos, agregarlo a la B quedaría
+   bloqueado porque ya está en la A. */
 function _enCotizacion(sku){
-  for(var i=0;i<items.length;i++){ if(String(items[i].sku) === String(sku)) return true; }
+  var its = cevenOpcFiltrar(items, cevenOpcActiva());
+  for(var i=0;i<its.length;i++){ if(String(its[i].sku) === String(sku)) return true; }
   return false;
 }
 
@@ -478,7 +482,11 @@ function agregarUno(p){
    contradiría el botón, que dice si el SKU está o no está. */
 function quitarDeCotizacion(p){
   var antes = items.length;
-  items = items.filter(function(it){ return String(it.sku) !== String(p.sku); });
+  // Solo de la opción que se está editando: la otra alternativa no se toca.
+  var opc = cevenOpcActiva();
+  items = items.filter(function(it){
+    return !(String(it.sku) === String(p.sku) && cevenOpcDe(it) === opc);
+  });
   if(items.length === antes) return;
   renderQ();
   renderCat();
@@ -506,7 +514,9 @@ function _nuevoItemDeProducto(p, j){
     // catálogo se reimporta y una cotización guardada tiene que seguir diciendo
     // con qué IVA se cotizó.
     iva: cevenProductoIva(p),
-    qty: 1, salePrice: '', stock: '', tier: ''
+    qty: 1, salePrice: '', stock: '', tier: '',
+    // La línea nace en la opción que se está editando (shared/opciones.js).
+    opc: cevenOpcActiva()
   };
   if(typeof repricearLinea === 'function') repricearLinea(it);
   return it;

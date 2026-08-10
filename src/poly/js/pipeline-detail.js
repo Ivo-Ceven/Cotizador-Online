@@ -124,7 +124,9 @@ function openPipelineQuote(qn){
 function renderPipelineDetailRow(r, idx, db){
   if(!db) db = getDB();
   var qn = r.qNum;
-  var lines = db.filter(function(x){ return x['N° Cotización'] === qn; });
+  // Solo la opción vigente (shared/opciones.js): con dos opciones, sin filtrar
+  // se listarían las líneas de las dos.
+  var lines = cevenOpcFilasDeCotiz(db, qn);
 
   if(!lines.length){
     /* La cotización puede haberse borrado del historial y la fila del pipeline

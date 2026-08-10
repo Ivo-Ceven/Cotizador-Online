@@ -49,9 +49,7 @@ function _pipeSkuOVState(r, db){
   var linkCount = Object.keys(skuLinks).length;
   if(linkCount === 0) return r.ovLink ? 'full' : 'none';
   if(!db) db = getDB();
-  var total = db.filter(function(x){
-    return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia');
-  }).length;
+  var total = cevenOpcFilasDeCotiz(db, r.qNum, ['producto','garantia']).length;
   if(total === 0 || linkCount >= total) return 'full';
   return 'partial';
 }
@@ -126,9 +124,7 @@ function tryAutoMerge(entry){
   // No mergear si hay facturación parcial activa
   if(entry.skuPartialQty && Object.keys(entry.skuPartialQty).length) return;
   // Obtener todas las líneas de la cotización
-  var lines = getDB().filter(function(x){
-    return x['N° Cotización'] === entry.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia');
-  });
+  var lines = cevenOpcFilasDeCotiz(getDB(), entry.qNum, ['producto','garantia']);
   if(!lines.length) return;
 
   var defStatus = entry.estado || 'Cotizado';
@@ -315,7 +311,7 @@ function renderPipelineDetailRow(r, db, pipe){
   }
   // Buscar las líneas de la cotización en cquotes
   if(!db) db = getDB();
-  var allLines = db.filter(function(x){ return x['N° Cotización'] === r.qNum && (x['Tipo']==='producto' || x['Tipo']==='garantia'); });
+  var allLines = cevenOpcFilasDeCotiz(db, r.qNum, ['producto','garantia']);
   // Si es virtual, filtrar por lineKeys (índice + SKU). Soporta prefijo REM| para restos parciales.
   var rows;
   if(lineKeysFilter){
@@ -584,9 +580,7 @@ function clearSkuOverrides(pipeId, lineKey){
 
 // Helper: cuenta cuántas líneas de producto (no garantía) tiene una cotización
 function countQuoteProductLines(qNum){
-  return getDB().filter(function(x){
-    return x['N° Cotización'] === qNum && x['Tipo'] === 'producto';
-  }).length;
+  return cevenOpcFilasDeCotiz(getDB(), qNum, ['producto']).length;
 }
 
 function updateSkuStatus(pipeId, lineKey, newStatus){

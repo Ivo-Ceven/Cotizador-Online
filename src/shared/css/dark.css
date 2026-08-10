@@ -44,6 +44,10 @@ body.dark .crow:hover td{background:var(--c3)!important}
 body.dark .crow.sel td{background:rgba(10,132,255,.2)!important}
 body.dark .crow.enq td{background:rgba(52,199,89,.16)!important}
 body.dark .crow.enq:hover td{background:rgba(52,199,89,.24)!important}
+/* Opciones A/B: las solapas salen de los tokens, pero el aviso amarillo de "esta
+   opcion no suma al pipeline" tiene color propio y en oscuro quedaba ilegible. */
+body.dark .opc-aviso{background:rgba(245,196,0,.14)!important;border-color:rgba(245,196,0,.45)!important;color:#f5c400!important}
+
 /* Subpantalla de productos: la mayoria sale de los tokens, pero el textarea y
    la cabecera pegajosa de la tabla llevan fondo propio. */
 body.dark .pk-filtros textarea{background:var(--c3)!important;color:var(--ct1)!important;border-color:var(--cb)!important}

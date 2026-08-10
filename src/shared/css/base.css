@@ -310,6 +310,42 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 .cat-quitar{white-space:nowrap;color:#15863a!important;border-color:#34c759!important}
 .cat-quitar:hover{background:#eaf7ee!important}
 
+/* ── Opciones A/B de una cotización (shared/opciones.js) ─────────────────────
+   Con una sola opción no hay solapas: queda el botón discreto de "＋ Agregar
+   Opción B" alineado a la derecha. El 95% de las cotizaciones tiene una sola y
+   no hay por qué cobrarles el ruido de una barra de pestañas.
+
+   La solapa vigente lleva la estrella y el acento de marca: es EL dato que
+   decide qué monto ve el equipo en el pipeline, así que tiene que leerse de
+   reojo y no confundirse con "la solapa que estoy mirando" (esa es `.on`, que
+   se distingue por el fondo blanco y el borde inferior). */
+.opc-bar{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.opc-bar-sola{justify-content:flex-end;margin-bottom:8px}
+.opc-add{border:0.5px dashed var(--cb);border-radius:980px;background:none;color:var(--ct2);
+  padding:5px 14px;font-size:12px;font-family:inherit;cursor:pointer}
+.opc-add:hover{border-color:var(--acc);color:var(--acc);border-style:solid}
+.opc-tab{display:flex;flex-direction:column;align-items:flex-start;gap:1px;
+  border:0.5px solid var(--cb);border-radius:12px;background:var(--c0);color:var(--ct2);
+  padding:7px 15px;font-family:inherit;cursor:pointer;text-align:left;min-width:150px}
+.opc-tab:hover{background:var(--c3)}
+.opc-tab.on{background:var(--c1);color:var(--ct1);border-color:var(--ct1);box-shadow:var(--sh1)}
+.opc-tab.ef{border-color:var(--acc)}
+.opc-tab-t{font-size:12px;font-weight:600}
+.opc-tab-i{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.opc-chip{font-size:10px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.4px}
+.opc-acc{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
+.opc-acc .bo{padding:6px 13px;font-size:12px}
+/* Chapita de la fila del pipeline: solo aparece si esa cotización tiene dos
+   opciones, y dice cuál es la que está sumando. Es un botón, no un cartel: desde
+   ahí se cambia la vigente sin reabrir la cotización. */
+.opc-pipe{border:0.5px solid var(--acc);background:var(--acc-soft);color:var(--acc);
+  border-radius:6px;padding:1px 6px;font-size:9px;font-weight:700;letter-spacing:.3px;
+  cursor:pointer;font-family:inherit;white-space:nowrap;line-height:1.5}
+.opc-pipe:hover{background:var(--acc);color:#fff}
+/* Aviso de "esta opción no suma": va sobre la tabla de la opción no vigente. */
+.opc-aviso{background:#fffbea;border:0.5px solid #f5c400;border-radius:8px;
+  padding:7px 11px;font-size:12px;color:#5c4a00;margin-bottom:9px}
+
 /* Cantidad con − y + en la tabla de la cotización. El input queda en el medio
    para poder escribir un número grande de una. */
 .qstepper{display:inline-flex;align-items:center;gap:4px}

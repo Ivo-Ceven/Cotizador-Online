@@ -77,7 +77,9 @@ function cargarCatalogo(){
   ctx.window = ctx;
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  for(const f of ['src/shared/safe.js', 'src/shared/catalog-core.js',
+  // opciones.js: el catálogo y la cotización filtran por opción A/B
+  // (cevenOpcFiltrar/cevenOpcActiva). En el navegador se carga antes.
+  for(const f of ['src/shared/safe.js', 'src/shared/opciones.js', 'src/shared/catalog-core.js',
                   'src/apple/js/pricing.js', 'src/apple/js/catalog.js']){
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, {filename: f});
   }

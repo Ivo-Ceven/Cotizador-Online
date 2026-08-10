@@ -18,11 +18,26 @@ function getSortedWarranties(){
   return indexed;
 }
 
+/* Total de una opción: productos + garantías CevenCare. Lo consume la barra de
+   opciones (shared/opciones.js), que no conoce los arrays de esta marca, y el
+   propio renderQ para el pie de la tabla. */
+function totalDeOpcion(n){
+  var t = 0, its = cevenOpcFiltrar(items, n), ws = cevenOpcFiltrar(warrantyItems, n);
+  for(var i=0;i<its.length;i++) t += (its[i].salePrice||0)*(its[i].qty||0);
+  for(var w=0;w<ws.length;w++)  t += (ws[w].precio||0)*(ws[w].cantidad||0);
+  return t;
+}
+
 function renderQ() {
+  // La grilla muestra SOLO la opción que se está editando. Las líneas de la otra
+  // siguen en `items` y se guardan igual: lo que cambia es qué se ve y qué suma.
+  var opc = cevenOpcActiva();
+  cevenOpcPintarBarra({1: totalDeOpcion(1), 2: totalDeOpcion(2)});
+  var visibles = cevenOpcFiltrar(items, opc);
   // ||0 para que un salePrice roto de un item no convierta el total en "NaN",
   // que es lo que terminaba impreso en el PDF del cliente.
-  var gt=0; for(var i=0;i<items.length;i++) gt+=(items[i].salePrice||0)*items[i].qty;
-  var list = getSortedItems();
+  var gt=0; for(var i=0;i<visibles.length;i++) gt+=(visibles[i].salePrice||0)*visibles[i].qty;
+  var list = cevenOpcFiltrar(getSortedItems(), opc);
   // Actualizar indicadores visuales en headers
   var ths = document.querySelectorAll('#qbody-wrap th.qsrt');
   for(var t=0;t<ths.length;t++){
@@ -70,7 +85,7 @@ function renderQ() {
   // de la cotización (js/picker.js). openCat() sigue existiendo para "editar
   // ítem", que sí necesita la vista Catálogo entera.
   html+='<tr><td colspan="9" style="padding:9px 10px"><button class="al" onclick="abrirPicker()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
-  if(items.length){
+  if(visibles.length){
     // La tabla tiene 9 columnas y el Total va bajo la 6ª ("Total"), no bajo la 5ª
     // ("P. Venta"): 5 + 1 + 3 = 9. Con colspan=4 el importe caía una columna antes.
     html+='<tr>'
@@ -80,6 +95,18 @@ function renderQ() {
       +'</tr>';
   }
   document.getElementById('qbody').innerHTML=html;
+  _pintarAvisoOpcion(opc);
+}
+
+/* Aviso sobre la tabla cuando se está editando la opción que NO es la vigente.
+   Sin esto, se carga media cotización en la B, se agrega al pipeline y el monto
+   que ve el equipo es el de la A — sin ninguna pista en pantalla de por qué. */
+function _pintarAvisoOpcion(opc){
+  var box = document.getElementById('opc-aviso-box');
+  if(!box) return;
+  if(!cevenOpcHayB() || opc === cevenOpcEfectiva()){ box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="opc-aviso">Estás editando la <b>Opción '+cevenOpcLetra(opc)+'</b>, '
+    + 'que no es la vigente: al pipeline y al Target sigue yendo la <b>Opción '+cevenOpcLetra(cevenOpcEfectiva())+'</b>.</div>';
 }
 
 // Delegación de eventos de la grilla de cotización: ningún handler inline lleva

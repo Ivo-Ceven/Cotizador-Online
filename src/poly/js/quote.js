@@ -1,8 +1,22 @@
 // _qSortKey/_qSortDir, sortQBy() y getSortedItems() viven en shared/quote-core.js.
 
+/* Total de una opción. Poly no tiene garantías: son solo los productos. Lo
+   consume la barra de opciones (shared/opciones.js), que no conoce los arrays de
+   esta marca, y el propio renderQ para el pie de la tabla. */
+function totalDeOpcion(n){
+  var t = 0, its = cevenOpcFiltrar(items, n);
+  for(var i=0;i<its.length;i++) t += (its[i].salePrice||0)*(its[i].qty||0);
+  return t;
+}
+
 function renderQ() {
-  var gt=0; for(var i=0;i<items.length;i++) gt+=(items[i].salePrice||0)*items[i].qty;
-  var list = getSortedItems();
+  // La grilla muestra SOLO la opción que se está editando. Las líneas de la otra
+  // siguen en `items` y se guardan igual: lo que cambia es qué se ve y qué suma.
+  var opc = cevenOpcActiva();
+  cevenOpcPintarBarra({1: totalDeOpcion(1), 2: totalDeOpcion(2)});
+  var visibles = cevenOpcFiltrar(items, opc);
+  var gt=0; for(var i=0;i<visibles.length;i++) gt+=(visibles[i].salePrice||0)*visibles[i].qty;
+  var list = cevenOpcFiltrar(getSortedItems(), opc);
   // Actualizar indicadores visuales en headers
   var ths = document.querySelectorAll('#qbody-wrap th.qsrt');
   for(var t=0;t<ths.length;t++){
@@ -63,7 +77,7 @@ function renderQ() {
       +'</tr>';
   }
   html+='<tr><td colspan="9" style="padding:9px 10px"><button class="al" onclick="abrirPicker()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
-  if(items.length){
+  if(visibles.length){
     html+='<tr>'
       +'<td colspan="5" style="text-align:right;color:#6e6e73;font-size:13px;font-weight:500;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">Total</td>'
       +'<td style="text-align:right;font-size:15px;font-weight:600;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">'+dp(gt)+'</td>'
@@ -73,6 +87,18 @@ function renderQ() {
   document.getElementById('qbody').innerHTML=html;
   pintarTierGlobal();
   _qBindDelegation();
+  _pintarAvisoOpcion(opc);
+}
+
+/* Aviso sobre la tabla cuando se está editando la opción que NO es la vigente.
+   Sin esto, se carga media cotización en la B, se agrega al pipeline y el monto
+   que ve el equipo es el de la A — sin ninguna pista en pantalla de por qué. */
+function _pintarAvisoOpcion(opc){
+  var box = document.getElementById('opc-aviso-box');
+  if(!box) return;
+  if(!cevenOpcHayB() || opc === cevenOpcEfectiva()){ box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="opc-aviso">Estás editando la <b>Opción '+cevenOpcLetra(opc)+'</b>, '
+    + 'que no es la vigente: al pipeline sigue yendo la <b>Opción '+cevenOpcLetra(cevenOpcEfectiva())+'</b>.</div>';
 }
 
 // Los ids de ítem viajan en data-id y vuelven como string; upQty/rmItem/… ya

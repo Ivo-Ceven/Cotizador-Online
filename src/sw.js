@@ -69,6 +69,7 @@ var ASSETS = [
   './shared/backup-folder.js',
   './shared/recovery.js',
   './shared/quote-core.js',
+  './shared/opciones.js',
   './shared/catalog-core.js',
   './shared/quote-num.js',
   './shared/clientes.js',

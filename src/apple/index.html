@@ -119,6 +119,10 @@
       <div><label class="lbl">Observaciones <span style="color:#6e6e73;font-weight:400">— escribí FOB acá si la cotización lo es</span></label><input id="obs" type="text" placeholder="Notas de la cotización..." oninput="onObsChange()"></div>
     </div>
   </div>
+  <!-- Barra de opciones A/B (shared/opciones.js). Con una sola opción es solo
+       el botón "＋ Agregar Opción B"; el contenido lo pinta renderQ(). -->
+  <div id="opc-bar-box"></div>
+  <div id="opc-aviso-box"></div>
   <div id="qbody-wrap" class="tw" style="margin-bottom:18px">
     <table style="table-layout:fixed;min-width:780px">
       <colgroup>
@@ -618,6 +622,9 @@
 <script src="../shared/ui-core.js"></script>
 <script src="js/pricing.js"></script>
 <script src="../shared/quote-core.js"></script>
+<!-- opciones.js define el estado A/B y lo lee todo lo que suma importes:
+     va ANTES de quote.js, catalog.js y quotes-db.js. -->
+<script src="../shared/opciones.js"></script>
 <script src="../shared/catalog-core.js"></script>
 <script src="js/catalog.js"></script>
 <script src="js/quote.js"></script>
@@ -731,7 +738,7 @@
 
     <div class="pk-pie">
       <div class="pk-pie-hd">
-        <span class="lbl" style="margin:0">En la cotizaci&oacute;n (<span id="pk-cart-n">0</span>)</span>
+        <span class="lbl" style="margin:0">En la cotizaci&oacute;n (<span id="pk-cart-n">0</span>)<span id="pk-cart-opc"></span></span>
       </div>
       <div id="pk-cart"></div>
       <div class="pk-cierre">

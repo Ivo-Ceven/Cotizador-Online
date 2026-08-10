@@ -79,7 +79,7 @@ function doSave(overwrite){
   for(var j=0;j<items.length;j++){
     var it=items[j];
     var sp = (it.salePrice===''||it.salePrice==null) ? 0 : it.salePrice;
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'OPG':opg,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'Nivel de precio':(typeof tierDeLinea==='function'?tierDeLinea(it):''),'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','IVA':it.iva||'','P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ});
+    db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'OPG':opg,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'Nivel de precio':(typeof tierDeLinea==='function'?tierDeLinea(it):''),'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','IVA':it.iva||'','P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ}, it));
   }
   saveDB(db);
   /* Se recuerda el nivel con el que se le cotizo a este cliente. Es el germen de
@@ -104,6 +104,7 @@ function saveQuote(){
 function _snapshotQuoteState(){
   return {
     qNum: qNum,
+    opc: cevenOpcEstado(),          // qué opciones había y cuál era la vigente
     items: JSON.parse(JSON.stringify(items)),
     client: document.getElementById('client').value,
     opg: document.getElementById('opg').value,
@@ -132,6 +133,7 @@ function _restoreQuoteState(snap){
   qNum = snap.qNum;
   cevenPintarQNum();
   items = snap.items;
+  cevenOpcEstadoSet(snap.opc);
   document.getElementById('client').value = snap.client;
   document.getElementById('opg').value    = snap.opg;
   document.getElementById('proyecto').value = snap.proyecto;
@@ -156,6 +158,7 @@ function nuevaCotizacion(){
   cevenEditandoQNum(null);   // arranca una cotización nueva: nada que re-guardar
   // Limpiar todo
   items = [];
+  cevenOpcReset();   // vuelve a una sola opción, vigente A
   document.getElementById('client').value = '';
   document.getElementById('opg').value = '';
   document.getElementById('proyecto').value = '';
@@ -293,6 +296,8 @@ function editQuoteFromHistory(qn, skipUndoToast){
     document.getElementById('quote-estado').value = _estLoad;
   }
   items=[];
+  // Opciones A/B: qué líneas son de cuál y cuál es la vigente (shared/opciones.js).
+  cevenOpcCargarDeFilas(rows);
   rows.forEach(function(r){
     var sp = r['P. Venta Unitario'];
     sp = (sp===''||sp===null||sp===undefined) ? '' : parseFloat(sp);
@@ -313,7 +318,8 @@ function editQuoteFromHistory(qn, skipUndoToast){
       tier: (function(){
         var t = r['Nivel de precio'] || '';
         return (t && _tg && t === _tg.value) ? '' : t;
-      })()
+      })(),
+      opc: cevenOpcDe(r)
     });
   });
   // Resetear sort para que los productos cargados queden en orden de importación
@@ -335,7 +341,7 @@ function exportDB(){
   var ws=XLSX.utils.json_to_sheet(data,{header:heads});
   // Un ancho por columna de COLS, en el mismo orden.
   ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:14},{wch:20},{wch:18},{wch:28},{wch:12},
-               {wch:18},{wch:20},{wch:18},{wch:18},{wch:16},{wch:36},{wch:10},{wch:16},{wch:8},{wch:14},{wch:14}];
+               {wch:18},{wch:20},{wch:18},{wch:18},{wch:8},{wch:16},{wch:36},{wch:10},{wch:16},{wch:8},{wch:14},{wch:14}];
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cotizaciones');
   XLSX.writeFile(wb,'Ceven_Poly_Cotizaciones.xlsx');
 }

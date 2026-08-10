@@ -279,8 +279,12 @@ function _pipeTablaHTML(filas, scope, opts){
   );
 
   /* getDB() hace JSON.parse de varios MB y el poll redibuja cada 15 s: se
-     parsea UNA sola vez por render, y solo si hay alguna fila abierta. */
+     parsea UNA sola vez por render. Antes se hacía solo si había alguna fila
+     abierta; desde que la fila muestra la chapita de opción A/B hace falta
+     siempre, porque "esta cotización tiene dos opciones" es un dato de
+     `cquotes`. Sigue siendo UN parse por render, no uno por fila. */
   var _db = null;
+  function db(){ if(_db === null) _db = getDB(); return _db; }
   var q = (opts.abrirSiMatchea || '').toLowerCase().trim();
   var html = '';
 
@@ -360,6 +364,9 @@ function _pipeTablaHTML(filas, scope, opts){
         +'<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.opg||'—')+'</td>'
         +'<td style="text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:11px">'
           +(r.qNum ? '<span data-act="openq" data-qn="'+cevenEsc(r.qNum)+'" style="color:var(--acc,#0071e3);font-weight:600;cursor:pointer">#'+cevenEsc(r.qNum)+'</span>' : '—')
+          /* Chapita de opción A/B: solo aparece si esa cotización tiene dos, y
+             desde ahí se cambia cuál suma (shared/opciones.js). */
+          +(r.qNum ? cevenOpcChipPipeHTML(db().filter(function(x){ return x['N° Cotización'] === r.qNum; }), ' data-act="opc" data-k="'+kA+'"') : '')
         +'</td>'
         +'<td style="cursor:pointer" data-act="exp" data-k="'+kA+'"><div style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
           +cevenEsc(r.proyecto||'—')
@@ -372,8 +379,7 @@ function _pipeTablaHTML(filas, scope, opts){
       +'</tr>';
 
       if(abiertaFila){
-        if(_db === null) _db = getDB();
-        html += renderPipelineDetailRow(r, kFila, _db);
+        html += renderPipelineDetailRow(r, kFila, db());
       }
     });
   });
@@ -401,6 +407,7 @@ function pipeBindDelegation(){
     if(act === 'expcli'){ togglePipeNode(el.getAttribute('data-k')); return; }
     if(n.kind !== 'r') return;
 
+    if(act === 'opc'){ cambiarOpcionVigente(n.row.id); return; }
     if(act === 'exp')          togglePipeNode(el.getAttribute('data-k'));
     // Abrir Netsuite lo puede hacer cualquiera (es de solo lectura); editar el
     // link lo frena cevenCanEditPipelineRow() adentro de editNetsuiteLink().

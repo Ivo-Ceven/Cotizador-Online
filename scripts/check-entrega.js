@@ -94,6 +94,8 @@ function cargar(){
   vm.runInContext(lee('src/vendor/jspdf.plugin.autotable.min.js'), ctx);
   vm.runInContext(lee('src/shared/ui-core.js'), ctx);
   vm.runInContext(lee('src/shared/pdf-core.js'), ctx);
+  // opciones.js: el comprobante separa las opciones A/B de la cotización.
+  vm.runInContext(lee('src/shared/opciones.js'), ctx);
   vm.runInContext(lee('src/shared/comprobante.js'), ctx);
   return { ctx, els };
 }

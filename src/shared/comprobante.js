@@ -327,66 +327,98 @@ function cevenComprobanteDoc(qn, filas, emisor){
   _compTxt(doc, 'Detalle', M, y);
   y += 3;
 
-  /* Los importes salen en USD, tal como se guardaron. No se convierten a pesos
-     a propósito: el TC vive en un input de la pantalla de cotización y cambia
-     todos los días, así que convertir haría que dos impresiones del mismo
-     comprobante den totales distintos según el día. */
-  var total = 0;
-  var cuerpo = filas.map(function(r){
-    var qty  = parseFloat(r['Cantidad']) || 0;
-    var unit = parseFloat(r['P. Venta Unitario']) || 0;
-    var sub  = parseFloat(r['Total']) || 0;
-    total += sub;
-    /* El IVA va ÚLTIMO, después del subtotal: es un dato informativo y no tiene
-       por qué separar la cantidad del precio, que es lo que se lee junto. */
-    return [
-      cevenCompSan(r['SKU'] || ''),
-      cevenCompSan(r['Descripción'] || ''),
-      String(qty),
-      'USD ' + fD(unit),
-      'USD ' + fD(sub),
-      cevenCompSan(cevenComprobanteIVA(r))
-    ];
+  /* Una cotización puede llevar dos opciones alternativas (shared/opciones.js).
+     Va una tabla por opción, cada una con su TOTAL, y arriba el aviso de que son
+     excluyentes: sin él, el cliente puede leer las dos como dos partes de la
+     misma compra y sumar los totales. Con una sola opción —el caso normal y todo
+     lo guardado hasta 08/2026— sale exactamente el mismo documento de siempre. */
+  var opcs = [1, 2].filter(function(n){
+    return filas.some(function(r){ return cevenOpcDe(r) === n; });
   });
+  var hayOpcB = opcs.length > 1;
 
-  doc.autoTable({
-    startY: y,
-    head: [['SKU', 'Descripción', 'Cantidad', 'Precio unitario', 'Subtotal', 'IVA']],
-    body: cuerpo,
-    foot: [['', '', '', 'TOTAL', 'USD ' + fD(total), '']],
-    margin: { left: M, right: M },
-    styles: { font: 'times', fontSize: 9.5, cellPadding: 2, lineColor: [183, 196, 221], lineWidth: 0.1 },
-    headStyles: {
-      font: 'times', fontStyle: 'bold', fontSize: 9.5,
-      fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY
-    },
-    footStyles: {
-      font: 'times', fontStyle: 'bold', fontSize: 10.5,
-      fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY,
-      halign: 'right'
-    },
-    alternateRowStyles: { fillColor: CEVEN_COMP_TINT },
-    columnStyles: {
-      // 30 mm y no 26: con 26 el SKU más largo de Poly (A4LZ8AA#ABM) se partía
-      // en dos renglones. La Descripción no lleva ancho y se queda con el resto.
-      0: { cellWidth: 30 },
-      2: { cellWidth: 17, halign: 'center' },
-      3: { cellWidth: 29, halign: 'right' },
-      4: { cellWidth: 29, halign: 'right' },
-      5: { cellWidth: 16, halign: 'center' }
-    },
-    didParseCell: function(data){
-      // Las celdas vacías del pie van en blanco, como en el modelo: la barra
-      // navy es solo "TOTAL" + importe. La de IVA (la última) también queda
-      // afuera, o la barra terminaría en un bloque de color sin nada adentro.
-      if(data.section === 'foot' && (data.column.index < 3 || data.column.index === 5)){
-        data.cell.styles.fillColor = [255, 255, 255];
-        data.cell.styles.lineColor = [255, 255, 255];
-      }
+  if(hayOpcB){
+    doc.setFont('times', 'italic');
+    doc.setFontSize(9.5);
+    doc.setTextColor(CEVEN_COMP_GRIS[0], CEVEN_COMP_GRIS[1], CEVEN_COMP_GRIS[2]);
+    _compTxt(doc, cevenOpcLeyenda(), M, y + 3);
+    y += 6;
+  }
+
+  opcs.forEach(function(nOpc){
+    var deOpc = filas.filter(function(r){ return cevenOpcDe(r) === nOpc; });
+    if(hayOpcB){
+      y = _compEspacio(doc, y + 4, 30);
+      doc.setFont('times', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+      _compTxt(doc, 'Opción ' + cevenOpcLetra(nOpc), M, y);
+      y += 2;
     }
+
+    /* Los importes salen en USD, tal como se guardaron. No se convierten a pesos
+       a propósito: el TC vive en un input de la pantalla de cotización y cambia
+       todos los días, así que convertir haría que dos impresiones del mismo
+       comprobante den totales distintos según el día. */
+    var total = 0;
+    var cuerpo = deOpc.map(function(r){
+      var qty  = parseFloat(r['Cantidad']) || 0;
+      var unit = parseFloat(r['P. Venta Unitario']) || 0;
+      var sub  = parseFloat(r['Total']) || 0;
+      total += sub;
+      /* El IVA va ÚLTIMO, después del subtotal: es un dato informativo y no tiene
+         por qué separar la cantidad del precio, que es lo que se lee junto. */
+      return [
+        cevenCompSan(r['SKU'] || ''),
+        cevenCompSan(r['Descripción'] || ''),
+        String(qty),
+        'USD ' + fD(unit),
+        'USD ' + fD(sub),
+        cevenCompSan(cevenComprobanteIVA(r))
+      ];
+    });
+
+    doc.autoTable({
+      startY: y,
+      head: [['SKU', 'Descripción', 'Cantidad', 'Precio unitario', 'Subtotal', 'IVA']],
+      body: cuerpo,
+      foot: [['', '', '', (hayOpcB ? 'TOTAL ' + cevenOpcLetra(nOpc) : 'TOTAL'), 'USD ' + fD(total), '']],
+      margin: { left: M, right: M },
+      styles: { font: 'times', fontSize: 9.5, cellPadding: 2, lineColor: [183, 196, 221], lineWidth: 0.1 },
+      headStyles: {
+        font: 'times', fontStyle: 'bold', fontSize: 9.5,
+        fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY
+      },
+      footStyles: {
+        font: 'times', fontStyle: 'bold', fontSize: 10.5,
+        fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY,
+        halign: 'right'
+      },
+      alternateRowStyles: { fillColor: CEVEN_COMP_TINT },
+      columnStyles: {
+        // 30 mm y no 26: con 26 el SKU más largo de Poly (A4LZ8AA#ABM) se partía
+        // en dos renglones. La Descripción no lleva ancho y se queda con el resto.
+        0: { cellWidth: 30 },
+        2: { cellWidth: 17, halign: 'center' },
+        3: { cellWidth: 29, halign: 'right' },
+        4: { cellWidth: 29, halign: 'right' },
+        5: { cellWidth: 16, halign: 'center' }
+      },
+      didParseCell: function(data){
+        // Las celdas vacías del pie van en blanco, como en el modelo: la barra
+        // navy es solo "TOTAL" + importe. La de IVA (la última) también queda
+        // afuera, o la barra terminaría en un bloque de color sin nada adentro.
+        if(data.section === 'foot' && (data.column.index < 3 || data.column.index === 5)){
+          data.cell.styles.fillColor = [255, 255, 255];
+          data.cell.styles.lineColor = [255, 255, 255];
+        }
+      }
+    });
+
+    y = doc.lastAutoTable.finalY;
   });
 
-  y = doc.lastAutoTable.finalY + 9;
+  y += 9;
 
   /* ── CONDICIONES COMERCIALES ────────────────────────────────────────────────
      Las mismas líneas que imprime el PDF de la cotización, armadas en un solo

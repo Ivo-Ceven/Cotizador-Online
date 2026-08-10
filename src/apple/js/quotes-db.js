@@ -73,16 +73,16 @@ function doSave(overwrite){
   cevenEditandoQNum(qn);
   for(var j=0;j<items.length;j++){
     var it=items[j];
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','IVA':it.taxes||'','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin});
+    db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','IVA':it.taxes||'','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin}, it));
   }
   for(var k=0;k<warrantyItems.length;k++){
     var w=warrantyItems[k];
     var wp=Math.round((w.precio||0)*100)/100;
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':w.sku,'Descripción':w.equipo+' — '+(w.canal==='CC'?'Complete Care':'Gta. Limitada Ext.')+' ('+w.años+(w.años===1?' año':' años')+')','Cantidad':w.cantidad,'Disponibilidad':'—','IVA':'21%','Margen %':'—','P. Venta Unitario':wp,'Total':wp*w.cantidad,'Tipo':'garantia','_wdata':JSON.stringify(w),'_estado':estadoQ});
+    db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':w.sku,'Descripción':w.equipo+' — '+(w.canal==='CC'?'Complete Care':'Gta. Limitada Ext.')+' ('+w.años+(w.años===1?' año':' años')+')','Cantidad':w.cantidad,'Disponibilidad':'—','IVA':'21%','Margen %':'—','P. Venta Unitario':wp,'Total':wp*w.cantidad,'Tipo':'garantia','_wdata':JSON.stringify(w),'_estado':estadoQ}, w));
   }
   // Guardar overrides de Nac de la cotización si existen
   if(Object.keys(quoteNacOverrides).length){
-    db.push({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Tipo':'meta_nac','_qnac':JSON.stringify(quoteNacOverrides)});
+    db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Tipo':'meta_nac','_qnac':JSON.stringify(quoteNacOverrides)}, null));
   }
   return saveDB(db);
 }
@@ -106,6 +106,7 @@ function _snapshotQuoteState(){
   var _v = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
   return {
     qNum: qNum,
+    opc: cevenOpcEstado(),          // qué opciones había y cuál era la vigente
     items: JSON.parse(JSON.stringify(items)),
     warrantyItems: JSON.parse(JSON.stringify(warrantyItems)),
     nacOv: JSON.parse(JSON.stringify(quoteNacOverrides)),
@@ -128,6 +129,7 @@ function _restoreQuoteState(snap){
   items = snap.items;
   warrantyItems = snap.warrantyItems;
   quoteNacOverrides = snap.nacOv;
+  cevenOpcEstadoSet(snap.opc);
   window._currentClientMode = snap.clientMode;
   document.getElementById('client').value = snap.client;
   document.getElementById('proyecto').value = snap.proyecto;
@@ -158,6 +160,7 @@ function nuevaCotizacion(){
   items = [];
   warrantyItems = [];
   quoteNacOverrides = {};
+  cevenOpcReset();   // vuelve a una sola opción, vigente A
   if (typeof resetClientMode === 'function') resetClientMode();
   document.getElementById('client').value = '';
   if(document.getElementById('mes-cierre-mY')) setMesCierre('');
@@ -284,13 +287,21 @@ function editQuoteFromHistory(qn, skipUndoToast){
   items=[];
   warrantyItems=[];
   quoteNacOverrides = {};
+  // Opciones A/B: qué líneas son de cuál y cuál es la vigente (shared/opciones.js).
+  cevenOpcCargarDeFilas(rows);
   rows.forEach(function(r){
     if(r['Tipo']==='meta_nac' && r['_qnac']){
       try{ quoteNacOverrides = JSON.parse(r['_qnac']); } catch(e){}
       return;
     }
     if(r['Tipo']==='garantia' && r['_wdata']){
-      try{ warrantyItems.push(JSON.parse(r['_wdata'])); } catch(e){}
+      try{
+        var _w = JSON.parse(r['_wdata']);
+        // La opción manda desde la COLUMNA de la fila: `_wdata` de una cotización
+        // guardada antes de 08/2026 no la trae.
+        _w.opc = cevenOpcDe(r);
+        warrantyItems.push(_w);
+      } catch(e){}
       return;
     }
     var sp = parseFloat(r['P. Venta Unitario']) || 0;
@@ -334,7 +345,8 @@ function editQuoteFromHistory(qn, skipUndoToast){
       stock: r['Disponibilidad'] !== '—' ? r['Disponibilidad'] : '',
       taxes: taxesVal,
       nacIncluded: r['_nacIncluded'] === true || r['_nacIncluded'] === 'true' || r['_nacIncluded'] === 1,
-      manualMargin: isManualMg
+      manualMargin: isManualMg,
+      opc: cevenOpcDe(r)
     });
   });
   // Resetear sort para que los productos cargados queden en orden de importación
@@ -359,7 +371,7 @@ function exportDB(){
   var ws=XLSX.utils.json_to_sheet(data,{header:COLS});
   // Un ancho por columna de COLS (antes eran 13 para 15 columnas).
   ws['!cols']=[{wch:12},{wch:12},{wch:8},{wch:22},{wch:18},{wch:28},{wch:40},{wch:12},
-               {wch:18},{wch:20},{wch:18},{wch:16},{wch:40},{wch:10},{wch:14},{wch:8},{wch:10},{wch:20},{wch:14}];
+               {wch:18},{wch:20},{wch:18},{wch:8},{wch:16},{wch:40},{wch:10},{wch:14},{wch:8},{wch:10},{wch:20},{wch:14}];
   var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cotizaciones');
   XLSX.writeFile(wb,'Ceven_Base_Cotizaciones.xlsx');
 }

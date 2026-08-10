@@ -4,17 +4,23 @@ function renderWarranties() {
   var section = document.getElementById('warranty-section');
   var fnote = document.getElementById('franchise-note');
 
-  if (!warrantyItems.length) {
+  /* Solo las garantías de la opción que se está editando. Las de la otra siguen
+     en `warrantyItems` y se guardan igual — los handlers direccionan por
+     `origIdx`, el índice REAL en el array, así que filtrar la vista no los
+     descoloca. */
+  var opcW = cevenOpcActiva();
+  var deLaOpc = cevenOpcFiltrar(warrantyItems, opcW);
+  if (!deLaOpc.length) {
     section.style.display = 'none';
     return;
   }
   section.style.display = 'block';
 
   // Check if any CC plan exists (franchise)
-  var hasCC = warrantyItems.some(function(w){ return w.canal === 'CC'; });
+  var hasCC = deLaOpc.some(function(w){ return w.canal === 'CC'; });
   fnote.style.display = hasCC ? 'block' : 'none';
 
-  var sorted = getSortedWarranties(); // [{w, origIdx}, ...]
+  var sorted = getSortedWarranties().filter(function(x){ return cevenOpcDe(x.w) === opcW; }); // [{w, origIdx}, ...]
   var html = '';
   for (var i = 0; i < sorted.length; i++) {
     var w = sorted[i].w;
@@ -157,13 +163,17 @@ window.addEventListener('message', function(e) {
   if (!Array.isArray(items_to_add) || !items_to_add.length) return;
   items_to_add.forEach(function(w) {
     var key = w.equipo + '|' + w.canal + '|' + w.años + '|' + w.sku;
-    var existing = warrantyItems.find(function(x){ return x.key === key; });
+    /* La misma garantía puede estar en las dos opciones: son líneas distintas,
+       así que la coincidencia es por clave Y por opción. Sin el segundo término,
+       traerla para la Opción B le sumaba cantidad a la línea de la A. */
+    var opcW = cevenOpcActiva();
+    var existing = warrantyItems.find(function(x){ return x.key === key && cevenOpcDe(x) === opcW; });
     if (existing) {
       existing.cantidad += w.cantidad;
     } else {
       // Al traer del cotizador, redondear SIEMPRE hacia arriba
       w.precio = Math.ceil(w.precio||0);
-      warrantyItems.push(Object.assign({}, w, {key: key}));
+      warrantyItems.push(Object.assign({}, w, {key: key, opc: opcW}));
     }
   });
   renderWarranties();
@@ -404,7 +414,9 @@ function addMacWarrantiesFor(item, mode) {
     warrantyItems.push({
       equipo: equipo, sku: w.gl.sku, canal: 'GL', años: 3,
       precio: Math.ceil(w.gl.precio||0), cantidad: qty, tipo: mode,
-      gl_plan: w.gl_plan, key: equipo + '|GL|3|' + w.gl.sku, _fromProduct: fromMarker
+      gl_plan: w.gl_plan, key: equipo + '|GL|3|' + w.gl.sku, _fromProduct: fromMarker,
+      // La garantía nace en la misma opción que el equipo que la disparó.
+      opc: cevenOpcDe(item)
     });
     added = true;
   }
@@ -413,7 +425,8 @@ function addMacWarrantiesFor(item, mode) {
     warrantyItems.push({
       equipo: equipo, sku: w.cc.sku, canal: 'CC', años: 3,
       precio: Math.ceil(w.cc.precio||0), cantidad: qty, tipo: mode,
-      cc_plan: w.cc_plan, key: equipo + '|CC|3|' + w.cc.sku, _fromProduct: fromMarker
+      cc_plan: w.cc_plan, key: equipo + '|CC|3|' + w.cc.sku, _fromProduct: fromMarker,
+      opc: cevenOpcDe(item)
     });
     added = true;
   }

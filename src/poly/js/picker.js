@@ -106,9 +106,13 @@ function renderPicker(){
 function _pintarCarrito(){
   var box = document.getElementById('pk-cart');
   if(!box) return;
+  // Solo la opción que se está editando: el carrito tiene que ser lo mismo que
+  // muestra la grilla de abajo, o el ＋/✓ de la lista diría una cosa y el
+  // carrito otra.
+  var enCarrito = cevenOpcFiltrar(items, cevenOpcActiva());
   var total = 0, html = '';
-  for(var i=0;i<items.length;i++){
-    var it = items[i];
+  for(var i=0;i<enCarrito.length;i++){
+    var it = enCarrito[i];
     var sp = (it.salePrice==='' || it.salePrice==null) ? 0 : it.salePrice;
     var sub = sp * it.qty;
     total += sub;
@@ -127,9 +131,12 @@ function _pintarCarrito(){
     + '</div>';
   }
 
-  document.getElementById('pk-cart-n').textContent = items.length;
+  document.getElementById('pk-cart-n').textContent = enCarrito.length;
   box.innerHTML = html || '<div class="pk-vacio">Todavía no agregaste nada. Tocá <b>+</b> en un producto.</div>';
-  document.getElementById('pk-total').textContent = items.length ? dp(total) : '—';
+  document.getElementById('pk-total').textContent = enCarrito.length ? dp(total) : '—';
+  // Con dos opciones abiertas hay que decir a cuál se está agregando.
+  var rot = document.getElementById('pk-cart-opc');
+  if(rot) rot.textContent = cevenOpcHayB() ? (' · Opción ' + cevenOpcLetra(cevenOpcActiva())) : '';
 }
 
 /* ── Cableado ─────────────────────────────────────────────────────────────────

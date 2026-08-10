@@ -18,6 +18,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `recovery.js` | `_checkRecovery()`: detecta que los datos están vacíos y ofrece restaurar el snapshot. Delega en `_applyBackupRestore()` de `backup.js` — **carga después que él** |
 | `ui-core.js` | Logo, navegación (`_navApply`/`goTo`), formateo (`fI`/`fD`/`dp`/`getTC`), mes de cierre, dark mode, `showErr`, y los helpers de delegación `cevenDelegate`/`cevenActEl` |
 | `quote-core.js` | Orden de la cotización (`sortQBy`, `getSortedItems`), `rmItem`, `upField`, `openCat` |
+| `opciones.js` | Opciones **A/B** de una cotización: dos propuestas alternativas guardadas como una sola. Ver "Opciones A/B" más abajo |
 | `catalog-core.js` | `parseCSV`, `fk`, búsqueda y pegado masivo de SKUs, selección de filas, limpieza de filtros |
 | `pipeline-store.js` | `getPipeline`/`savePipeline`/`getArchive`/`saveArchive`/`currentMonthKey` |
 | `pipeline-ui.js` | Filtros de mes/cliente/pills y orden de la tabla del pipeline |
@@ -56,6 +57,7 @@ Nació de dos HTML monolíticos (7.365 y 2.627 líneas) que en 07/2026 se partie
 | `idbKey`, `appTag`, `backupVersion`, `pipeFilePrefix`, `fullBackupFile`, `exportPrefix`, `backupExtraKeys` | identidad de los backups de la marca |
 | `plLabel` | cómo se llama el listado de productos en los carteles (`price list` / `catálogo`) |
 | `theme` | color de la marca: `{accent, hover, soft, dk}`. El criterio es **distinguirse entre marcas**, no imitar el logo — Apple azul, Poly violeta, HP naranja: los datos no se mezclan y equivocarse de cotizador es fácil. Si se cambia uno, hay que tocar también la tarjeta de esa marca en el shell (`.mcard[data-brand=…]`), que no carga ningún `brand.js` |
+| `quoteLists` | qué arrays componen una cotización (`items`, y en Apple también `warrantyItems`), como `{get, set}`. Lo usa `shared/opciones.js` para borrar la Opción B entera sin conocer los arrays de cada marca |
 | `condicionesFijas` | líneas del bloque "Condiciones Comerciales" propias de la marca, entre la de impuestos y la de entrega. Apple: enrolamiento en Apple Business Manager. Poly: ninguna. Las otras cuatro líneas son iguales en todas las marcas y las arma `cevenCondiciones()` |
 | `navItems` | vistas que muestra la barra superior, en orden: `{view, label, alsoFor?, needsPipeline?}`. `alsoFor` lista las vistas sin ítem propio que igual marcan a esta como activa (`addprod` cuelga de `catalog`, `qnac` de `quote`); `needsPipeline` esconde el ítem al rol lector |
 
@@ -231,6 +233,43 @@ La tabla de arriba usa los nombres de Apple. **Poly usa los mismos con el prefij
 
 Qué se sincroniza lo dice `settingKeys` en `brand.js`, no una lista en este doc — Apple sincroniza 10 claves y Poly 6 (no tiene nacionalización ni target). `cpipeline` va a su propia tabla, fila por fila. `_sync_dirty` (la cola de pendientes) es local por diseño y **nunca** debe entrar en `settingKeys`.
 
+## Opciones A/B de una cotización
+
+Desde 10/08/2026 una cotización puede llevar **dos propuestas alternativas** —
+Opción A y Opción B — y guardarse como una sola. El caso real: se le ofrecen al
+cliente dos armados (uno más caro y uno más económico) y él elige uno.
+
+**La regla que sostiene todo: solo la opción *vigente* suma al pipeline, al
+Target y al Excel.** Si las dos sumaran, el forecast quedaría inflado con plata
+que nunca se va a facturar, y eso no se nota mirando la pantalla — se nota a fin
+de mes, cuando el total no cierra.
+
+| Dónde | Qué |
+|---|---|
+| Cada línea | campo `opc` (1 = A, 2 = B). Sin el campo es 1, por eso todo lo guardado antes sigue funcionando |
+| `cquotes` | columna visible **`Opción`** (va al Excel) y **`_opcEf`**, la vigente, escrita en **todas** las filas de la cotización — igual que `_estado`, para no depender de filas "meta" (Poly no las tiene) |
+| Pipeline | **nada**: la fila guarda los montos de la vigente y listo. No hizo falta ninguna columna nueva en Supabase |
+| `brand.js` | `quoteLists`: qué arrays componen una cotización (Apple suma `warrantyItems`, Poly no), para que `cevenOpcBorrarB()` no conozca los arrays de cada marca |
+
+Las funciones que **hay que usar** en vez de recorrer `cquotes` a mano:
+
+- `cevenOpcFiltrar(arr, n)` — las líneas de una opción, sobre cualquier array de la marca.
+- `cevenOpcFilasDeCotiz(db, qn, tipos)` — las filas guardadas de una cotización, **ya filtradas a su opción vigente**. Todo lo que lea `cquotes` para hacer cuentas o para recorrer líneas pasa por acá. Dos motivos: si no filtra, una cotización de dos opciones cuenta doble; y el `lineKey` de los overrides por SKU del pipeline es `SKU|índice` **sobre esta lista**, así que si un lugar filtra y otro no, los índices se corren y los estados por SKU se aplican a la línea equivocada.
+- `cevenOpcEfectivaDeFilas(rows)` / `cevenOpcHayBEnFilas(rows)` — para leer una cotización que no está abierta (pipeline, comprobante, historial).
+
+En pantalla: una barra de solapas sobre la grilla (`#opc-bar-box`), que con una
+sola opción es apenas el botón "＋ Agregar Opción B". La grilla, el carrito de la
+subpantalla flotante y las garantías muestran **solo la opción activa**; editar
+la que no es vigente pinta un aviso. Desde la fila del pipeline se cambia la
+vigente sin reabrir la cotización (`cambiarOpcionVigente()`), y el monto de la
+fila **se recalcula** con las líneas de la opción nueva — dejarlo como estaba
+sería peor que no tener la funcionalidad, porque la fila diría "Opción B" con la
+plata de la A.
+
+El PDF y el comprobante imprimen **las dos opciones**, cada una con su total, y
+arriba la leyenda de `cevenOpcLeyenda()`: sin ella el cliente puede leer las dos
+tablas como dos partes de la misma compra y sumar los totales.
+
 ## El price list de Apple
 
 El catálogo de Apple **viene partido en dos Excel** que hay que cargar juntos: la
@@ -276,6 +315,7 @@ No hay tests. Lo mínimo que conviene correr:
 node scripts/check-precache.js       # rutas del service worker vs. archivos reales
 node scripts/check-globals.js        # una misma función definida dos veces en un bundle
 node scripts/check-comprobante.js    # genera el comprobante en PDF y le lee el texto
+node scripts/check-opciones.js       # opciones A/B: que el pipeline NO sume las dos
 node scripts/check-apple-catalogo.js # importador de Apple: encabezado corrido, Model # y los dos archivos
 node scripts/check-apple-picker.js   # la flotante de Apple y la fila compartida con el catálogo
 node scripts/check-apple-manual.js   # alta/edición/baja de un artículo a mano en Apple

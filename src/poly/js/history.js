@@ -135,14 +135,37 @@ function renderHistory(){
     // Filtrar filas corruptas (sin SKU o descripción válidos)
     rows = rows.filter(function(r){ return r['SKU'] && r['SKU'] !== 'undefined' && r['Descripción'] && r['Descripción'] !== 'undefined'; });
     if(!rows.length) continue;
-    var gt=0; for(var ri=0;ri<rows.length;ri++) gt+=parseFloat(rows[ri]['Total'])||0;
+    /* Opciones A/B: el TOTAL de la tarjeta es el de la opción VIGENTE, que es la
+       única que se va a facturar. Las líneas de la otra se listan igual —para
+       eso está el historial— pero abajo, con su propio rótulo. */
+    var opcEf   = cevenOpcEfectivaDeFilas(rows);
+    var hayOpcB = cevenOpcHayBEnFilas(rows);
+    var gt=0;
+    for(var ri=0;ri<rows.length;ri++){
+      if(cevenOpcDe(rows[ri]) !== opcEf) continue;
+      gt += parseFloat(rows[ri]['Total'])||0;
+    }
+    // Con dos opciones, primero las de la vigente: es lo que se cotizó de verdad.
+    if(hayOpcB){
+      rows = rows.slice().sort(function(a,b){
+        return (cevenOpcDe(a) === opcEf ? 0 : 1) - (cevenOpcDe(b) === opcEf ? 0 : 1);
+      });
+    }
     // Todo lo que sigue sale de poly_cquotes, que sync.js baja de Supabase: cada
     // celda va por cevenEsc() y el N° de cotización viaja en un data-qn (nunca
     // interpolado dentro de un onclick).
     var qnA = cevenEsc(qn);
-    var trows='';
+    var trows='', opcPintada=null;
     for(var ri=0;ri<rows.length;ri++){
       var r=rows[ri];
+      // Rótulo de opción cada vez que cambia el bloque (solo si hay dos).
+      if(hayOpcB && cevenOpcDe(r) !== opcPintada){
+        opcPintada = cevenOpcDe(r);
+        trows += '<tr><td colspan="7" style="background:#f0f0f3;font-size:10px;font-weight:700;'
+          +'text-transform:uppercase;letter-spacing:.6px;color:#3a3a3c;padding:5px 10px">'
+          +'Opción '+cevenOpcLetra(opcPintada)
+          +(opcPintada===opcEf ? ' · vigente' : ' · alternativa (no suma al pipeline)')+'</td></tr>';
+      }
       trows+='<tr><td>'+cevenEsc(r['SKU'])+'</td><td class="wrap">'+cevenEsc(r['Descripción'])+'</td>'
         +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
         +'<td style="text-align:center">'+cevenEsc(r['Nota']||'—')+'</td>'
@@ -157,7 +180,9 @@ function renderHistory(){
     html+='<div class="hist-card'+mia+'" style="background:#fff;border-radius:12px;border:0.5px solid #d2d2d7;margin-bottom:13px;overflow:hidden">'
       +'<div class="hist-card-hdr" style="display:flex;align-items:center;gap:10px;padding:11px 14px;background:#f5f5f7;flex-wrap:wrap">'
         +'<input type="checkbox"'+(histSel[qn]?' checked':'')+' data-act="sel" data-qn="'+qnA+'" style="width:auto;accent-color:#1d1d1f">'
-        +'<div style="font-size:15px;font-weight:600;flex:1">Cotización #'+cevenEsc(qn)+'</div>'
+        +'<div style="font-size:15px;font-weight:600;flex:1">Cotización #'+cevenEsc(qn)
+          +(hayOpcB ? ' <span class="opc-chip" style="font-size:10px">2 opciones · vigente '+cevenOpcLetra(opcEf)+'</span>' : '')
+        +'</div>'
         +'<div style="font-size:11px;color:#6e6e73">'+cevenEsc(first['Fecha']||'')+' '+cevenEsc(first['Hora']||'')+'</div>'
         +'<button class="bs" data-act="comp" data-qn="'+qnA+'" title="Descargar el comprobante de esta cotización en PDF y abrirlo" style="color:#1f3864;border-color:#1f3864">🧾 Comprobante</button>'
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bs" data-act="edit" data-qn="'+qnA+'" style="color:#0071e3;border-color:#0071e3">✎ Editar</button>' : '')
@@ -169,7 +194,7 @@ function renderHistory(){
         +'<div><span class="lbl">OPG</span>'+cevenEsc(first['OPG']||'—')+'</div>'
         +'<div><span class="lbl">Proyecto</span>'+cevenEsc(first['Proyecto']||'—')+'</div>'
         +'<div><span class="lbl">Ejecutivo</span>'+cevenEsc(first['Ejecutivo']||'—')+'</div>'
-        +'<div style="margin-left:auto;text-align:right"><span class="lbl">Total</span><strong style="font-size:15px">USD '+fI(gt)+'</strong></div>'
+        +'<div style="margin-left:auto;text-align:right"><span class="lbl">Total'+(hayOpcB?' · Opción '+cevenOpcLetra(opcEf):'')+'</span><strong style="font-size:15px">USD '+fI(gt)+'</strong></div>'
       +'</div>'
       +'<div style="overflow-x:auto"><table style="min-width:560px">'
         +'<thead><tr><th>SKU</th><th>Descripción</th><th style="text-align:center">Qty</th><th style="text-align:center">Nota</th><th style="text-align:center">IVA</th><th style="text-align:right">P. Venta Unit.</th><th style="text-align:right">Total</th></tr></thead>'

@@ -86,6 +86,10 @@ function cargar(){
   vm.runInContext(lee('src/vendor/jspdf.umd.min.js'), ctx);
   vm.runInContext(lee('src/vendor/jspdf.plugin.autotable.min.js'), ctx);
   vm.runInContext(lee('src/shared/pdf-core.js'), ctx);
+  // opciones.js: el comprobante separa las opciones A/B de la cotización, así
+  // que necesita cevenOpcDe()/cevenOpcLetra()/cevenOpcLeyenda(). En el navegador
+  // se carga antes que comprobante.js en las dos marcas.
+  vm.runInContext(lee('src/shared/opciones.js'), ctx);
   vm.runInContext(lee('src/shared/comprobante.js'), ctx);
   return ctx;
 }

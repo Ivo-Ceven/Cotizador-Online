@@ -123,17 +123,38 @@ function renderHistory(){
     // Filtrar filas corruptas (sin SKU o descripción válidos)
     rows = rows.filter(function(r){ return r['SKU'] && r['SKU'] !== 'undefined' && r['Descripción'] && r['Descripción'] !== 'undefined'; });
     if(!rows.length) continue;
+    /* Opciones A/B: el TOTAL de la tarjeta es el de la opción VIGENTE, que es la
+       única que se va a facturar. Las líneas de la otra se listan igual —para
+       eso está el historial— pero abajo, con su propio rótulo. */
+    var opcEf   = cevenOpcEfectivaDeFilas(rows);
+    var hayOpcB = cevenOpcHayBEnFilas(rows);
     // El total sumaba TODAS las filas, garantías incluidas, mientras que la grilla
     // y el PDF suman sólo productos: la misma cotización figuraba con dos importes
     // distintos. Ahora se muestran separados y, si hay garantías, también la suma.
     var gtProd=0, gtWarr=0;
     for(var ri=0;ri<rows.length;ri++){
+      if(cevenOpcDe(rows[ri]) !== opcEf) continue;
       var amount = parseFloat(rows[ri]['Total'])||0;
       if(rows[ri]['Tipo']==='garantia') gtWarr += amount; else gtProd += amount;
     }
-    var trows='', wrows='', hasWarranty=false;
+    // Con dos opciones, primero las de la vigente: es lo que se cotizó de verdad.
+    if(hayOpcB){
+      rows = rows.slice().sort(function(a,b){
+        var oa = cevenOpcDe(a) === opcEf ? 0 : 1, obb = cevenOpcDe(b) === opcEf ? 0 : 1;
+        return oa - obb;
+      });
+    }
+    var trows='', wrows='', hasWarranty=false, opcPintada=null;
     for(var ri=0;ri<rows.length;ri++){
       var r=rows[ri];
+      // Rótulo de opción cada vez que cambia el bloque (solo si hay dos).
+      if(hayOpcB && cevenOpcDe(r) !== opcPintada && r['Tipo']!=='garantia'){
+        opcPintada = cevenOpcDe(r);
+        trows += '<tr><td colspan="7" style="background:#f0f0f3;font-size:10px;font-weight:700;'
+          +'text-transform:uppercase;letter-spacing:.6px;color:#3a3a3c;padding:5px 10px">'
+          +'Opción '+cevenOpcLetra(opcPintada)
+          +(opcPintada===opcEf ? ' · vigente' : ' · alternativa (no suma al pipeline)')+'</td></tr>';
+      }
       // SKU, Descripción y demás campos vienen de cquotes, que se sincroniza con
       // todo el equipo: se escapan antes de interpolarlos.
       if(r['Tipo']==='garantia'){
@@ -159,7 +180,8 @@ function renderHistory(){
     }
     var qnA = ' data-hqn="'+cevenEsc(qn)+'"';
     var totalBox = '<div style="margin-left:auto;text-align:right">'
-      +'<span class="lbl">Total productos</span><strong style="font-size:15px">USD '+fI(gtProd)+'</strong>'
+      +'<span class="lbl">Total productos'+(hayOpcB?' · Opción '+cevenOpcLetra(opcEf):'')+'</span>'
+      +'<strong style="font-size:15px">USD '+fI(gtProd)+'</strong>'
       +(hasWarranty
         ? '<div style="font-size:11px;color:#c84e00;margin-top:2px">+ Garantías USD '+fI(gtWarr)+'</div>'
           +'<div style="font-size:11px;color:#6e6e73">Total con garantías USD '+fI(gtProd+gtWarr)+'</div>'
@@ -172,7 +194,9 @@ function renderHistory(){
     html+='<div class="hist-card'+mia+'" style="background:#fff;border-radius:12px;border:0.5px solid #d2d2d7;margin-bottom:13px;overflow:hidden">'
       +'<div class="hist-card-hdr" style="display:flex;align-items:center;gap:10px;padding:11px 14px;background:#f5f5f7;flex-wrap:wrap">'
         +'<input type="checkbox"'+(histSel[qn]?' checked':'')+' data-hact="sel"'+qnA+' style="width:auto;accent-color:#1d1d1f">'
-        +'<div style="font-size:15px;font-weight:600;flex:1">Cotización #'+cevenEsc(qn)+'</div>'
+        +'<div style="font-size:15px;font-weight:600;flex:1">Cotización #'+cevenEsc(qn)
+          +(hayOpcB ? ' <span class="opc-chip" style="font-size:10px">2 opciones · vigente '+cevenOpcLetra(opcEf)+'</span>' : '')
+        +'</div>'
         +'<div style="font-size:11px;color:#6e6e73">'+cevenEsc(first['Fecha']||'')+' '+cevenEsc(first['Hora']||'')+'</div>'
         +'<button class="bs" data-hact="comp"'+qnA+' title="Descargar el comprobante de esta cotización en PDF y abrirlo" style="color:#1f3864;border-color:#1f3864">🧾 Comprobante</button>'
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bs" data-hact="edit"'+qnA+' style="color:#0071e3;border-color:#0071e3">✎ Editar</button>' : '')
