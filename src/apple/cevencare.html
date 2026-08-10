@@ -27,6 +27,10 @@
      eso se redirige la ventana de arriba cuando es accesible.
      ============================================================ -->
 <script src="../shared/safe.js"></script>
+<!-- notify.js: esta mini-app también avisa con los carteles de la app y no con
+     alert() del navegador. Además es lo que hace que cevenLsSet() (safe.js) use
+     el cartel en vez de su fallback a alert(). -->
+<script src="../shared/notify.js"></script>
 <script src="../shared/config.js"></script>
 <script src="../shared/auth.js"></script>
 <script>

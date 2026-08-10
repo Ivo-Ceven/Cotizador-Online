@@ -749,7 +749,7 @@ function sendPlanToCotizador(btn) {
     btn.style.background = '#34c759';
     setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1400);
   } else {
-    alert('Abrí CevenCare desde dentro del cotizador para transferir garantías.');
+    showToast('Abrí CevenCare desde dentro del cotizador para transferir garantías.');
   }
 }
 
@@ -780,7 +780,7 @@ function sendToCotizador() {
       setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 1800);
     }
   } else {
-    alert('Abrí CevenCare desde dentro del cotizador para poder transferir las garantías.');
+    showToast('Abrí CevenCare desde dentro del cotizador para poder transferir las garantías.');
   }
 }
 

@@ -19,8 +19,10 @@ window.CEVEN_BRAND = {
   /* --- Sincronizacion (shared/sync.js) ------------------------------ */
 
   // Nombres BASE, sin prefijo: sync.js les antepone `prefix`.
+  // `cpapelera` sincroniza como una mas: la papelera es del EQUIPO, no del
+  // dispositivo donde se borro (ver shared/papelera.js).
   settingKeys: ['cquotes','cpl','carchive','cnac','cqc','cclientes','ctarget','ctarget_manual',
-                'clogo','clogo_dark','cnac_mac24_v2'],
+                'clogo','clogo_dark','cnac_mac24_v2','cpapelera'],
 
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','ejecutivo','mesCierre','estado',
     'qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad','montoAcc','montoServ',

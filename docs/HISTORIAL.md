@@ -23,6 +23,271 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 10/08/2026 · Apple se pone al día con Poly: sin diálogos nativos, con flotante y con la tabla legible
+
+Cuatro cosas que Poly ya tenía y Apple no. No son mejoras sueltas: eran la misma
+app comportándose distinto según la marca.
+
+### Ningún `alert()` ni `confirm()` más
+
+Apple tenía **44 `alert(`, 17 `confirm(` y 3 `prompt(`**; Poly había quedado en
+uno de cada uno. El criterio, el mismo que ya estaba escrito en `notify.js`:
+
+- un error, una validación o un permiso denegado se avisa con `showToast()`;
+- una acción destructiva **se hace** y el cartel ofrece **Deshacer**, en vez de
+  preguntar antes. Nunca se pierde el clic y nunca se bloquea la pantalla;
+- `confirmModal()` queda para lo irreversible que además recarga la página
+  (restaurar un backup), que vive en `shared/`.
+
+No es estético: `alert()` **congela el renderer** —por eso cuelga cualquier
+driver CDP, ya está anotado en las trampas del entorno— y en una PWA instalada se
+ve como un cartel del navegador, no de la app.
+
+Lo que ganó cada pantalla:
+
+- **Historial**: borrar ya no pregunta; borra, deja la cotización en la papelera
+  30 días y ofrece Deshacer en el acto (Poly hacía exactamente esto desde el 07/08).
+- **Catálogo**: "Eliminar SKU LL/A" y "E/A" se unificaron en `_catBajaMasiva()`
+  con Deshacer. Además, si el guardado falla ahora **se revierte en memoria**:
+  antes la pantalla quedaba sin los SKU y el localStorage con ellos, o sea que
+  "se borraron" duraba hasta el próximo reload.
+- **Pipeline**: agregar sobre una cotización que ya estaba, unir líneas, quitar
+  los overrides de un SKU y eliminar una fila pasan por `pushPipeUndo()` /
+  `pushPipeUndoInsert()` / `pushPipeUndoRemove()` (`shared/undo.js`, que Apple ya
+  cargaba pero casi no usaba). Los links de OV y de OC parcial se editan con
+  `promptModal()`; el pipeline se **relee dentro del callback**, porque entre que
+  se abre el modal y se acepta puede haber entrado el poll de 15 s.
+- **Nueva / copiar / cargar del historial**: `_snapshotQuoteState()` y
+  `_restoreQuoteState()`, portados de Poly y ampliados con **garantías CevenCare
+  y overrides de nacionalización** —que Poly no tiene—: sin eso, Deshacer
+  devolvía los productos y se comía las CevenCare. Deshacer una copia además la
+  **borra de `cquotes`**, no solo repinta la pantalla.
+- **CevenCare** (`cevencare.html`) ahora carga `shared/notify.js`, así que su
+  aviso también es un cartel de la app — y de paso `cevenLsSet()` deja de caer en
+  su fallback a `alert()`.
+
+### La subpantalla flotante de productos
+
+`+ Agregar producto` abría la vista Catálogo entera: elegías con checkboxes,
+apretabas "Agregar (N)" y recién al volver veías qué había quedado. Ahora abre la
+misma capa flotante que estrenó Poly el 05/08: arriba el catálogo con un `＋` por
+producto (`✓` si ya está), abajo lo que la cotización lleva, con cantidades,
+total y `×`.
+
+Para que las dos tablas no se despeguen, la fila se pinta con **una sola**
+función (`_catRowHTML()`) y el alta pasa por **un solo** camino
+(`_sumarProductoAItems()`). Eso es lo que verifica `check-apple-picker.js`: si el
+alta de a uno y el alta en lote se desincronizaran, un producto entraría con un
+precio distinto según por dónde se lo agregó, sin ningún error a la vista.
+
+Dos diferencias con el de Poly, a propósito:
+
+- **Direcciona por `data-pid`** (id de producto) y no por índice de fila. Poly
+  necesita dos registros (`data-i` / `data-pi`) porque referencia por posición;
+  en Apple el id es único y sobrevive al round-trip por atributo, incluso el
+  string de un artículo manual (`pm_1730…_3`).
+- La fila muestra **costo, costo nacionalizado y precio de venta** con el margen
+  global del momento, los tres del mismo `_catCalc()` que usa la vista Catálogo.
+  El FOB y el flag "precio ya nacionalizado" se respetan igual que en el alta en
+  lote.
+
+`openCat()` sigue existiendo: es el camino de "editar ítem", que sí necesita la
+vista entera.
+
+### La tabla del catálogo entra en pantalla
+
+Misma pasada que Poly: **SKU y los tres importes en px** y todo lo que sobra a
+Descripción (eran porcentajes, así que en una pantalla ancha el SKU se llevaba
+150 px vacíos mientras la descripción salía con puntos suspensivos), `min-width`
+para que en el celular la tabla **scrollee** dentro de `.tw` en vez de aplastarse,
+y las tres chapitas —`manual`, `NAC✓`, `⚠ Revisar costo`— **mudadas del SKU a
+Descripción**, que es la única celda que puede crecer.
+
+### El precio del artículo manual, en es-AR
+
+Era `type=number` + `parseFloat`: tipear **"1.250,50"** con el teclado es-AR
+dejaba el campo vacío, y si entraba, `parseFloat` cortaba en el primer punto y
+guardaba **1,25**. Ahora es `type=text inputmode=decimal` + `cevenParseMoney()`,
+el mismo parser que los importes de la cotización, y al reeditar el campo vuelve
+formateado con `fD()`. De paso, `_catPintarFiltros()` conserva el filtro elegido:
+dar de alta un artículo reseteaba Model y País a "Todos".
+
+Quedan `check-apple-picker.js` (27 chequeos) y `check-apple-manual.js` (17),
+que corren las funciones reales contra un DOM de mentira.
+
+---
+
+## 10/08/2026 · El price list de Apple se carga como viene: dos archivos y el SKU de verdad
+
+Los archivos que manda Apple (`APPLE Price list A …` + `APPLE Price list FTZ A …`)
+no se podían cargar con el botón de carga. Tres problemas distintos, uno arriba
+del otro, en `apple/js/catalog.js`:
+
+**1. El encabezado está en la fila 5, no en la 1.** Arriba hay cuatro renglones
+de avisos ("The models listed below are currently impacted by import tariffs…").
+`sheet_to_json()` tomaba la primera fila como encabezado, que está vacía, y
+devolvía columnas `__EMPTY`, `__EMPTY_1`… La carga moría con **"No se encontró
+Selling Price"** y no había forma de importar el catálogo. Ahora `_plHeaderIdx()`
+busca la fila del encabezado; pide **dos** nombres conocidos en la misma fila
+porque el preámbulo tiene una celda suelta que dice "SKU" y no es la tabla.
+
+**2. El SKU estaba saliendo de la columna equivocada.** El archivo trae `SKU`
+(un código interno de Apple, `321D38`) y `Model #` (`MD4P4LE/A`, el que se
+cotiza, se factura y viaja al pipeline). La carga completa usaba `SKU` y
+**"Actualizar precios" usaba `Model #`**: los dos botones producían catálogos con
+identificadores distintos, así que actualizar precios sobre un catálogo cargado
+no actualizaba nada — agregaba los 528 productos otra vez como "nuevos" y dejaba
+los viejos marcados "a revisar". Ahora las columnas se resuelven en una sola
+función (`_plCols()`) que usan los dos caminos, y el SKU es `Model #`. Con él se
+cargan **`Country`, `Description` y `Selling Price`**; `LOB` y `Model` se siguen
+guardando porque de ahí salen los filtros del catálogo y el matching de `getNac()`.
+
+**3. El catálogo viene partido en dos archivos.** El input aceptaba uno solo, así
+que cargar el segundo borraba el primero y el catálogo quedaba a la mitad
+(285 o 257 productos en vez de 528). Ahora `handlePL()` toma varios y los pliega
+juntos. Los dos archivos se pisan en **14 SKU** y en 4 de ellos el FTZ vale unos
+dólares más (el arancel): se conserva el **precio más alto**, mismo criterio que
+ya usaba el merge de precios, porque cotizar de menos sale plata.
+
+Lo que **no** cambió: `📂 Cargar Excel/CSV` sigue reemplazando el catálogo entero
+—y con él los productos manuales—, y `💲 Actualizar precios` sigue siendo el
+camino que conserva lo que ya hay. Ahora los dos leen el archivo igual.
+
+Queda `scripts/check-apple-catalogo.js`, que corre el importador real. Sin
+argumentos usa un banco con la misma forma que los archivos (preámbulo, `SKU`
+interno al lado de `Model #`, un SKU repetido más caro en el FTZ, un precio
+tipeado en formato es-AR), porque los `.xlsx` son datos de trabajo y están en
+`.gitignore`; con los archivos reales pasados por línea de comandos corre los
+chequeos genéricos contra ellos (528 productos de 542 filas, ningún SKU repetido,
+todos con forma de `Model #`). Este importador no tiraba excepción al romperse:
+salía un catálogo con los códigos equivocados, y eso se ve recién cuando el
+cliente recibe una cotización con un SKU que no reconoce.
+
+`APP_VERSION` → 6.0.
+
+---
+
+## 07/08/2026 · Catálogo de Poly: artículos manuales completos y filas a la mitad
+
+### Un artículo cargado a mano ya se cotiza como cualquier otro
+
+Tenía **solo SKU y descripción**. Salía con "—" en la columna de precios,
+`precioDeCatalogo()` devolvía null y había que tipear el importe **en cada
+cotización, todas las veces**. Ahora el formulario lleva lo mismo que trae un
+producto del ERP: precios por nivel, categoría, stock e IVA. Cargado una vez, se
+cotiza solo al nivel que tenga la cotización.
+
+Los inputs de precio los arma `products.js` leyendo `CEVEN_BRAND.priceTiers`, no
+están en el HTML: sumar o sacar un nivel se hace en `brand.js` y la pantalla lo
+sigue. La categoría va con un `<datalist>` de los rubros que ya existen, pero se
+puede escribir uno nuevo — la lista sale del Excel y cambia en cada importación.
+
+Tres reglas que parecen detalles y no lo son (están en `check-poly-manual.js`):
+
+- **Un precio vacío no es 0.** Vacío = "ese nivel no aplica" y la línea se
+  completa a mano; 0 = sin cargo y se cotiza en cero. Guardar el vacío como 0
+  haría que un servicio saliera cotizado en cero sin que nadie lo note.
+- **Stock vacío (`null`, "sin dato") no es 0 ("agotado")**, la misma distinción
+  que ya respetaba el importador.
+- Los precios se tipean en **formato es-AR** ("1.250,50"), así que el campo es
+  `type=text` + `cevenParseMoney()`: un `type=number` rechaza la coma decimal.
+
+Al editar, los campos se asignan **uno por uno** en vez de reemplazar el objeto:
+la fila puede traer cosas que este formulario no edita y reemplazarla las perdía.
+
+### La tabla del catálogo entraba en pantalla, ahora sí
+
+Los 4 niveles de precio iban **uno debajo del otro**: cada fila medía ~83 px y el
+catálogo entero (77 productos) pasaba los 6.000 px, con la columna Descripción
+medio vacía al lado. En dos columnas (`.cat-tiers`, en `base.css`) la fila bajó a
+**51 px** y los 6 productos de prueba entran de una en la pantalla.
+
+De paso, en la misma pasada:
+
+- **Anchos**: SKU y Precios en px (su contenido no crece con la ventana) y todo
+  lo que sobra a Descripción, que es lo único que se cortaba.
+- La chapita **"manual" se mudó a Descripción**, al lado de la de categoría: con
+  el SKU a 130 px, la chapita le comía lugar y el propio SKU salía con puntos
+  suspensivos.
+- **`min-width` en la tabla**: las columnas fijas suman ~564 px, así que en un
+  celular Descripción se aplastaba a nada. Ahora scrollea dentro de `.tw`.
+- El **estado vacío** decía "No hace falta precio — se carga a mano en cada
+  cotización", que dejó de ser cierto cuando el archivo del ERP empezó a traer
+  los cuatro niveles.
+
+Los colores salen de los tokens `--ct1`/`--ct3`, así que el modo oscuro se da
+vuelta solo (verificado en el navegador, claro y oscuro).
+
+---
+
+## 07/08/2026 · Papelera: lo eliminado se guarda 30 días
+
+Eliminar del historial sacaba las filas de `cquotes` y listo. Había un
+"Deshacer" en el cartel, pero dura lo que dura el toast: si te dabas cuenta un
+minuto después, no había forma de recuperar la cotización.
+
+Ahora pasa a `cpapelera` y se puede restaurar durante 30 días
+(`CEVEN_PAPELERA_DIAS`). El "Deshacer" del cartel sigue estando —es el camino
+rápido para el error inmediato— y al usarlo la entrada sale también de la
+papelera, para que la cotización no aparezca en los dos lados.
+
+Está en `shared/papelera.js`, en las **dos marcas**, dentro de un `<details>`
+cerrado al pie del Historial.
+
+### El orden de las dos escrituras
+
+Borrar son dos escrituras: meter en `cpapelera` y sacar de `cquotes`. Se hace
+siempre en ese orden, y **si la primera falla no se hace la segunda**. Por dos
+razones distintas que terminan igual:
+
+- **Cuota llena.** `cevenLsSet()` devuelve `false` cuando localStorage no entra.
+  Sacando primero de `cquotes`, la cotización desaparecía de las dos partes.
+- **Sync.** `cquotes` y `cpapelera` son dos claves de `app_settings` con su
+  propio last-write-wins: puede subir una y la otra no. Con este orden el peor
+  caso es un duplicado (se ve y se arregla); al revés, el peor caso es la
+  pérdida.
+
+Por lo mismo, borrar varias seleccionadas es **una sola escritura**
+(`cevenPapeleraTirarVarias`): si la séptima fallara, antes quedaban seis en la
+papelera con sus cotizaciones todavía en el historial.
+
+### Decisiones
+
+- **Sincroniza**: `cpapelera` está en `settingKeys` de los dos `brand.js`, así
+  que la papelera es del equipo. Borrás en la notebook y restaurás desde la PC.
+  Entra sola al backup, que se arma de `settingKeys`.
+- **La purga corre en cada arranque**, no al abrir el Historial: una cotización
+  tiene que dejar de existir a los 30 días aunque nadie mire nunca la papelera.
+  Solo escribe si venció algo — si no, cada carga de cada dispositivo marcaría
+  la clave como sucia y dispararía un push al pedo.
+- **Restaurar sobre un número que ya existe se rechaza.** Mezclaría las líneas
+  de dos cotizaciones distintas bajo el mismo número, y eso no se ve hasta que
+  alguien abre el PDF.
+- **Una entrada con fecha ilegible no se purga.** Ante la duda no se tira nada.
+- **Los permisos valen también acá**: la papelera es compartida, así que
+  restaurar y eliminar definitivamente pasan por `cevenCanEditQuote()`. "Vaciar
+  papelera" saca solo lo que el usuario puede eliminar, y dice cuánto quedó
+  afuera en vez de dejar una papelera "vaciada" con cosas adentro.
+
+### Verificación
+
+`scripts/check-papelera.js` (nuevo, 49 chequeos). El que más importa es el de
+atomicidad: con la cuota fallando **solo** para `cpapelera`, se comprueba que el
+historial no se haya tocado. También la purga (31 días se va, 29 se queda), los
+días restantes, el rechazo al restaurar sobre un número existente y los
+permisos. No se mockea el reloj: las entradas de prueba se escriben con la fecha
+de borrado ya corrida hacia atrás.
+
+Además, probado en el navegador: restaurar desde la papelera devuelve las dos
+líneas a `cquotes`, saca la entrada y actualiza el contador.
+
+### Pendiente
+
+Eliminar una cotización **no** toca el pipeline: si esa cotización tenía una
+fila en `cpipeline`, sigue ahí. Era así antes de la papelera y no se cambió.
+
+---
+
 ## 07/08/2026 · Encabezado del comprobante unificado y la entrega como selector
 
 Dos pedidos sobre los documentos que ve el cliente.

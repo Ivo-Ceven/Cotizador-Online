@@ -487,7 +487,9 @@
     },
     clogo:      function(){ if(typeof applyLogo === 'function') applyLogo(); },
     clogo_dark: function(){ if(typeof applyLogo === 'function') applyLogo(); },
-    cquotes:    function(){ if(visible('p-history') && typeof renderHistory === 'function') renderHistory(); }
+    cquotes:    function(){ if(visible('p-history') && typeof renderHistory === 'function') renderHistory(); },
+    // Otro dispositivo borró, restauró o purgó: la papelera es compartida.
+    cpapelera:  function(){ if(visible('p-history') && typeof renderPapelera === 'function') renderPapelera(); }
   };
   function applyChanged(changedRealKeys){
     for(var k in changedRealKeys){

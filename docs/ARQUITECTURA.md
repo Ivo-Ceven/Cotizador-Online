@@ -27,7 +27,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `theme.js` | Copia `CEVEN_BRAND.theme` a las variables CSS `--acc`/`--acc-h`/`--acc-soft`/`--acc-dk`. Es todo el color de marca: filete de la barra superior, vista activa, botón Guardar, links y foco. El shell no tiene marca y se queda con el default de `base.css` |
 | `monthpicker.js` | Campo de mes/año (el "cierre estimado"): un `<button>` que abre una grilla de 12 meses con el año arriba. `cevenMonthField()` devuelve el HTML, `cevenMonthSet()` lo escribe desde código y `cevenMesLabel()` formatea `2026-11` → `Nov 2026`. El botón expone `value` y dispara `change` igual que el `<select>` que reemplazó |
 | `navbar.js` | Barra superior de todas las páginas: chip de marca, un ítem por vista (leídos de `CEVEN_BRAND.navItems`) y el bloque de cuenta (dark mode, usuarios, quién sos + rol, contraseña, salir). `cevenNavbarSync()` marca la vista activa y esconde lo que el rol no puede usar |
-| `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos |
+| `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos. **No quedan diálogos nativos en ninguna marca** (desde 10/08/2026 en Apple): un error o una validación se avisa con `showToast()`, y una acción destructiva se **aplica** y se ofrece `notifyUndo()` en vez de preguntar antes. `confirmModal()` queda reservado para lo irreversible que además recarga la página (restaurar un backup). El motivo no es estético: `alert()` congela el renderer —y con él cualquier driver de test— y en la PWA se ve como un cartel del navegador, no de la app |
 | `todos.js` | Tareas del equipo: **store y sincronización**, no UI (tablas `todos` y `equipos` + RPC `ceven_equipo`, poll cada 15 s). Expone `window.cevenTareas`. Lo usan el shell (solo para la pastilla de pendientes) y `tareas/js/board.js`. Ojo con los nombres: `personas()` es la **gente**, `equipos()` son los **tableros** |
 | `comprobante.js` | Comprobante de una cotización (botón 🧾 en cada tarjeta del historial, en las dos marcas). **Se descarga como PDF y se abre solo.** Se dibuja con jsPDF + autotable, no con html2canvas: el texto se selecciona y se busca, a diferencia de `pdf-core.js`, que rasteriza. Al ser todo sincrónico el `window.open` cae dentro del gesto del click y el navegador no lo bloquea. Los datos del emisor salen de `CEVEN_EMISOR` en `config.js`. Ojo con `cevenCompSan()`: las fuentes estándar del PDF no dibujan `– — “ ” …`, hay que pasar por ahí todo lo que se imprima |
 | `pwa.js` | Registro del service worker, aviso de versión nueva, botón instalar, pastilla de cambios pendientes |
@@ -89,17 +89,17 @@ Módulos propios de Apple (`src/apple/js/`):
 |---|---|
 | `state.js` | Variables globales (`products`, `items`, `warrantyItems`…), dark mode, constantes `NAC_DEF`, `MODEL_CATEGORY`, `IVA_MAP`, `COLS`, migraciones de tasas NAC, chequeo de recuperación de datos al arrancar, contador `qNum` |
 | `pricing.js` | Lo que era exclusivo de Apple en el viejo `utils.js`: margen global, `calcP()` (fórmula de precio), `getNac()` (matching de % nacionalización), `getIVA()`, `recalcMarginsFromGlobal()`. Lo genérico se fue a `shared/ui-core.js` |
-| `catalog.js` | Carga de price list (Excel/CSV), actualización de precios, limpieza de SKUs LL/A y E/A, búsqueda (incl. pegado masivo de SKUs), render del catálogo, `addToQuote()` |
+| `catalog.js` | Carga de price list (Excel/CSV), actualización de precios, limpieza de SKUs LL/A y E/A, búsqueda (incl. pegado masivo de SKUs), render del catálogo, `addToQuote()`. Ver "El price list de Apple" abajo |
 | `quote.js` | Render de la cotización (`renderQ`), orden por familia, qty/margen/precio por ítem, modal de edición de ítem |
 | `nac.js` | Página de % nacionalización global + overrides por cotización + diagnóstico |
-| `products.js` | Alta/edición/baja de artículos manuales del price list |
+| `products.js` | Alta/edición/baja de artículos manuales del price list. En **Poly** el artículo manual lleva lo mismo que uno del ERP —precios por nivel, categoría, stock e IVA— y los campos de precio los arma el propio módulo desde `CEVEN_BRAND.priceTiers`, así que no están en el HTML |
 | `quotes-db.js` | Persistencia de cotizaciones en `cquotes` (guardar/sobrescribir, nueva, copiar, editar desde historial, export Excel) |
 | `pipeline-data.js` | Storage del pipeline (`cpipeline`) y archivo mensual (`carchive`), `archiveOldEntries()` |
 | `pipeline-core.js` | `categorize()` (familia de cada ítem), `addToPipeline()`, limpieza de filtros |
 | `archive-view.js` | Render de meses archivados, restaurar/mover entradas |
 | `pipeline-view.js` | Filtros, orden, dashboard KPI y render de la tabla del pipeline |
 | `pipeline-detail.js` | Fila expandible por cotización: estado/mes/OV por SKU, entregas parciales (filas virtuales, merge y disolución de grupos), export Excel del pipeline |
-| `picker.js` | **Solo Poly.** Subpantalla flotante para agregar productos sin salir de la cotización: arriba el catálogo con un `+` por producto, abajo lo que la cotización ya lleva (cantidades, total, `×`). Comparte `_catRowHTML()` con `catalog.js` para que las dos tablas no se despeguen; direcciona sus filas con `data-pi` contra su propio registro, porque el catálogo usa `data-i` |
+| `picker.js` | Subpantalla flotante para agregar productos sin salir de la cotización: arriba el catálogo con un `+` por producto, abajo lo que la cotización ya lleva (cantidades, total, `×`). Comparte `_catRowHTML()` con `catalog.js` para que las dos tablas no se despeguen. **En Poly** direcciona sus filas con `data-pi` contra su propio registro, porque el catálogo usa `data-i`; **en Apple** las dos usan `data-pid` (el id del producto es único y sobrevive al round-trip por atributo, incluso el string de un artículo manual), así que no hace falta un segundo registro. Los estilos `.pk-*` son compartidos y viven en `base.css` |
 | `history.js` | Historial de cotizaciones: filtros, selección, borrado |
 | `pdf.js` | Generación de PDF (html2canvas + jsPDF) de la cotización actual y de seleccionadas |
 | `warranties.js` | Garantías CevenCare: render, integración por `postMessage`, sugerencia automática de garantía para Macs (tabla `MAC_WARRANTIES_3Y`), modal Cliente Final/Canal. **Acá corre el init** (`renderQ()`, defaults de fecha/pago) |
@@ -231,6 +231,31 @@ La tabla de arriba usa los nombres de Apple. **Poly usa los mismos con el prefij
 
 Qué se sincroniza lo dice `settingKeys` en `brand.js`, no una lista en este doc — Apple sincroniza 10 claves y Poly 6 (no tiene nacionalización ni target). `cpipeline` va a su propia tabla, fila por fila. `_sync_dirty` (la cola de pendientes) es local por diseño y **nunca** debe entrar en `settingKeys`.
 
+## El price list de Apple
+
+El catálogo de Apple **viene partido en dos Excel** que hay que cargar juntos: la
+lista normal (`APPLE Price list A …`) y la FTZ (`APPLE Price list FTZ A …`). Tres
+cosas de esos archivos están cableadas en `apple/js/catalog.js`:
+
+- **El encabezado no está en la primera fila**: arriba hay cuatro renglones de
+  avisos de Apple. `_plHeaderIdx()` busca la fila que tenga **dos** encabezados
+  conocidos (una celda suelta que diga "SKU" en el texto de arriba no alcanza).
+- **El SKU nuestro es la columna `Model #`** (`MD4P4LE/A`), no la columna `SKU`,
+  que es un código interno corto de Apple (`321D38`) que no matchea con nada.
+  Junto con `Model #` se cargan `Country`, `Description` y `Selling Price`;
+  `LOB` y `Model` se guardan además porque de ahí salen los filtros del catálogo
+  y el matching de `getNac()`.
+- **Los dos archivos se pisan en algunos SKU** (14 en la lista de 06/2026) y en
+  unos pocos el precio del FTZ es mayor. `_plFold()` pliega por `Model #` y
+  **se queda con el precio más alto**: cotizar de menos sale plata.
+
+`📂 Cargar Excel/CSV` reemplaza el catálogo entero (y con él los productos
+manuales); `💲 Actualizar precios` mergea sobre lo que ya hay, marca `needsReview`
+lo que no apareció y conserva los manuales. Los dos caminos comparten
+`_plCols()`/`_plFold()`, así que no pueden discrepar sobre cuál es el SKU — que
+es justo lo que pasaba antes: la carga completa guardaba el código interno y la
+actualización buscaba por `Model #`, así que "actualizar" duplicaba el catálogo.
+
 ## Fórmula de precio
 
 `calcP(base, nac, mg) = round( base · (1 + nac/100) / (1 − mg/100) )` — costo base + % nacionalización según modelo (tabla NAC con overrides por cotización), dividido por (1 − margen). Cotizaciones "FOB" (observaciones que empiezan con `FOB`) fuerzan NAC = 0.
@@ -251,8 +276,12 @@ No hay tests. Lo mínimo que conviene correr:
 node scripts/check-precache.js       # rutas del service worker vs. archivos reales
 node scripts/check-globals.js        # una misma función definida dos veces en un bundle
 node scripts/check-comprobante.js    # genera el comprobante en PDF y le lee el texto
+node scripts/check-apple-catalogo.js # importador de Apple: encabezado corrido, Model # y los dos archivos
+node scripts/check-apple-picker.js   # la flotante de Apple y la fila compartida con el catálogo
+node scripts/check-apple-manual.js   # alta/edición/baja de un artículo a mano en Apple
 node scripts/check-poly-catalogo.js  # importador de Poly: tiers, stock e IVA
 node scripts/check-poly-tiers.js     # niveles de precio de Poly
+node scripts/check-poly-manual.js    # alta/edición de un artículo a mano
 node scripts/check-poly-netsuite.js  # el link de Netsuite del pipeline
 node --check src/<archivo>.js        # sintaxis de lo que tocaste
 ```
@@ -262,6 +291,13 @@ dentro del archivo (jsPDF no comprime los content streams, así que se puede lee
 con una expresión regular). Existe porque un error de dibujo **no tira
 excepción**: sale un PDF con una columna corrida o sin condiciones comerciales, y
 eso lo ve recién el cliente. Con `--guardar` deja el PDF para mirarlo.
+
+`check-apple-catalogo.js` corre sin argumentos contra un banco que **imita la
+forma** de los dos price list (avisos antes del encabezado, `SKU` interno junto a
+`Model #`, un SKU repetido más caro en el FTZ), porque los `.xlsx` reales son
+datos de trabajo y están en `.gitignore`. Si los tenés a mano se le pasan por
+línea de comandos y corre los chequeos genéricos contra ellos:
+`node scripts/check-apple-catalogo.js "APPLE Price list A ….xlsx" "APPLE Price list FTZ A ….xlsx"`.
 
 `check-globals.js` existe porque acá todos los `<script>` comparten scope: si dos archivos definen la misma función, **el que carga después pisa al anterior sin ningún error**. Pasó con `openSkuOvLink`/`editSkuOvLink`, duplicadas en `pipeline-detail.js` desde el corte del monolito hasta que un review las encontró; la que corría era la de abajo y la otra era código muerto que alguien podía leer y creer vigente. El riesgo creció con `shared/`: una función movida a compartido puede chocar con una copia que quedó en la marca.
 

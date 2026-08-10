@@ -81,10 +81,16 @@ function setQuoteNacOverride(model, v){
 }
 
 function clearQuoteNac(){
-  if(!Object.keys(quoteNacOverrides).length){ alert('No hay overrides para limpiar.'); return; }
-  if(!confirm('¿Quitar todos los overrides de % Nacionalización de esta cotización? Volverá a usarse el preset global.')) return;
+  if(!Object.keys(quoteNacOverrides).length){ showToast('No hay overrides para limpiar.'); return; }
+  // Se limpia y se avisa con "Deshacer": los overrides quedan en el snapshot, no
+  // en un confirm() que hay que contestar antes de ver el efecto.
+  var previos = quoteNacOverrides;
   quoteNacOverrides = {};
   renderQuoteNac();
+  notifyUndo('Quitaste los overrides de % Nacionalización de esta cotización — vuelve a usarse el preset global.', function(){
+    quoteNacOverrides = previos;
+    renderQuoteNac();
+  });
 }
 
 function applyQuoteNac(){

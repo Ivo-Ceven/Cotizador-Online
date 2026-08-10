@@ -282,25 +282,39 @@ function renderArchiveDetailRow(r, db){
 }
 
 function restoreFromArchive(monthKey, id){
-  if(!confirm('¿Restaurar esta entrada al pipeline activo?')) return;
   var archive = getArchive();
   var entries = archive[monthKey] || [];
   var toRestore = null;
   archive[monthKey] = entries.filter(function(r){ if(String(r.id)===String(id)){ toRestore=r; return false; } return true; });
   if(!archive[monthKey].length) delete archive[monthKey];
-  if(toRestore){
-    // La entrada volvía al pipeline con estado 'Facturado' y su mesCierre viejo,
-    // que es exactamente la condición que archiveOldEntries() vuelve a archivar
-    // en la siguiente entrada al pipeline: "Restaurar" no hacía nada visible.
-    // Se le mueve el cierre al mes actual, igual que moveArchiveEntryMonth().
-    toRestore.mesCierre = currentMonthKey();
-    var pipe = getPipeline();
-    pipe.push(toRestore);
-    savePipeline(pipe);
-  }
+  if(!toRestore){ showToast('No se encontró esa entrada en el archivo.'); return; }
+
+  // La entrada volvía al pipeline con estado 'Facturado' y su mesCierre viejo,
+  // que es exactamente la condición que archiveOldEntries() vuelve a archivar
+  // en la siguiente entrada al pipeline: "Restaurar" no hacía nada visible.
+  // Se le mueve el cierre al mes actual, igual que moveArchiveEntryMonth().
+  // Se restaura una COPIA para que el original —con su mes— quede intacto para
+  // el deshacer.
+  var restored = JSON.parse(JSON.stringify(toRestore));
+  restored.mesCierre = currentMonthKey();
+  var pipe = getPipeline();
+  pipe.push(restored);
+  savePipeline(pipe);
   saveArchive(archive);
   renderPipeline();
-  showToast('↩ Entrada restaurada al pipeline (cierre movido al mes actual)');
+
+  notifyUndo('↩ Restaurada al pipeline actual — el cierre estimado se movió a este mes.', function(){
+    var archive2 = getArchive();
+    var pipe2 = getPipeline().filter(function(r){ return String(r.id) !== String(id); });
+    savePipeline(pipe2);
+    if(!archive2[monthKey]) archive2[monthKey] = [];
+    // Sin este chequeo la fila se DUPLICABA en el archivo: undoPipelineChange()
+    // (u otra restauración) podía haberla devuelto ya, y el push era ciego.
+    var yaEsta = archive2[monthKey].some(function(x){ return String(x.id) === String(id); });
+    if(!yaEsta) archive2[monthKey].push(toRestore);
+    saveArchive(archive2);
+    renderPipeline();
+  });
 }
 
 function moveArchiveEntryMonth(fromKey, id, toKey){

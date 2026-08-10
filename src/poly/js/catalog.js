@@ -330,11 +330,11 @@ function _catPreciosHTML(p){
   for(var i=0;i<tiers.length;i++){
     var v = pr[tiers[i].v];
     if(typeof v !== 'number') continue;
-    h += '<div style="font-size:11px;line-height:1.45">'
-       + '<span style="color:#aeaeb2">'+cevenEsc(tiers[i].lbl)+'</span> '
-       + '<strong style="color:#1d1d1f;font-weight:600">'+cevenEsc(fD(v))+'</strong></div>';
+    // Dos columnas (.cat-tiers en base.css): apilados verticalmente, los cuatro
+    // niveles hacían una fila de ~83px y el catálogo no se podía recorrer.
+    h += '<span class="cat-tier"><i>'+cevenEsc(tiers[i].lbl)+'</i><b>'+cevenEsc(fD(v))+'</b></span>';
   }
-  if(h) return h;
+  if(h) return '<div class="cat-tiers">'+h+'</div>';
   // fD() sobre un listPrice que llegó como string lo devuelve tal cual
   // (String.prototype.toLocaleString ignora los argumentos) → también escapa.
   return p.listPrice ? cevenEsc('USD '+fD(p.listPrice)) : '—';
@@ -383,10 +383,14 @@ function _catRowHTML(p, idx, idAttr, opts){
           +' style="padding:3px 10px;font-size:13px;line-height:1.2">'+(enq?'✓':'+')+'</button>'
       +'</td>'
       : '')
-    +'<td style="font-weight:500">'+cevenEsc(p.sku)+(p.manual?' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 5px;border-radius:8px;margin-left:4px">manual</span>':'')+'</td>'
+    +'<td style="font-weight:500">'+cevenEsc(p.sku)+'</td>'
+    /* Las chapitas van todas en Descripción, que es la única celda que puede
+       crecer. La de "manual" estaba pegada al SKU y, con la columna a 130px, el
+       propio SKU quedaba cortado con puntos suspensivos para hacerle lugar. */
     +'<td class="wrap">'+cevenEsc(p.description)
       // El rubro viene de la columna RUBRO del archivo del ERP y es informativo.
       +(p.rubro ? ' <span style="font-size:10px;color:#6e6e73;background:#f0f0f3;padding:1px 6px;border-radius:8px;white-space:nowrap">'+cevenEsc(p.rubro)+'</span>' : '')
+      +(p.manual ? ' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Artículo cargado a mano, no vino del Excel del ERP">manual</span>' : '')
     +'</td>'
     /* Los 4 niveles, uno debajo del otro: es la única vista donde se pueden
        comparar. El selector de la cotización muestra el precio al lado de cada

@@ -1,7 +1,61 @@
-// ── AGREGAR/EDITAR PRODUCTO DEL CATÁLOGO (solo SKU + Descripción) ──
+/* ============================================================================
+   ALTA / EDICIÓN DE UN ARTÍCULO DEL CATÁLOGO
+   ----------------------------------------------------------------------------
+   Hasta 08/2026 un artículo cargado a mano tenía SOLO sku + descripción: salía
+   con "—" en la columna de precios y había que tipear el importe en CADA
+   cotización, todas las veces. Ahora lleva lo mismo que uno del ERP —precios por
+   nivel, categoría, stock e IVA— así que se cotiza igual que cualquier otro.
+
+   Los campos de precio los arma este archivo a partir de `CEVEN_BRAND.priceTiers`
+   (poly/js/tiers.js), NO están en el HTML: agregar o sacar un nivel se hace en
+   brand.js y esta pantalla lo sigue.
+   ============================================================================ */
+
+/* Un input por nivel de precio. Se rearman en cada entrada al formulario porque
+   el juego de niveles sale de brand.js y la pantalla no puede quedar pegada a
+   un layout de cuatro. */
+function _npPintarPrecios(precios){
+  var cont = document.getElementById('np-precios');
+  if(!cont) return;
+  var tiers = (typeof cevenTiers === 'function') ? cevenTiers() : [];
+  var h = '';
+  for(var i=0;i<tiers.length;i++){
+    var v = precios && typeof precios[tiers[i].v] === 'number' ? precios[tiers[i].v] : '';
+    h += '<div>'
+       + '<label class="lbl" style="text-transform:none;letter-spacing:0;font-size:11px">'+cevenEsc(tiers[i].lbl)+'</label>'
+       // inputmode decimal y type text: un type=number rechaza "3.983,85" en un
+       // teclado es-AR. Lo parsea cevenParseMoney(), igual que el precio de la
+       // cotización.
+       + '<input type="text" inputmode="decimal" class="np-precio" data-tier="'+cevenEsc(tiers[i].v)+'"'
+       + ' placeholder="—" value="'+cevenEsc(v === '' ? '' : fD(v))+'">'
+       + '</div>';
+  }
+  cont.innerHTML = h || '<p class="sub">Esta marca no cotiza por niveles de precio.</p>';
+}
+
+/* Las categorías que ya existen en el catálogo, para el datalist. Se puede
+   escribir una nueva igual: la lista sale del Excel del ERP y cambia. */
+function _npPintarRubros(){
+  var dl = document.getElementById('np-rubro-list');
+  if(!dl || typeof _rubrosDelCatalogo !== 'function') return;
+  var rubros = _rubrosDelCatalogo(), h = '';
+  for(var i=0;i<rubros.length;i++) h += '<option value="'+cevenEsc(rubros[i])+'"></option>';
+  dl.innerHTML = h;
+}
+
+function _npSet(id, val){
+  var el = document.getElementById(id);
+  if(el) el.value = (val === null || val === undefined) ? '' : val;
+}
+
 function prepAddProd(){
-  document.getElementById('np-sku').value='';
-  document.getElementById('np-desc').value='';
+  _npSet('np-sku', '');
+  _npSet('np-desc', '');
+  _npSet('np-rubro', '');
+  _npSet('np-stock', '');
+  _npSet('np-iva', 'IVA GENERAL');   // la alícuota general es el caso normal
+  _npPintarRubros();
+  _npPintarPrecios(null);
   document.getElementById('nperr').style.display='none';
 }
 
@@ -12,10 +66,20 @@ function editManualProduct(pid){
   for(var i=0;i<products.length;i++){ if(products[i].id===pid){ p=products[i]; break; } }
   if(!p) return;
   editingManualId = pid;
-  document.getElementById('np-sku').value  = p.sku || '';
-  document.getElementById('np-desc').value = p.description || '';
+  _npSet('np-sku',   p.sku || '');
+  _npSet('np-desc',  p.description || '');
+  _npSet('np-rubro', p.rubro || '');
+  // null = sin dato y 0 = agotado son cosas distintas y se muestran distinto en
+  // el catálogo: el campo queda vacío solo cuando de verdad no hay dato.
+  _npSet('np-stock', (p.stock === null || p.stock === undefined) ? '' : p.stock);
+  _npSet('np-iva',   /reducid/i.test(String(p.iva||'')) || p.ivaPct === CEVEN_IVA_REDUCIDO ? 'IVA REDUCIDO' : 'IVA GENERAL');
+  _npPintarRubros();
+  _npPintarPrecios(p.precios);
   document.getElementById('nperr').style.display = 'none';
   document.getElementById('addprod-title').textContent = 'Editar artículo';
+  /* El goTo va AL FINAL y funciona porque _navApply() solo llama a
+     prepAddProd() cuando editingManualId es null (ver shared/ui-core.js): si
+     no, limpiaría todo lo que se acaba de cargar. */
   goTo('addprod');
 }
 
@@ -56,16 +120,66 @@ function cancelEditManual(){
   goTo('catalog');
 }
 
+/* Lee los campos del formulario y devuelve los datos del artículo, o null si
+   falta algo obligatorio (dejando el cartel de error puesto). */
+function _npLeerForm(){
+  var errEl = document.getElementById('nperr');
+  var sku  = document.getElementById('np-sku').value.trim();
+  var desc = document.getElementById('np-desc').value.trim();
+  if(!sku || !desc){ errEl.textContent='Completá SKU y Descripción.'; errEl.style.display='block'; return null; }
+
+  /* Precios: el campo VACÍO significa "este nivel no aplica" y no se guarda —
+     así `precioDeCatalogo()` devuelve null y la línea queda para completar a
+     mano, en vez de cotizarse en 0. Un 0 escrito a propósito SÍ se guarda: un
+     accesorio sin cargo es un precio válido. */
+  var precios = {}, malo = null;
+  var inputs = document.querySelectorAll('#np-precios .np-precio');
+  for(var i=0;i<inputs.length;i++){
+    var txt = String(inputs[i].value || '').trim();
+    if(!txt) continue;
+    var v = cevenParseMoney(txt);
+    if(isNaN(v) || v < 0){ malo = inputs[i].getAttribute('data-tier'); break; }
+    precios[inputs[i].getAttribute('data-tier')] = Math.round(v * 100) / 100;
+  }
+  if(malo){
+    errEl.textContent = 'El precio de "' + (typeof cevenTierLabel==='function' ? cevenTierLabel(malo) : malo) + '" no es un número válido.';
+    errEl.style.display = 'block';
+    return null;
+  }
+
+  var stockTxt = String(document.getElementById('np-stock').value || '').trim();
+  var iva = document.getElementById('np-iva').value;
+
+  errEl.style.display = 'none';
+  return {
+    sku: sku,
+    description: desc,
+    rubro: document.getElementById('np-rubro').value.trim(),
+    // Vacío = sin dato (se muestra "—"); 0 = agotado. No son lo mismo.
+    stock: stockTxt === '' ? null : (parseInt(stockTxt.replace(/[^0-9-]/g,''), 10) || 0),
+    precios: precios,
+    // Se guarda con el mismo vocabulario que el Excel del ERP, así el catálogo
+    // y cevenIvaPct() no tienen que distinguir de dónde vino el producto.
+    iva: iva,
+    ivaPct: cevenIvaPct(iva)
+  };
+}
+
 function saveNewProd(){
-  var sku=document.getElementById('np-sku').value.trim();
-  var desc=document.getElementById('np-desc').value.trim();
-  var errEl=document.getElementById('nperr');
-  if(!sku||!desc){errEl.textContent='Completá SKU y Descripción.';errEl.style.display='block';return;}
+  var datos = _npLeerForm();
+  if(!datos) return;
+  var sku = datos.sku;
   var newId = null;
   if(editingManualId !== null){
     for(var i=0;i<products.length;i++){
       if(products[i].id===editingManualId){
-        products[i].sku=sku; products[i].description=desc;
+        // Se asignan campo por campo y no con un objeto nuevo: la fila puede
+        // traer cosas que este formulario no edita (p.ej. `manual`, o algo que
+        // agregue el importador más adelante) y reemplazarla las perdería.
+        products[i].sku=sku; products[i].description=datos.description;
+        products[i].rubro=datos.rubro; products[i].stock=datos.stock;
+        products[i].precios=datos.precios;
+        products[i].iva=datos.iva; products[i].ivaPct=datos.ivaPct;
         break;
       }
     }
@@ -73,7 +187,9 @@ function saveNewProd(){
     document.getElementById('addprod-title').textContent = cevenAddProdTitle();
   } else {
     newId = Date.now();
-    products.push({id:newId,sku:sku,description:desc,manual:true});
+    products.push({id:newId, sku:sku, description:datos.description, manual:true,
+                   rubro:datos.rubro, stock:datos.stock, precios:datos.precios,
+                   iva:datos.iva, ivaPct:datos.ivaPct});
   }
   if(!cevenLsSet(cevenK('cpl'), JSON.stringify(products))) return;
   var b=document.getElementById('plbadge');b.className='bk bkok';b.textContent='✓ '+products.length+' productos';

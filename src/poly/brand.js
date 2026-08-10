@@ -20,7 +20,9 @@ window.CEVEN_BRAND = {
 
   // Nombres BASE, sin prefijo: sync.js les antepone `prefix`.
   // Poly no tiene nacionalizacion ni target anual.
-  settingKeys: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark'],
+  // `cpapelera` sincroniza como una mas: la papelera es del EQUIPO, no del
+  // dispositivo donde se borro (ver shared/papelera.js).
+  settingKeys: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera'],
 
   /* Fila de pipeline = UN PROYECTO = UNA COTIZACION (08/2026). Antes era un OPG
      con un array `salas[]` adentro y el estado a nivel OPG; ahora el OPG es un

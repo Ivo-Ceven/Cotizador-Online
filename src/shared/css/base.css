@@ -279,6 +279,20 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 .crow{cursor:pointer}
 .crow.pk-row{cursor:default}
 .crow:hover td{background:#fafafa}
+/* ── Precios por nivel del catálogo de Poly ──────────────────────────────────
+   Los 4 niveles iban uno DEBAJO del otro: cada fila medía ~83px de alto y el
+   catálogo entero (77 productos) más de 6.000px, con la columna Descripción
+   medio vacía al lado. En dos columnas la fila baja a la mitad y la tabla se
+   recorre de verdad.
+
+   Se arma con grid y no con una tabla anidada para que las cuatro cifras
+   queden alineadas entre sí y con las de las filas de arriba y abajo:
+   comparar precios es lo único que se hace mirando esta columna. Los tokens
+   --ct1/--ct3 se dan vuelta solos en modo oscuro. */
+.cat-tiers{display:grid;grid-template-columns:auto auto;gap:0 12px;justify-content:end}
+.cat-tier{display:flex;justify-content:space-between;gap:6px;font-size:11px;line-height:1.55;white-space:nowrap}
+.cat-tier i{font-style:normal;color:var(--ct3)}
+.cat-tier b{font-weight:600;color:var(--ct1);font-variant-numeric:tabular-nums}
 .crow.sel td{background:#e8f0fe}
 /* Ya está en la cotización. Verde tenue y un filete a la izquierda: se lee de
    reojo mientras se recorre la lista, que es cuando importa. Va DESPUÉS de

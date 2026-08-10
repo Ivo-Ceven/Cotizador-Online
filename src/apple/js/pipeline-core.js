@@ -16,10 +16,10 @@ function categorize(item){
 }
 
 function addToPipeline(){
-  if(!cevenCanUsePipeline()){ alert('Tu rol no permite agregar al pipeline.'); return; }
-  if(!items.length && !warrantyItems.length){ alert('La cotización está vacía.'); return; }
+  if(!cevenCanUsePipeline()){ showToast('Tu rol no permite agregar al pipeline.'); return; }
+  if(!items.length && !warrantyItems.length){ showToast('La cotización está vacía.'); return; }
   var client = (document.getElementById('client').value||'').trim();
-  if(!client){ alert('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
+  if(!client){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
   var proyecto = (document.getElementById('proyecto').value||'').trim();
   var exec = document.getElementById('exec').value || '';
   var mesCierre = getMesCierre();
@@ -99,8 +99,13 @@ function addToPipeline(){
   var pipe = getPipeline();
   var existingIdx = -1;
   for(var p=0;p<pipe.length;p++){ if(pipe[p].qNum === qn){ existingIdx = p; break; } }
+
+  // Nunca se bloquea con un confirm(): la acción se aplica siempre y, cuando el
+  // caso es ambiguo, se avisa con un cartel que permite deshacer.
+  var warnMsg = null;
   if(existingIdx >= 0){
-    if(!confirm('La cotización #'+qn+' ya está en el pipeline. ¿Actualizar?')) return;
+    if(typeof pushPipeUndo === 'function') pushPipeUndo(pipe[existingIdx].id); // snapshot antes de mutar
+    warnMsg = 'Actualizaste la cotización #'+qn+', que ya estaba en el pipeline.';
     // Preservar estado e id originales al actualizar
     entry.estado = pipe[existingIdx].estado || 'Cotizado';
     entry.id = pipe[existingIdx].id;
@@ -109,12 +114,14 @@ function addToPipeline(){
     pipe.push(entry);
   }
   savePipeline(pipe);
+  if(existingIdx < 0 && typeof pushPipeUndoInsert === 'function') pushPipeUndoInsert(entry.id);
 
   // doSave devuelve false si el localStorage está lleno: no anunciar un
   // guardado que no ocurrió (savePipeline ya corrió, es otra clave).
   if(!doSave(true)) return;
 
-  showToast('✓ Agregada al pipeline: ' + client + (proyecto?' / '+proyecto:''));
+  var msg = warnMsg || ('✓ Agregada al pipeline: ' + client + (proyecto?' / '+proyecto:''));
+  notifyUndo(msg, function(){ if(typeof undoPipelineChange === 'function') undoPipelineChange(); });
 }
 
 /* Detecta si una entrada del pipeline es FOB.

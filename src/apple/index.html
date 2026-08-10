@@ -242,8 +242,8 @@
   <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <div id="plbadge" class="bk bkw">Sin price list</div>
     <div style="flex:1;min-width:8px"></div>
-    <button class="bo" onclick="document.getElementById('plup').click()" title="Reemplaza todo el catálogo (perdés los productos manuales)">📂 Cargar Excel/CSV</button>
-    <input type="file" id="plup" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handlePL(this.files[0])">
+    <button class="bo" onclick="document.getElementById('plup').click()" title="Elegí los dos price list de Apple juntos (el normal y el FTZ). Reemplaza todo el catálogo: perdés los productos manuales">📂 Cargar Excel/CSV</button>
+    <input type="file" id="plup" accept=".csv,.tsv,.txt,.xls,.xlsx" multiple style="display:none" onchange="handlePL(this.files)">
     <button class="bo" onclick="document.getElementById('plprice-up').click()" title="Actualiza solo los precios de los SKU que coincidan, agrega los nuevos, y conserva tus productos manuales">💲 Actualizar precios</button>
     <input type="file" id="plprice-up" accept=".xls,.xlsx" multiple style="display:none" onchange="handlePriceUpdate(this.files)">
     <div style="position:relative">
@@ -258,7 +258,7 @@
   <div id="nopl" style="text-align:center;padding:36px;background:#fff;border-radius:12px;border:1.5px dashed #d2d2d7;cursor:pointer;margin-bottom:12px" onclick="document.getElementById('plup').click()">
     <div style="font-size:26px;margin-bottom:6px">📂</div>
     <strong>Subí tu Price List</strong>
-    <p style="color:#6e6e73;font-size:12px;margin-top:4px">Se guarda automáticamente para la próxima vez</p>
+    <p style="color:#6e6e73;font-size:12px;margin-top:4px">Los dos archivos de Apple juntos (el normal y el FTZ) — se guarda automáticamente para la próxima vez</p>
   </div>
   <div id="catui" style="display:none">
     <div class="gf" style="margin-bottom:10px">
@@ -274,8 +274,16 @@
       <button class="bd" id="addbtn" onclick="addToQuote()" style="display:none">Agregar</button>
     </div>
     <div class="tw">
-      <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:32px"><col style="width:14%"><col><col style="width:13%"><col style="width:13%"><col style="width:14%"><col style="width:44px"></colgroup>
+      <!-- min-width: las columnas de ancho fijo suman ~514px, así que en un
+           celular Descripción se aplastaba a nada. Con esto la tabla scrollea
+           dentro de .tw (que ya trae overflow-x:auto). -->
+      <table style="table-layout:fixed;width:100%;min-width:780px">
+        <!-- SKU y los tres importes en px: su contenido no crece con el ancho de
+             la ventana (un SKU y tres importes miden lo que miden), así que lo
+             que sobra tiene que ir a Descripción, que es lo único que se corta.
+             Antes eran porcentajes y en una pantalla ancha el SKU se llevaba
+             150px vacíos mientras la descripción quedaba con puntos suspensivos. -->
+        <colgroup><col style="width:32px"><col style="width:130px"><col><col style="width:96px"><col style="width:96px"><col style="width:100px"><col style="width:60px"></colgroup>
         <thead>
           <tr>
             <th><input type="checkbox" id="chkall" onchange="toggleAll(this)"></th>
@@ -299,7 +307,10 @@
     <div class="g2">
       <div><label class="lbl">SKU *</label><input id="np-sku" type="text" placeholder="Ej: MW0Y3LL/A"></div>
       <div><label class="lbl">Descripción *</label><input id="np-desc" type="text" placeholder="Descripción del producto"></div>
-      <div><label class="lbl" id="np-price-lbl">Precio de costo (USD) *</label><input id="np-price" type="number" step="0.01" min="0" placeholder="0.00"></div>
+      <!-- type=text + inputmode: un type=number rechaza "1.250,50" con el teclado
+           es-AR y el campo queda vacío. Lo parsea cevenParseMoney(), igual que
+           los importes de la cotización. -->
+      <div><label class="lbl" id="np-price-lbl">Precio de costo (USD) *</label><input id="np-price" type="text" inputmode="decimal" placeholder="0,00"></div>
       <div><label class="lbl">Model</label><select id="np-model"></select></div>
       <div><label class="lbl">País</label><select id="np-country"></select></div>
       <div style="grid-column:1/-1;margin-top:4px">
@@ -390,6 +401,16 @@
     </div>
   </div>
   <div id="histwrap"></div>
+
+  <!-- PAPELERA · lo eliminado se guarda 30 días (shared/papelera.js).
+       Cerrada por defecto: es el lugar al que se va a buscar algo puntual,
+       no algo que haya que ver en cada visita al historial. -->
+  <details id="pap-box" style="margin-top:20px;border-top:0.5px solid #d2d2d7;padding-top:14px">
+    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#6e6e73">
+      🗑 Papelera <span id="pap-n" style="font-weight:400;color:#aeaeb2"></span>
+    </summary>
+    <div id="pap-body" style="margin-top:10px"></div>
+  </details>
 </div>
 
 <!-- PIPELINE -->
@@ -617,12 +638,16 @@
 <script src="js/pipeline-detail.js"></script>
 <script src="../shared/backup-folder.js"></script>
 <script src="js/history.js"></script>
+<script src="../shared/papelera.js"></script>
 <script src="../shared/comprobante.js"></script>
 <script src="../shared/pdf-core.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/warranties.js"></script>
 <script src="../shared/undo.js"></script>
 <script src="js/target.js"></script>
+<!-- picker.js va DESPUÉS de catalog.js y quote.js: usa _catRowHTML/_catCalc y
+     upQty, y su IIFE de cableado corre al cargar. -->
+<script src="js/picker.js"></script>
 <div id="app-ver-bar"><span>Cotizador Ceven v<span id="app-ver-num"></span></span></div>
 <script src="../shared/init.js"></script>
 
@@ -663,6 +688,59 @@
         <button class="bd" onclick="saveQuoteItemEdit()">Guardar en cotización</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ── SUBPANTALLA DE PRODUCTOS (picker.js) ──────────────────────────────────
+     Capa flotante encima de la cotización: arriba el catálogo con un ＋ por
+     producto, abajo lo que la cotización ya lleva. Los estilos (.pk-*) están en
+     shared/css/base.css y los comparte con Poly. -->
+<div id="prod-picker" style="display:none">
+  <div class="pk-card" role="dialog" aria-modal="true" aria-label="Agregar productos">
+
+    <div class="pk-hd">
+      <div class="h3">Agregar productos <span id="pk-count" style="font-size:11px;font-weight:400;color:#aeaeb2;margin-left:6px"></span></div>
+      <button type="button" class="pk-x" data-pk-cerrar title="Cerrar">&times;</button>
+    </div>
+
+    <div class="pk-filtros">
+      <div class="buscador" style="flex:1">
+        <span class="buscador-lupa" aria-hidden="true">🔍</span>
+        <textarea id="pk-search" rows="1" placeholder="Buscar &mdash; o pegá varios SKUs separados por enter, tab o coma"></textarea>
+      </div>
+      <select id="pk-model" style="width:150px" title="Filtrar por modelo"></select>
+      <select id="pk-country" style="width:130px" title="Filtrar por país"></select>
+    </div>
+
+    <div class="pk-lista">
+      <table style="table-layout:fixed;width:100%;min-width:780px">
+        <!-- Mismos anchos que la vista Catálogo, con la columna del ＋ en lugar
+             del checkbox y sin la de acciones. -->
+        <colgroup><col style="width:54px"><col style="width:130px"><col><col style="width:96px"><col style="width:96px"><col style="width:100px"></colgroup>
+        <thead>
+          <tr>
+            <th></th><th>SKU</th><th>Descripci&oacute;n</th>
+            <th style="text-align:right">Costo</th>
+            <th style="text-align:right" title="Costo nacionalizado">C. Nac.</th>
+            <th style="text-align:right">P. Venta</th>
+          </tr>
+        </thead>
+        <tbody id="pk-body"></tbody>
+      </table>
+    </div>
+
+    <div class="pk-pie">
+      <div class="pk-pie-hd">
+        <span class="lbl" style="margin:0">En la cotizaci&oacute;n (<span id="pk-cart-n">0</span>)</span>
+      </div>
+      <div id="pk-cart"></div>
+      <div class="pk-cierre">
+        <span>Total</span>
+        <b id="pk-total">&mdash;</b>
+        <button type="button" class="bd" data-pk-cerrar>Listo</button>
+      </div>
+    </div>
+
   </div>
 </div>
 

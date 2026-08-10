@@ -11,34 +11,62 @@ function toggleHistSel(qn,cb){
   updateHistBtns();
 }
 
+/* Eliminar NO tira las filas: pasan a la papelera y se pueden restaurar por
+   CEVEN_PAPELERA_DIAS días (shared/papelera.js). El "Deshacer" del cartel sigue
+   estando para el error inmediato — no se pregunta antes, se hace y se avisa.
+
+   La papelera se escribe ANTES de tocar `cquotes`, y si falla no se borra nada
+   — el porqué está en el encabezado de shared/papelera.js. */
 function deleteSelected(){
   var keys=Object.keys(histSel);
   if(!keys.length) return;
-  if(!confirm('¿Eliminar '+keys.length+' cotización(es) seleccionada(s)?')) return;
   var db=getDB();
-  var newDb=[];
+  var removed=[], newDb=[], porQn={};
   for(var i=0;i<db.length;i++){
-    if(!histSel[db[i]['N° Cotización']]) newDb.push(db[i]);
+    var qn = db[i]['N° Cotización'];
+    if(histSel[qn]){
+      removed.push(db[i]);
+      (porQn[qn] = porQn[qn] || []).push(db[i]);
+    } else newDb.push(db[i]);
   }
+  if(!removed.length) return;
+
+  var grupos = Object.keys(porQn).map(function(q){ return {qn: q, filas: porQn[q]}; });
+  if(!cevenPapeleraTirarVarias(grupos)) return;   // no entró en la papelera: no se borra
+
   saveDB(newDb);
   histSel={};
   updateHistBtns();
   renderHistory();
+  notifyUndo('Eliminaste '+keys.length+' cotización(es) — están en la papelera.', function(){
+    var db2=getDB();
+    saveDB(db2.concat(removed));
+    cevenPapeleraSacar(Object.keys(porQn));
+    renderHistory();
+  });
 }
 
 function deleteQ(qn){
   var db = getDB();
   var first = db.find(function(r){ return r['N° Cotización'] === qn; });
-  if(first && !cevenCanEditQuote(first['Ejecutivo'])){ alert('No tenés permiso para eliminar esta cotización.'); return; }
-  if(!confirm('¿Eliminar cotización #'+qn+'?')) return;
-  var newDb = [];
+  if(first && !cevenCanEditQuote(first['Ejecutivo'])){ showToast('No tenés permiso para eliminar esta cotización.'); return; }
+  var removed = [], newDb = [];
   for(var i=0;i<db.length;i++){
-    if(db[i]['N° Cotización'] !== qn) newDb.push(db[i]);
+    if(db[i]['N° Cotización'] === qn) removed.push(db[i]); else newDb.push(db[i]);
   }
+  if(!removed.length) return;
+  if(!cevenPapeleraTirar(qn, removed)) return;    // no entró en la papelera: no se borra
+
   saveDB(newDb);
   delete histSel[qn];
   updateHistBtns();
   renderHistory();
+  notifyUndo('Eliminaste la cotización #'+qn+' — está en la papelera.', function(){
+    var db2=getDB();
+    saveDB(db2.concat(removed));
+    cevenPapeleraSacar([qn]);
+    renderHistory();
+  });
 }
 
 function clearHF(){ document.getElementById('hclient').value=''; document.getElementById('hexec').value=''; document.getElementById('hfrom').value=''; document.getElementById('hto').value=''; renderHistory(); }
@@ -60,6 +88,9 @@ function parseISODateLocal(s){
 
 function renderHistory(){
   var db=getDB(), wrap=document.getElementById('histwrap');
+  // Va ANTES del corte por historial vacío: la papelera puede tener cosas
+  // justamente cuando el historial no tiene ninguna.
+  if(typeof renderPapelera === 'function') renderPapelera();
   var fc=document.getElementById('hclient').value.toLowerCase();
   var fe=document.getElementById('hexec').value;
   var ff=document.getElementById('hfrom').value;

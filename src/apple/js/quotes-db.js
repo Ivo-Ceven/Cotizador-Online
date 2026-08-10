@@ -88,16 +88,68 @@ function doSave(overwrite){
 }
 
 function saveQuote(){
-  if(!items.length && !warrantyItems.length){alert('La cotización está vacía.');return;}
+  if(!items.length && !warrantyItems.length){showToast('La cotización está vacía.');return;}
   // El "✓ guardada" solo si se escribió de verdad: antes salía igual con la
   // cuota de localStorage llena y no se había guardado nada.
-  if(doSave(true)) alert('✓ Cotización #'+String(qNum).padStart(4,'0')+' guardada.');
+  if(doSave(true)) showToast('✓ Cotización #'+String(qNum).padStart(4,'0')+' guardada.');
+}
+
+/* Guarda todo lo necesario para volver a poner en pantalla la cotización que se
+   está por reemplazar/descartar — lo usan los botones que arrancan otra
+   cotización SIN preguntar primero: la acción se aplica y el cartel ofrece
+   deshacerla. Es el criterio de toda la app desde 08/2026: ningún popup nativo
+   bloquea antes de actuar (ver shared/notify.js).
+
+   Apple guarda además garantías y overrides de nacionalización, que en Poly no
+   existen: sin ellos "Deshacer" devolvía los productos pero no las CevenCare. */
+function _snapshotQuoteState(){
+  var _v = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
+  return {
+    qNum: qNum,
+    items: JSON.parse(JSON.stringify(items)),
+    warrantyItems: JSON.parse(JSON.stringify(warrantyItems)),
+    nacOv: JSON.parse(JSON.stringify(quoteNacOverrides)),
+    clientMode: (typeof _currentClientMode !== 'undefined') ? _currentClientMode : null,
+    client: _v('client'),
+    proyecto: _v('proyecto'),
+    exec: _v('exec'),
+    mesCierre: getMesCierre(),
+    estado: _v('quote-estado') || 'Cotizado',
+    obs: _v('obs'),
+    effDate: _v('eff-date'),
+    payMode: cevenPayMode(),
+    delivery: cevenDelivery()
+  };
+}
+
+function _restoreQuoteState(snap){
+  qNum = snap.qNum;
+  cevenPintarQNum();
+  items = snap.items;
+  warrantyItems = snap.warrantyItems;
+  quoteNacOverrides = snap.nacOv;
+  window._currentClientMode = snap.clientMode;
+  document.getElementById('client').value = snap.client;
+  document.getElementById('proyecto').value = snap.proyecto;
+  document.getElementById('exec').value = snap.exec;
+  if(document.getElementById('mes-cierre-mY')) setMesCierre(snap.mesCierre);
+  if(document.getElementById('quote-estado')) document.getElementById('quote-estado').value = snap.estado;
+  document.getElementById('obs').value = snap.obs;
+  document.getElementById('eff-date').value = snap.effDate;
+  cevenSetPayMode(snap.payMode);
+  cevenSetDelivery(snap.delivery);
+  _qSortKey = null; _qSortDir = 1;
+  // El FOB se deduce de Observaciones, que acaba de volver a su valor anterior.
+  _lastFOBState = isCotizacionFOB();
+  renderQ();
+  renderWarranties();
 }
 
 function nuevaCotizacion(){
   // Una cotización armada solo con garantías CevenCare es válida (saveQuote y
-  // buildPDF la aceptan): también hay que avisar antes de borrarla.
-  if((items.length || warrantyItems.length) && !confirm('¿Empezar una cotización nueva? Se perderán los productos y las garantías actuales si no guardaste.')){return;}
+  // buildPDF la aceptan): también hay que poder deshacer si se descarta.
+  var hadItems = !!(items.length || warrantyItems.length);
+  var snap = hadItems ? _snapshotQuoteState() : null;
   // Incrementar número
   qNum = cevenReservarQNum();
   cevenPintarQNum();
@@ -122,13 +174,16 @@ function nuevaCotizacion(){
   cevenApplyVendorAutofill();
   renderQ();
   renderWarranties();
+  if(hadItems){
+    notifyUndo('Empezaste una cotización nueva — se descartó lo que tenías sin guardar.', function(){ _restoreQuoteState(snap); });
+  }
 }
 
 // Crea una cotización NUEVA copiando la que está cargada actualmente (mismos productos,
 // garantías, cliente, ejecutivo, etc.) pero con un número de cotización nuevo.
 function copiarCotizacion(){
-  if(!items.length && !warrantyItems.length){ alert('La cotización está vacía, no hay nada para copiar.'); return; }
-  if(!confirm('¿Crear una nueva cotización copiando la actual?')) return;
+  if(!items.length && !warrantyItems.length){ showToast('La cotización está vacía, no hay nada para copiar.'); return; }
+  var snap = _snapshotQuoteState();
   // Nuevo número de cotización
   qNum = cevenReservarQNum();
   cevenPintarQNum();
@@ -143,7 +198,15 @@ function copiarCotizacion(){
   renderQ();
   renderWarranties();
   // Solo confirmar la copia si realmente se persistió.
-  if(doSave(true)) showToast('✓ Copia creada como Cotización #' + String(qNum).padStart(4,'0'));
+  if(!doSave(true)) return;
+  var copiaQn = String(qNum).padStart(4,'0');
+  notifyUndo('✓ Copia creada como Cotización #' + copiaQn + '.', function(){
+    /* _restoreQuoteState() sólo repone la PANTALLA: sin este filtro la copia
+       quedaba guardada en cquotes (y sincronizada al resto del equipo) aunque
+       el usuario tocara "Deshacer". */
+    saveDB(getDB().filter(function(r){ return r['N° Cotización'] !== copiaQn; }));
+    _restoreQuoteState(snap);
+  });
 }
 
 // Duplica una cotización del historial como una NUEVA (nuevo número, fecha de hoy)
@@ -151,8 +214,8 @@ function copiarCotizacion(){
 function copiarCotizacionHist(qn){
   var db=getDB();
   var rows=db.filter(function(r){return r['N° Cotización']===qn;});
-  if(!rows.length){ alert('No se encontró la cotización #'+qn+'.'); return; }
-  if(!confirm('¿Crear una copia de la cotización #'+qn+' y abrirla para editar?')) return;
+  if(!rows.length){ showToast('No se encontró la cotización #'+qn+'.'); return; }
+  var snap = _snapshotQuoteState();
   var newQn = cevenQNumFmt(cevenReservarQNum());
   /* Sin este filtro las filas se AGREGABAN sobre las que ya tuvieran ese
      número: era el único camino que metía dos cotizaciones distintas bajo el
@@ -173,18 +236,27 @@ function copiarCotizacionHist(qn){
     db.push(c);
   });
   if(!saveDB(db)) return; // no se guardó: no abrir ni anunciar una copia inexistente
-  // Abrir la copia en el cotizador (sin pedir confirmación, ya confirmamos arriba)
+  /* Abrir la copia en el cotizador. El propio editQuoteFromHistory() no ofrece
+     su deshacer porque el snapshot de acá ya cubre toda la operación. */
   editQuoteFromHistory(newQn, true);
-  showToast('✓ Copia creada como Cotización #'+newQn);
+  notifyUndo('✓ Copia creada como Cotización #'+newQn+'.', function(){
+    // Igual que copiarCotizacion(): hay que borrar la copia, no solo devolver la pantalla.
+    saveDB(getDB().filter(function(r){ return r['N° Cotización'] !== newQn; }));
+    _restoreQuoteState(snap);
+    if(typeof renderHistory === 'function') renderHistory();
+  });
 }
 
-function editQuoteFromHistory(qn, skipConfirm){
+function editQuoteFromHistory(qn, skipUndoToast){
   var db=getDB();
   var rows=db.filter(function(r){return r['N° Cotización']===qn;});
   if(!rows.length) return;
   var first=rows[0];
-  if(!cevenCanEditQuote(first['Ejecutivo'])){ alert('No tenés permiso para editar esta cotización.'); return; }
-  if(!skipConfirm && items.length && !confirm('¿Cargar la cotización #'+qn+'? Se reemplazará la cotización actual.')){return;}
+  if(!cevenCanEditQuote(first['Ejecutivo'])){ showToast('No tenés permiso para editar esta cotización.'); return; }
+  // Se carga siempre y se avisa con "Deshacer" — antes un confirm() nativo
+  // bloqueaba la pantalla para preguntar si se podía pisar lo que había.
+  var hadItems = !!(items.length || warrantyItems.length);
+  var snap = hadItems ? _snapshotQuoteState() : null;
   qNum = parseInt(qn, 10);
   cevenPintarQNum();
   // Re-guardar ESTE número es una edición, no una colisión (ver doSave).
@@ -273,13 +345,16 @@ function editQuoteFromHistory(qn, skipConfirm){
   renderQ();
   renderWarranties();
   goTo('quote');
+  if(hadItems && !skipUndoToast){
+    notifyUndo('Cargaste la cotización #'+qn+' — se reemplazó lo que tenías sin guardar.', function(){ _restoreQuoteState(snap); goTo('quote'); });
+  }
 }
 
 function exportDB(){
-  var db=getDB(); if(!db.length){alert('No hay cotizaciones guardadas.');return;}
+  var db=getDB(); if(!db.length){showToast('No hay cotizaciones guardadas.');return;}
   // Las filas meta_* no son líneas de cotización: no van al Excel.
   db=db.filter(function(r){ return !isQuoteMetaRow(r); });
-  if(!db.length){alert('No hay cotizaciones guardadas.');return;}
+  if(!db.length){showToast('No hay cotizaciones guardadas.');return;}
   var data=db.map(function(r){var o={};for(var i=0;i<COLS.length;i++)o[COLS[i]]=r[COLS[i]]!==undefined?r[COLS[i]]:'';return o;});
   var ws=XLSX.utils.json_to_sheet(data,{header:COLS});
   // Un ancho por columna de COLS (antes eran 13 para 15 columnas).

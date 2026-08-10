@@ -16,21 +16,28 @@ function editOVLink(id){
   var idx = -1;
   for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ idx = i; break; } }
   if(idx < 0) return;
-  if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
   var current = pipe[idx].ovLink || '';
-  var msg = current
-    ? 'Link actual:\n' + current + '\n\nDejá vacío para quitar el link, o pegá uno nuevo:'
-    : 'Pegá el link de la Orden de Venta:';
-  var newLink = prompt(msg, current);
-  if(newLink === null) return; // cancelado
-  newLink = newLink.trim();
-  if(newLink === ''){
-    delete pipe[idx].ovLink;
-  } else {
-    pipe[idx].ovLink = newLink;
-  }
-  savePipeline(pipe);
-  renderPipeline();
+  // promptModal() y no prompt(): el popup nativo bloquea el renderer entero
+  // (ver shared/notify.js). El pipeline se relee DENTRO del callback porque
+  // entre que se abre el modal y se acepta pudo entrar el poll de 15 s.
+  promptModal(current ? 'Editar el link de la Orden de Venta' : 'Pegá el link de la Orden de Venta',
+    current, function(val){
+      val = (val||'').trim();
+      if(val === current) return;
+      if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
+      var pipe2 = getPipeline();
+      for(var j=0;j<pipe2.length;j++){
+        if(pipe2[j].id === id){
+          if(val === '') delete pipe2[j].ovLink; else pipe2[j].ovLink = val;
+          break;
+        }
+      }
+      savePipeline(pipe2);
+      renderPipeline();
+      notifyUndo(val ? '✓ Link de la OV actualizado' : '✓ Link de la OV quitado',
+        function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
+    }, {okLabel:'Guardar'});
 }
 
 // ── Estado OV por entrada del pipeline ──
@@ -64,11 +71,13 @@ function togglePipelineRow(id){
 // Volver a unir una fila virtual con el resto (quita los overrides de esos SKUs)
 function mergeBackVirtualRow(pipeId, expandKey){
   var _row0 = getPipeline().find(function(r){ return r.id === pipeId; });
-  if(_row0 && !cevenCanEditPipelineRow(_row0.ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(_row0 && !cevenCanEditPipelineRow(_row0.ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
   var lineKeys = window._pipeLineKeysMap[expandKey];
+  // Nunca se pregunta antes: se aplica y el cartel ofrece deshacer, con el
+  // snapshot de la fila tomado ANTES de mutarla (shared/undo.js).
+  if(typeof pushPipeUndo === 'function') pushPipeUndo(pipeId);
   if(!lineKeys || !lineKeys.length){
     // Fallback: quitar todos los overrides de la entrada
-    if(!confirm('¿Unir todas las líneas de esta cotización?')) return;
     var pipe = getPipeline();
     for(var i=0;i<pipe.length;i++){
       if(pipe[i].id === pipeId){
@@ -82,9 +91,10 @@ function mergeBackVirtualRow(pipeId, expandKey){
     }
     savePipeline(pipe);
     renderPipeline();
+    notifyUndo('Uniste todas las líneas de esta cotización.',
+      function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
     return;
   }
-  if(!confirm('¿Volver a unir estas líneas con el resto de la cotización?\nSe quitarán los estados/fechas y facturación parcial específicos de estos SKUs.')) return;
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
@@ -105,6 +115,8 @@ function mergeBackVirtualRow(pipeId, expandKey){
   }
   savePipeline(pipe);
   renderPipeline();
+  notifyUndo('Uniste estas líneas con el resto de la cotización — se quitaron sus estados, fechas y facturación parcial propios.',
+    function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
 }
 
 // Si todos los SKUs de una cotización tienen el mismo estado Y mes de cierre,
@@ -166,7 +178,7 @@ function updateVirtualGroupStatus(pipeId, lineKeys, newStatus){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       var e = pipe[i];
       lineKeys.forEach(function(k){
         if(k.indexOf('REM|') === 0){
@@ -213,7 +225,7 @@ function updateVirtualGroupMesValue(pipeId, lineKeys, fullValue){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       var e = pipe[i];
       lineKeys.forEach(function(k){
         if(k.indexOf('REM|') === 0){
@@ -271,7 +283,7 @@ function updateVirtualGroupMes(pipeId, lineKeys, kind, value){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       if(!pipe[i].skuMesCierre) pipe[i].skuMesCierre = {};
       lineKeys.forEach(function(k){
         var cur = pipe[i].skuMesCierre[k] !== undefined ? pipe[i].skuMesCierre[k] : (pipe[i].mesCierre || '');
@@ -534,22 +546,26 @@ function renderPipelineDetailRow(r, db, pipe){
 // Inicia una facturación parcial preguntando cuántas unidades se facturaron
 function promptPartialQty(pipeId, lineKey, totalQty){
   var _row0 = getPipeline().find(function(r){ return r.id === pipeId; });
-  if(_row0 && !cevenCanEditPipelineRow(_row0.ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
-  var v = prompt('¿Cuántas de las '+totalQty+' unidades fueron facturadas?\n\nEl resto quedará en otro estado, en una línea aparte.', '');
-  if(v === null) return;
-  var n = parseInt(v);
-  if(isNaN(n) || n <= 0){ alert('Ingresá un número válido entre 1 y '+(totalQty-1)+'.'); return; }
-  if(n >= totalQty){ return; } // = total → no es parcial, queda todo Facturado
-  updateSkuPartialQty(pipeId, lineKey, n, totalQty);
+  if(_row0 && !cevenCanEditPipelineRow(_row0.ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  promptModal('¿Cuántas de las '+totalQty+' unidades fueron facturadas? El resto queda en otro estado, en una línea aparte.',
+    '', function(v){
+      var n = parseInt(v, 10);
+      if(isNaN(n) || n <= 0){ showToast('Ingresá un número válido entre 1 y '+(totalQty-1)+'.'); return; }
+      if(n >= totalQty){ return; } // = total → no es parcial, queda todo Facturado
+      updateSkuPartialQty(pipeId, lineKey, n, totalQty);
+    }, {okLabel:'Aplicar'});
 }
 
 function clearSkuOverrides(pipeId, lineKey){
-  // Quitar estado/cierre/parcial específicos de este SKU → vuelve al default de la cotización
-  if(!confirm('¿Quitar el estado, fecha y facturación parcial específicos de este SKU?\nVolverá a usar los de la cotización.')) return;
+  // Quitar estado/cierre/parcial específicos de este SKU → vuelve al default de
+  // la cotización. Se aplica y se avisa con "Deshacer" (ver notify.js).
   var pipe = getPipeline();
+  var permitido = false;
+  for(var p=0;p<pipe.length;p++){ if(pipe[p].id === pipeId){ permitido = cevenCanEditPipelineRow(pipe[p].ejecutivo); break; } }
+  if(!permitido){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(typeof pushPipeUndo === 'function') pushPipeUndo(pipeId);
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
       if(pipe[i].skuStatus)      delete pipe[i].skuStatus[lineKey];
       if(pipe[i].skuMesCierre)   delete pipe[i].skuMesCierre[lineKey];
       if(pipe[i].skuOvLinks)     delete pipe[i].skuOvLinks[lineKey];
@@ -562,6 +578,8 @@ function clearSkuOverrides(pipeId, lineKey){
   }
   savePipeline(pipe);
   renderPipeline();
+  notifyUndo('Este SKU volvió al estado, fecha y facturación de la cotización.',
+    function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
 }
 
 // Helper: cuenta cuántas líneas de producto (no garantía) tiene una cotización
@@ -575,7 +593,7 @@ function updateSkuStatus(pipeId, lineKey, newStatus){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       if(countQuoteProductLines(pipe[i].qNum) <= 1){
         pipe[i].estado = newStatus;
         if(pipe[i].skuStatus) delete pipe[i].skuStatus[lineKey];
@@ -603,7 +621,7 @@ function updateSkuPartialQty(pipeId, lineKey, qty, totalQty){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       if(qty > 0){
         if(!pipe[i].skuPartialQty)  pipe[i].skuPartialQty  = {};
         if(!pipe[i].skuPartialRemSt) pipe[i].skuPartialRemSt = {};
@@ -627,7 +645,7 @@ function updateSkuPartialRemSt(pipeId, lineKey, remSt){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       if(!pipe[i].skuPartialRemSt) pipe[i].skuPartialRemSt = {};
       pipe[i].skuPartialRemSt[lineKey] = remSt;
       tryDissolvePartial(pipe[i], lineKey);
@@ -646,7 +664,7 @@ function updateSkuMesCierre(pipeId, lineKey, kind, value){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       if(!pipe[i].skuMesCierre) pipe[i].skuMesCierre = {};
       var cur = pipe[i].skuMesCierre[lineKey] || pipe[i].mesCierre || '';
       var p = cur ? cur.split('-') : ['',''];
@@ -679,25 +697,36 @@ function editSkuOvLink(pipeId, lineKey){
   var idx = -1;
   for(var i=0;i<pipe.length;i++){ if(pipe[i].id === pipeId){ idx = i; break; } }
   if(idx < 0) return;
-  if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
-  pipe[idx].skuOvLinks = pipe[idx].skuOvLinks || {};
-  var current = pipe[idx].skuOvLinks[lineKey] || '';
-  var msg = current
-    ? 'Link OC parcial actual:\n' + current + '\n\nDejá vacío para quitar el link, o pegá uno nuevo:'
-    : 'Pegá el link de la OC parcial para esta línea:';
-  var newLink = prompt(msg, current);
-  if(newLink === null) return;
-  newLink = newLink.trim();
-  if(newLink === '') delete pipe[idx].skuOvLinks[lineKey];
-  else pipe[idx].skuOvLinks[lineKey] = newLink;
-  savePipeline(pipe);
-  renderPipeline();
+  if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  var current = (pipe[idx].skuOvLinks || {})[lineKey] || '';
+  promptModal(current ? 'Editar el link de la OC parcial' : 'Pegá el link de la OC parcial de esta línea',
+    current, function(val){
+      val = (val||'').trim();
+      if(val === current) return;
+      if(typeof pushPipeUndo === 'function') pushPipeUndo(pipeId);
+      var pipe2 = getPipeline();
+      for(var j=0;j<pipe2.length;j++){
+        if(pipe2[j].id === pipeId){
+          pipe2[j].skuOvLinks = pipe2[j].skuOvLinks || {};
+          if(val === '') delete pipe2[j].skuOvLinks[lineKey];
+          else pipe2[j].skuOvLinks[lineKey] = val;
+          // Un objeto vacío igual viaja a Supabase como {}: se limpia, igual que
+          // el resto de los overrides por SKU.
+          if(!Object.keys(pipe2[j].skuOvLinks).length) delete pipe2[j].skuOvLinks;
+          break;
+        }
+      }
+      savePipeline(pipe2);
+      renderPipeline();
+      notifyUndo(val ? '✓ Link de la OC parcial actualizado' : '✓ Link de la OC parcial quitado',
+        function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
+    }, {okLabel:'Guardar'});
 }
 
 function updatePipelineStatus(id, newStatus){
   var pipe = getPipeline();
   var _row0 = pipe.find(function(r){ return r.id === id; });
-  if(_row0 && !cevenCanEditPipelineRow(_row0.ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(_row0 && !cevenCanEditPipelineRow(_row0.ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
   pushPipeUndo(id);
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === id){
@@ -713,7 +742,7 @@ function updatePipelineStatus(id, newStatus){
 function updatePipelineMesCierreValue(id, fullValue){
   var pipe = getPipeline();
   var _row0 = pipe.find(function(r){ return r.id === id; });
-  if(_row0 && !cevenCanEditPipelineRow(_row0.ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+  if(_row0 && !cevenCanEditPipelineRow(_row0.ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
   pushPipeUndo(id);
   var qNum = null;
   for(var i=0;i<pipe.length;i++){
@@ -743,7 +772,7 @@ function updateSkuMesCierreValue(pipeId, lineKey, fullValue){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === pipeId){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       if(countQuoteProductLines(pipe[i].qNum) <= 1){
         pipe[i].mesCierre = fullValue || '';
         if(pipe[i].skuMesCierre) delete pipe[i].skuMesCierre[lineKey];
@@ -766,7 +795,7 @@ function updatePipelineMesCierre(id, kind, value){
   var pipe = getPipeline();
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === id){
-      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ alert('No tenés permiso para modificar esta línea del pipeline.'); return; }
+      if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       var cur = pipe[i].mesCierre || '';
       var p = cur ? cur.split('-') : ['',''];
       var y = p[0] || '', m = p[1] || '';
@@ -787,7 +816,7 @@ function openPipelineQuote(qn){
   var db = getDB();
   var rows = db.filter(function(r){ return r['N° Cotización'] === qn; });
   if(!rows.length){
-    alert('No se encontró la cotización #'+qn+' en el historial.');
+    showToast('No se encontró la cotización #'+qn+' en el historial.');
     return;
   }
   editQuoteFromHistory(qn);
@@ -796,11 +825,16 @@ function openPipelineQuote(qn){
 function removePipeline(id){
   var pipe = getPipeline();
   var row = pipe.find(function(r){ return r.id === id; });
-  if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ alert('No tenés permiso para eliminar esta línea del pipeline.'); return; }
-  if(!confirm('¿Eliminar esta entrada del pipeline?')) return;
+  if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para eliminar esta línea del pipeline.'); return; }
+  if(!row) return;
+  // Se borra y se avisa: pushPipeUndoRemove() guarda la fila entera para poder
+  // reinsertarla desde el cartel (o desde el botón Deshacer del pipeline).
+  if(typeof pushPipeUndoRemove === 'function') pushPipeUndoRemove(row);
   pipe = pipe.filter(function(r){ return r.id !== id; });
   savePipeline(pipe);
   renderPipeline();
+  notifyUndo('Quitaste del pipeline la cotización #'+(row.qNum||'—')+' ('+(row.cliente||'—')+').',
+    function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
 }
 
 function buildPipelineWorkbook(){
@@ -845,7 +879,7 @@ function buildPipelineWorkbook(){
 
 function exportPipeline(){
   var wb = buildPipelineWorkbook();
-  if(!wb){ alert('Pipeline vacío.'); return; }
+  if(!wb){ showToast('Pipeline vacío.'); return; }
   XLSX.writeFile(wb, 'Ceven_Pipeline.xlsx');
 }
 

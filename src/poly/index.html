@@ -238,8 +238,8 @@
   <div id="errbox" style="display:none;background:#fff2f2;color:#d70015;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px"></div>
   <div id="nopl" style="text-align:center;padding:36px;background:#fff;border-radius:12px;border:1.5px dashed #d2d2d7;cursor:pointer;margin-bottom:12px" onclick="document.getElementById('plup').click()">
     <div style="font-size:26px;margin-bottom:6px">📂</div>
-    <strong>Subí tu catálogo (SKU + Descripción)</strong>
-    <p style="color:#6e6e73;font-size:12px;margin-top:4px">Se guarda automáticamente para la próxima vez. No hace falta precio — se carga a mano en cada cotización.</p>
+    <strong>Subí el catálogo del ERP</strong>
+    <p style="color:#6e6e73;font-size:12px;margin-top:4px">Se guarda solo para la próxima vez. Del archivo salen los precios de los cuatro niveles, la categoría, el stock y el IVA.<br>También podés cargar artículos de a uno con <b>+ Nuevo artículo</b>.</p>
   </div>
   <div id="catui" style="display:none">
     <label class="lbl">Buscar / Pegar SKUs <span style="color:#6e6e73;font-weight:400">— pegá varios SKUs separados por enter, tab o coma</span></label>
@@ -255,8 +255,15 @@
       <span id="catcount" style="color:#6e6e73"></span>
     </div>
     <div class="tw">
-      <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:15%"><col><col style="width:168px"><col style="width:58px"><col style="width:62px"><col style="width:64px"></colgroup>
+      <!-- min-width: las columnas de ancho fijo suman ~564px, así que en un
+           celular Descripción se aplastaba a nada. Con esto la tabla scrollea
+           dentro de .tw (que ya trae overflow-x:auto), igual que la de la
+           cotización. -->
+      <table style="table-layout:fixed;width:100%;min-width:780px">
+        <!-- SKU y Precios en px: su contenido no crece con el ancho de la
+             ventana (un SKU y cuatro importes miden lo que miden), así que lo
+             que sobra tiene que ir a Descripción, que es lo único que se corta. -->
+        <colgroup><col style="width:130px"><col><col style="width:250px"><col style="width:58px"><col style="width:62px"><col style="width:64px"></colgroup>
         <thead>
           <tr>
             <th>SKU</th><th>Descripción</th>
@@ -279,6 +286,26 @@
     <div class="g2">
       <div><label class="lbl">SKU *</label><input id="np-sku" type="text" placeholder="Ej: A4LZ8AA#ABM"></div>
       <div><label class="lbl">Descripción *</label><input id="np-desc" type="text" placeholder="Descripción del producto"></div>
+      <!-- El datalist se llena con los rubros que ya tiene el catálogo, pero se
+           puede escribir uno nuevo: la lista sale del Excel y cambia. -->
+      <div><label class="lbl">Categoría</label><input id="np-rubro" type="text" placeholder="Ej: Audio" list="np-rubro-list"><datalist id="np-rubro-list"></datalist></div>
+      <div>
+        <label class="lbl">Stock <span style="color:#6e6e73;font-weight:400;text-transform:none;letter-spacing:0">— vacío = sin dato, distinto de 0</span></label>
+        <input id="np-stock" type="number" min="0" step="1" placeholder="—">
+      </div>
+      <div>
+        <label class="lbl">IVA</label>
+        <select id="np-iva">
+          <option value="IVA GENERAL">21% — general</option>
+          <option value="IVA REDUCIDO">10,5% — reducido</option>
+        </select>
+      </div>
+    </div>
+    <!-- PRECIOS POR NIVEL · los inputs los arma products.js con los niveles que
+         declara brand.js (priceTiers): agregar o sacar un nivel no se toca acá. -->
+    <div style="border-top:0.5px solid #d2d2d7;margin-top:16px;padding-top:14px">
+      <label class="lbl">Precios por nivel <span style="color:#6e6e73;font-weight:400;text-transform:none;letter-spacing:0">— en USD. El que quede vacío se completa a mano en cada cotización</span></label>
+      <div id="np-precios" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:4px"></div>
     </div>
     <div id="nperr" style="display:none;color:#d70015;font-size:13px;margin-top:10px"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
@@ -306,6 +333,16 @@
     </div>
   </div>
   <div id="histwrap"></div>
+
+  <!-- PAPELERA · lo eliminado se guarda 30 días (shared/papelera.js).
+       Cerrada por defecto: es el lugar al que se va a buscar algo puntual,
+       no algo que haya que ver en cada visita al historial. -->
+  <details id="pap-box" style="margin-top:20px;border-top:0.5px solid #d2d2d7;padding-top:14px">
+    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#6e6e73">
+      🗑 Papelera <span id="pap-n" style="font-weight:400;color:#aeaeb2"></span>
+    </summary>
+    <div id="pap-body" style="margin-top:10px"></div>
+  </details>
 </div>
 
 <!-- PIPELINE -->
@@ -452,6 +489,7 @@
 <script src="js/pipeline-detail.js"></script>
 <script src="../shared/backup-folder.js"></script>
 <script src="js/history.js"></script>
+<script src="../shared/papelera.js"></script>
 <script src="../shared/comprobante.js"></script>
 <script src="../shared/pdf-core.js"></script>
 <script src="js/pdf.js"></script>
@@ -488,7 +526,9 @@
 
     <div class="pk-lista">
       <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:54px"><col style="width:15%"><col><col style="width:168px"><col style="width:58px"><col style="width:62px"></colgroup>
+        <!-- Mismos anchos que la vista Catálogo (los niveles ahora van en dos
+             columnas, ver .cat-tiers), más la columna del botón +. -->
+        <colgroup><col style="width:54px"><col style="width:130px"><col><col style="width:230px"><col style="width:58px"><col style="width:62px"></colgroup>
         <thead>
           <tr>
             <th></th><th>SKU</th><th>Descripci&oacute;n</th>

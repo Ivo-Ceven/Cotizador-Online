@@ -72,6 +72,7 @@ var ASSETS = [
   './shared/catalog-core.js',
   './shared/quote-num.js',
   './shared/clientes.js',
+  './shared/papelera.js',
   './shared/pipeline-store.js',
   './shared/pipeline-status.js',
   './shared/pipeline-group.js',
@@ -107,6 +108,7 @@ var ASSETS = [
   './apple/js/pdf.js',
   './apple/js/warranties.js',
   './apple/js/target.js',
+  './apple/js/picker.js',
   './apple/js/cevencare.js',
 
   './poly/brand.js',

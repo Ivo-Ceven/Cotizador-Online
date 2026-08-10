@@ -123,7 +123,7 @@ function iframeError() {
   if (modal) modal.style.display = 'none';
   if (window.cevenNav) cevenNav.notifyClosed(closeCevenCare);
   var popup = window.open('cevencare.html', 'cevencare', 'width=820,height=700,resizable=yes,scrollbars=yes');
-  if (!popup) alert('No se pudo abrir CevenCare. Habilitá los popups o verificá que cevencare.html esté en la misma carpeta.');
+  if (!popup) showToast('No se pudo abrir CevenCare. Habilitá los popups o verificá que cevencare.html esté en la misma carpeta.');
 }
 
 function iframeLoaded(iframe) {
@@ -135,7 +135,7 @@ function iframeLoaded(iframe) {
     // Cross-origin or file not found - fallback to popup
     document.getElementById('cc-modal').style.display = 'none';
     var popup = window.open('cevencare.html', 'cevencare', 'width=820,height=700,resizable=yes,scrollbars=yes');
-    if (!popup) alert('Habilitá popups para abrir CevenCare, o asegurate que ambos archivos estén en la misma carpeta.');
+    if (!popup) showToast('Habilitá popups para abrir CevenCare, o asegurate que ambos archivos estén en la misma carpeta.');
   }
 }
 

@@ -66,7 +66,10 @@ function renderQ() {
       +'</td>'
       +'</tr>';
   }
-  html+='<tr><td colspan="9" style="padding:9px 10px"><button class="al" onclick="openCat()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
+  // abrirPicker() y no openCat(): la subpantalla flotante deja elegir sin salir
+  // de la cotización (js/picker.js). openCat() sigue existiendo para "editar
+  // ítem", que sí necesita la vista Catálogo entera.
+  html+='<tr><td colspan="9" style="padding:9px 10px"><button class="al" onclick="abrirPicker()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
   if(items.length){
     // La tabla tiene 9 columnas y el Total va bajo la 6ª ("Total"), no bajo la 5ª
     // ("P. Venta"): 5 + 1 + 3 = 9. Con colspan=4 el importe caía una columna antes.
