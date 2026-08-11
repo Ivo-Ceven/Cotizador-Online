@@ -2,7 +2,7 @@
 
 ## Visión general
 
-La plataforma es multi-marca: un **shell** (`src/index.html`) con el login y el panel selector, más un cotizador independiente por marca (`src/apple/` y `src/poly/` completos; HP se agregará igual). Del panel también se entra al **tablero de tareas del equipo** (`src/tareas/`), que no es una marca: es una página compartida, sin cotización ni pipeline. `src/shared/` tiene lo común a todas las páginas; `src/vendor/` las librerías auto-hospedadas (xlsx, html2canvas, jsPDF + autotable).
+La plataforma es multi-marca: un **shell** (`src/index.html`) con el login y el panel selector, más un cotizador independiente por marca (`src/apple/` y `src/poly/` completos; HP se agregará igual). Del panel también se entra al **cotizador multimarca** (`src/multi/`), que arma un pedido con SKUs de cualquier marca y lo emite como una cotización real de cada una, y al **tablero de tareas del equipo** (`src/tareas/`). Esos dos no son marcas: son páginas que las cruzan. `src/shared/` tiene lo común a todas las páginas; `src/vendor/` las librerías auto-hospedadas (xlsx, html2canvas, jsPDF + autotable).
 
 Está desplegada como **PWA instalable y offline-first** en https://cotizadores-ceven.vercel.app (`src/sw.js` en la raíz, scope `/`).
 
@@ -60,6 +60,7 @@ Nació de dos HTML monolíticos (7.365 y 2.627 líneas) que en 07/2026 se partie
 | `quoteLists` | qué arrays componen una cotización (`items`, y en Apple también `warrantyItems`), como `{get, set}`. Lo usa `shared/opciones.js` para borrar la Opción B entera sin conocer los arrays de cada marca |
 | `condicionesFijas` | líneas del bloque "Condiciones Comerciales" propias de la marca, entre la de impuestos y la de entrega. Apple: enrolamiento en Apple Business Manager. Poly: ninguna. Las otras cuatro líneas son iguales en todas las marcas y las arma `cevenCondiciones()` |
 | `navItems` | vistas que muestra la barra superior, en orden: `{view, label, alsoFor?, needsPipeline?}`. `alsoFor` lista las vistas sin ítem propio que igual marcan a esta como activa (`addprod` cuelga de `catalog`, `qnac` de `quote`); `needsPipeline` esconde el ítem al rol lector |
+| `qNumPrefijo` / `qNumTitulo` | cómo se **lee** el número, que no es como se **guarda**. El multimarca muestra "Pedido M-0042" pero guarda `0042`, igual que todas las marcas: la columna `qNum` de Supabase es `bigint`. Lo aplican `cevenQNumVisible()` y `cevenPintarQNum()` en `shared/quote-num.js` |
 
 `window.cevenK(base)` devuelve `prefix + base`. **Todo** acceso a localStorage desde código compartido pasa por ahí.
 
@@ -90,7 +91,8 @@ Módulos propios de Apple (`src/apple/js/`):
 | Archivo | Responsabilidad |
 |---|---|
 | `state.js` | Variables globales (`products`, `items`, `warrantyItems`…), dark mode, constantes `NAC_DEF`, `MODEL_CATEGORY`, `IVA_MAP`, `COLS`, migraciones de tasas NAC, chequeo de recuperación de datos al arrancar, contador `qNum` |
-| `pricing.js` | Lo que era exclusivo de Apple en el viejo `utils.js`: margen global, `calcP()` (fórmula de precio), `getNac()` (matching de % nacionalización), `getIVA()`, `recalcMarginsFromGlobal()`. Lo genérico se fue a `shared/ui-core.js` |
+| `pricing-core.js` | Las **cuentas de Apple sin pantalla**: `cevenAppleCalcP()`, `cevenAppleNac()`, `cevenAppleIVA()`, `cevenAppleMargenDePrecio()`, `cevenAppleCategoria()`, `cevenAppleAgregados()`, y las tres tablas (NAC por defecto, familia por LOB, IVA). No lee el DOM ni ninguna global. **Lo carga también `src/multi/`**, y esa es su razón de existir: usar el mismo código —y no una copia— es lo único que garantiza que un SKU no salga a dos precios distintos según por dónde se lo cotizó. Se carga ANTES de `state.js`, que toma de ahí las tablas |
+| `pricing.js` | Los envoltorios con pantalla de lo anterior: `calcP()`, `getNac()`, `getIVA()` le pasan `nacRates`, `quoteNacOverrides` e `IVA_MAP`. Además el margen global (`getM`, `recalcMarginsFromGlobal`) |
 | `catalog.js` | Carga de price list (Excel/CSV), actualización de precios, limpieza de SKUs LL/A y E/A, búsqueda (incl. pegado masivo de SKUs), render del catálogo, `addToQuote()`. Ver "El price list de Apple" abajo |
 | `quote.js` | Render de la cotización (`renderQ`), orden por familia, qty/margen/precio por ítem, modal de edición de ítem |
 | `nac.js` | Página de % nacionalización global + overrides por cotización + diagnóstico |
@@ -114,6 +116,75 @@ Poly tiene los mismos nombres donde el concepto es el mismo, pero su `pipeline-c
 > **Ojo con `factura` en el pipeline de Poly.** Desde 08/2026 esa columna guarda el **link a Netsuite** del proyecto, no un número de factura. Mismo criterio que "sala": se renombró solo lo que se ve en pantalla, porque la columna existe en Supabase (`pipeCols`/`nullableCols` de `brand.js`), viaja sincronizada y ya tiene datos. El botón verde **abre** Netsuite y el ✎ amarillo de al lado **cambia** el link; sin link, el botón es rojo y lo pide. `cevenNetsuiteURL()` (en `poly/js/pipeline-detail.js`) le antepone `https://` al link pegado sin protocolo y **descarta todo lo que no sea http(s)** — el pipeline se sincroniza con todo el equipo, así que un `javascript:` guardado ahí correría en la pantalla de quien apriete el botón.
 
 `cevencare.html` + `js/cevencare.js` + `css/cevencare.css` son una mini-app aparte (sin Supabase): cotiza garantías por dispositivo/canal y envía los ítems elegidos al cotizador con `postMessage({type:'cevencare-add-warranty', items})`; `warranties.js` los recibe y los suma a `warrantyItems`.
+
+## `src/multi/`: el cotizador multimarca
+
+Un pedido puede mezclar marcas (unas Mac y un equipo de video Poly). Antes eso
+eran dos cotizaciones en dos cotizadores y dos PDF para el cliente.
+
+**Pero el forecast se mide por marca**, así que el multimarca no reemplaza a los
+cotizadores: **reparte**. Se arma el pedido una vez y al **emitir** se crea la
+cotización REAL de cada marca —con su número, sus filas en el historial de esa
+marca y su fila en su pipeline—. La plata queda donde se factura.
+
+Para todo `src/shared/` esto es **una marca más**: tiene su `brand.js`
+(`id:'multi'`, `prefix:'multi_'`), su `cquotes`, su `cqc` y su papelera, así que
+reusa `sync.js`, `auth.js`, `navbar.js`, `opciones.js`, `quote-num.js`,
+`clientes.js` y `backup*.js` sin una sola rama nueva adentro de `shared/`.
+
+| Archivo | Responsabilidad |
+|---|---|
+| `js/marcas.js` | **El registro**: lo único que sabe cómo se comporta cada marca (`nuevaLinea`, `repricear`, `filaCquotes`, `filaPipeline`, `pipelineExtra`, qué controles de precio necesita). Un `if (linea.brand === 'apple')` en cualquier otro archivo de `src/multi/` va mal: el lugar es este, igual que en `shared/` el lugar es `brand.js` |
+| `js/catalogo-multi.js` | El catálogo unificado, **de solo lectura**. Un request a `app_settings?brand=in.(apple,poly)&key=in.(cpl,cnac)` y a caché para que ande offline |
+| `js/quote.js` | La grilla, agrupada por marca y con los controles de precio de las marcas presentes |
+| `js/catalog-view.js` | El catálogo en pantalla, con filtro por marca |
+| `js/quotes-db.js` | Persistencia del pedido |
+| `js/emitir.js` | **La emisión.** Ver abajo |
+| `js/history.js` | Historial, con las marcas de cada pedido y a qué número se emitió |
+
+Lo que hay que saber para tocarlo:
+
+- **No tiene catálogo propio** (`cpl` no está en sus `settingKeys`) y no se puede
+  editar desde acá: los productos y los precios son de cada marca. Si se pudiera
+  desde dos lados, uno de los dos quedaría viejo sin que nadie se entere.
+- **Ninguna fórmula se escribe acá.** Los precios salen de
+  `apple/js/pricing-core.js` y `poly/js/pricing-core.js`, que son los mismos
+  archivos que cargan esas marcas. `scripts/check-multi.js` verifica que el
+  mismo SKU dé el mismo precio por los dos caminos.
+- **Cero cambios de esquema en Supabase.** El link entre el pedido y las
+  cotizaciones que generó viaja en la clave `_multi` de cada fila de `cquotes`,
+  que ya se sincroniza — el mismo criterio con el que las opciones A/B
+  resolvieron su chapita sin agregar una columna.
+- **Todavía no tiene pipeline propio.** El seguimiento vive en el pipeline de
+  cada marca. Por eso `navItems` no trae el ítem: mostrarlo con la vista vacía
+  se lee como un bug.
+
+### La emisión (`js/emitir.js`)
+
+Por cada marca presente en el pedido:
+
+1. **Reserva número en esa marca**: `max(contador, mayor número que existe) + 1`,
+   la misma regla auto-reparable de `shared/quote-num.js` pero sobre los datos
+   remotos, porque el multimarca no tiene el `localStorage` de la otra marca.
+2. **Escribe las filas en el `cquotes` de esa marca**, con la forma de sus
+   columnas. Es lo que hace que la fila del pipeline se pueda expandir por SKU y
+   que el Excel de esa marca la incluya: sin esto la fila existe pero está hueca.
+3. **Upsert de la fila de pipeline** con `brand=<marca>` y la forma de esa marca.
+4. **Re-emitir es idempotente**: se sacan del `cquotes` las filas de ese número
+   y se reinsertan, y la fila de pipeline se busca por número y se le actualizan
+   los montos **conservando** `id`, `estado`, `mesCierre` y el link de
+   OV/Netsuite — que son del vendedor de esa marca, no del pedido.
+
+`cevenEmitirPlan()` es **puro** a propósito: recibe el estado remoto y devuelve
+exactamente qué se va a escribir, sin tocar la red. Todo lo que puede salir mal
+en la lógica se prueba en `scripts/check-emitir.js`; la capa REST solo transporta.
+
+> ⚠ **`cquotes` es un blob con last-write-wins.** Emitir es leer-modificar-escribir
+> el historial de OTRA marca: si alguien guarda ahí en la misma ventana, una de
+> las dos escrituras se pierde. Se mitiga leyendo justo antes de escribir,
+> informando el resultado **por marca** (no un "listo" genérico) y con la
+> idempotencia: recuperarse es volver a emitir. Las filas de `pipeline` no
+> sufren esto, van fila por fila.
 
 ## `src/tareas/`: el tablero del equipo
 
@@ -192,6 +263,10 @@ La integración con el historial del navegador pasa por `shared/nav.js`:
 1. **`src/hp/brand.js`**: copiar el de Poly y ajustar `id`, `prefix` (`'hp_'`), `settingKeys`, `pipeCols`/`numCols`/`objCols`/`nullableCols`, `navItems`, `theme` (el azul del logo, `#0096d6`, ya reservado en la tarjeta del shell) y los campos de backup. Este archivo es casi todo lo que la marca necesita declarar.
 2. **`src/hp/index.html`**: cargar `brand.js` primero, enseguida `../shared/theme.js`, después `safe.js`, `config.js`, `auth.js`, `notify.js` + el guard de sesión, después `navbar.js`, y al final los módulos compartidos y los propios (ver "El orden de carga importa").
 3. **Módulos propios en `src/hp/js/`**: solo lo que sea genuinamente distinto. Poly, que es la marca más simple, tiene 13 archivos y ~1.900 líneas; casi todo eso es su modelo de pipeline por OPG.
+3b. **Sumarla al cotizador multimarca**: una entrada más en el registro
+   `src/multi/js/marcas.js` (precio, repricing, fila de `cquotes`, fila de
+   pipeline) y su `pricing-core.js` en el `index.html` del multimarca. El
+   catálogo se junta solo: `catalogo-multi.js` recorre las marcas del registro.
 4. Activar la tarjeta en el shell (`src/index.html`): convertir el `<div class="mcard soon" data-brand="hp">` en `<a class="mcard" data-brand="hp" href="hp/">` y sacarle el `<span class="badge">Próximamente</span>`. El `data-brand` ya trae el acento; si se cambia el color hay que tocarlo en los dos lados (el shell no carga `brand.js`). El logo va en `src/icons/brands/<marca>.png` (recortado, ~128 px de lado mayor) y se declara además en el mapa `MARKS` de `shared/navbar.js`, que es de donde sale el chip de la barra superior; si el logo es de un solo color oscuro se marca `mono:true` para que `dark.css` lo invierta en modo oscuro.
 5. **Registrar los archivos nuevos en `ASSETS` de `src/sw.js`** (y el `index.html` en `DOCS`), subir `APP_VERSION` en `shared/config.js` y verificar con `node scripts/check-precache.js`. Si falta uno, el precache queda incompleto y la marca no abre sin conexión.
 
@@ -316,6 +391,8 @@ node scripts/check-precache.js       # rutas del service worker vs. archivos rea
 node scripts/check-globals.js        # una misma función definida dos veces en un bundle
 node scripts/check-comprobante.js    # genera el comprobante en PDF y le lee el texto
 node scripts/check-opciones.js       # opciones A/B: que el pipeline NO sume las dos
+node scripts/check-multi.js          # multimarca: mismo SKU al mismo precio por los dos caminos + la pantalla se arma
+node scripts/check-emitir.js         # emisión: reparto, numeración y re-emisión idempotente
 node scripts/check-apple-catalogo.js # importador de Apple: encabezado corrido, Model # y los dos archivos
 node scripts/check-apple-picker.js   # la flotante de Apple y la fila compartida con el catálogo
 node scripts/check-apple-manual.js   # alta/edición/baja de un artículo a mano en Apple

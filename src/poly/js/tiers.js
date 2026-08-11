@@ -31,9 +31,12 @@
    columna `Nivel de precio` de `cquotes`, se sincroniza con todo el equipo y
    quedo escrita en las cotizaciones que ya existen. Cambiarla obligaria a
    migrar esas filas para ganar cero — la etiqueta se resuelve en un solo lugar
-   (cevenTierLabel) y es lo unico que ve el usuario. */
-var TIER_MANUAL = 'MANUAL';
-var TIER_MANUAL_LBL = 'Custom';
+   (cevenTierLabel) y es lo unico que ve el usuario.
+
+   Las constantes y las cuentas viven en `pricing-core.js`, sin DOM, porque el
+   cotizador multimarca cotiza SKUs de Poly y tiene que dar el mismo precio. */
+var TIER_MANUAL = CEVEN_TIER_MANUAL;
+var TIER_MANUAL_LBL = CEVEN_TIER_MANUAL_LBL;
 
 function cevenTiers(){ return (window.CEVEN_BRAND && window.CEVEN_BRAND.priceTiers) || []; }
 
@@ -50,45 +53,26 @@ function tierGlobal(){
 }
 
 // El nivel EFECTIVO de una linea: el suyo si lo tiene, si no el global.
-function tierDeLinea(it){
-  if(!it) return '';
-  if(it.tier === TIER_MANUAL) return TIER_MANUAL;
-  return it.tier || tierGlobal();
-}
+function tierDeLinea(it){ return cevenPolyTierEfectivo(it, tierGlobal()); }
 
 /* Precio de catalogo de un SKU en un nivel. Devuelve null si el SKU no esta en
    el catalogo o no tiene ese nivel — que NO es lo mismo que 0: un 0 se cotiza
    y un null hay que completarlo a mano. */
 function precioDeCatalogo(sku, tier){
-  if(!sku || !tier || tier === TIER_MANUAL) return null;
-  for(var i=0;i<products.length;i++){
-    if(products[i].sku === sku){
-      var p = products[i].precios && products[i].precios[tier];
-      return (typeof p === 'number' && !isNaN(p)) ? p : null;
-    }
-  }
-  return null;
+  return cevenPolyPrecioEnLista(products, sku, tier);
 }
 
 // Los 4 precios de un SKU, para poder mostrarlos en el selector.
 function preciosDeCatalogo(sku){
-  for(var i=0;i<products.length;i++){
-    if(products[i].sku === sku) return products[i].precios || {};
-  }
-  return {};
+  var p = cevenPolyProducto(products, sku);
+  return (p && p.precios) || {};
 }
 
 /* Recalcula el precio de una linea segun su nivel efectivo. No toca las
    MANUAL, ni las que quedaron sin precio de catalogo (se dejan como estan para
    que el usuario las complete). Devuelve true si cambio algo. */
 function repricearLinea(it){
-  var t = tierDeLinea(it);
-  if(t === TIER_MANUAL || !t) return false;
-  var p = precioDeCatalogo(it.sku, t);
-  if(p === null) return false;
-  if(it.salePrice === p) return false;
-  it.salePrice = p;
-  return true;
+  return cevenPolyRepricear(it, products, tierGlobal());
 }
 
 /* Repricea las lineas que SIGUEN al global (tier vacio). Las que tienen nivel

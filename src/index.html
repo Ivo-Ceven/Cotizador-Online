@@ -69,8 +69,12 @@
      Se entra igual que a un cotizador, con la misma tarjeta. Pero NO es una
      marca: va en su propia fila, separada por un filete, para que el panel siga
      leyéndose como "elegí la marca" y esto quede claramente aparte. */
-  .extras{margin-top:30px;padding-top:26px;border-top:0.5px solid var(--cb);width:100%;max-width:568px;display:flex;justify-content:center}
+  .extras{margin-top:30px;padding-top:26px;border-top:0.5px solid var(--cb);width:100%;max-width:568px;display:flex;justify-content:center;gap:18px;flex-wrap:wrap}
   .tcard{width:100%;max-width:400px;--acc:#30a46c}
+  /* El verde azulado del multimarca (ver src/multi/brand.js). Está repetido acá
+     a mano porque el shell no carga ningún brand.js: si se cambia allá, hay que
+     cambiarlo acá. */
+  .mucard{width:100%;max-width:400px;--acc:#0f6b62}
   .tcard .mcard-mark{display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--c3);border-radius:10px}
   /* Pendientes: el único dato del tablero que sigue estando en el shell — para
      eso está la tarjeta, para no tener que entrar a ver si hay algo. */
@@ -160,6 +164,21 @@
        shared/todos.js.
        ============================================================ -->
   <div class="extras">
+    <!-- ============================================================
+         COTIZADOR MULTIMARCA · tampoco es una marca: es un cotizador que
+         las cruza. Se arma un pedido con SKUs de cualquier marca y al
+         emitirlo se crea la cotización REAL de cada una, con su número y
+         su fila de pipeline. Va en esta fila, con las tareas, justamente
+         para que el panel siga leyéndose como "elegí la marca".
+         ============================================================ -->
+    <a class="mcard mucard" href="multi/" title="Armar un pedido con productos de varias marcas">
+      <span class="mcard-mark" aria-hidden="true">🧩</span>
+      <span class="mcard-body">
+        <b>Pedido multimarca</b>
+        <span>Un pedido, una cotización por marca</span>
+      </span>
+      <span class="mcard-go" aria-hidden="true">→</span>
+    </a>
     <a class="mcard tcard" href="tareas/" title="Abrir el tablero de tareas del equipo">
       <span class="mcard-mark" aria-hidden="true">✅</span>
       <span class="mcard-body">

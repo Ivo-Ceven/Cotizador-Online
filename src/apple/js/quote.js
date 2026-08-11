@@ -217,18 +217,10 @@ function upNac(id, v){
   }
   renderQ();
 }
+// Margen exacto a partir de un precio de venta dado. La cuenta (incluido el
+// margen negativo, que se conserva a propósito) vive en pricing-core.js.
 function calcMargenFromPrice(base, nac, price){
-  // Margen exacto a partir de un precio de venta dado. Fórmula inversa de calcP.
-  // El margen NEGATIVO se conserva: vender bajo el costo nacionalizado es una
-  // pérdida real y tiene que llegar así al pipeline y al Target Anual. Antes se
-  // clampeaba a 0 y el margen ponderado salía inflado (18,2% en vez de 16,0%).
-  if(!price || price <= 0) return 0;
-  var costoNac = base * (1 + (nac||0)/100);
-  if(costoNac <= 0) return 0;
-  var mg = (1 - costoNac/price) * 100;
-  if(mg < -100) mg = -100; // piso: precio de venta ridículo / dato corrupto
-  if(mg > 99) mg = 99;
-  return Math.round(mg * 100) / 100; // 2 decimales
+  return cevenAppleMargenDePrecio(base, nac, price);
 }
 
 function upSalePrice(id,delta){

@@ -110,8 +110,8 @@ function cargar(marca){
   const lee = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
   const comunes = ['src/shared/safe.js', 'src/shared/opciones.js', 'src/shared/quote-core.js'];
   const propios = marca === 'apple'
-    ? ['src/apple/js/pricing.js', 'src/apple/js/pipeline-core.js']
-    : ['src/poly/js/pipeline-core.js'];
+    ? ['src/apple/js/pricing-core.js', 'src/apple/js/pricing.js', 'src/apple/js/pipeline-core.js']
+    : ['src/poly/js/pricing-core.js', 'src/poly/js/pipeline-core.js'];
   comunes.concat(propios).forEach(function(f){ vm.runInContext(lee(f), ctx, {filename: f}); });
 
   // getPipeline/savePipeline/getDB/saveDB: los define cada marca en módulos que

@@ -11,28 +11,12 @@ function _nextSel(){ return ++_selSeq; }
 var histSel = {};
 var editId = null;
 
-var NAC_DEF = {"AirTag":29,"Apple TV":29,"Apple TV Accessories":29,"Creativity":33,"Displays & Mounts":33,"Headphones & Speakers":48,"iMac":24,"iPad":19,"iPad Air":19,"iPad Air 11":19,"iPad Air 13":19,"iPad mini":19,"iPad Pro 11":19,"iPad Pro 13":19,"iPhone":6,"Mac English":24,"Mac Spanish":24,"Mac mini":6,"Mac Studio":24,"MacBook Air 13":24,"MacBook Air 15":24,"MacBook Neo":25,"MacBook Pro 14":24,"MacBook Pro 16":24,"Mice & Keyboards":33,"Power & Cables":40,"Watch":40,"Watch SE 3":40,"Watch Series 11":40,"Watch Ultra 3":40};
-
-// Tabla de categorías por Model (LOB) — fuente de verdad para pipeline
-var MODEL_CATEGORY = {
-  'AirTag':'acc','Apple TV':'acc','Apple TV Accessories':'acc',
-  'Creativity':'acc','Displays & Mounts':'acc','Headphones & Speakers':'acc',
-  'Mice & Keyboards':'acc','Power & Cables':'acc',
-  'Watch':'acc','Watch SE 3':'acc','Watch Series 11':'acc','Watch Ultra 3':'acc',
-  // 'Mac English' y 'Mac Spanish' NO están aquí: se usan tanto para Macs con
-  // teclado en español/inglés como para accesorios → el fallback por descripción
-  // los distingue correctamente (un MacBook tiene "MacBook" en el nombre; un
-  // Magic Keyboard/Mouse/Trackpad no).
-  'iMac':'mac','Mac mini':'mac','Mac Studio':'mac',
-  'MacBook Air 13':'mac','MacBook Air 15':'mac','MacBook Neo':'mac',
-  'MacBook Pro 14':'mac','MacBook Pro 16':'mac',
-  'iPad':'ipad','iPad Air':'ipad','iPad Air 11':'ipad','iPad Air 13':'ipad',
-  'iPad mini':'ipad','iPad Pro 11':'ipad','iPad Pro 13':'ipad',
-  'iPhone 15':'iphone','iPhone 16':'iphone','iPhone 16 Plus':'iphone',
-  'iPhone 16e':'iphone','iPhone 17':'iphone','iPhone 17 Pro':'iphone',
-  'iPhone 17 Pro Max':'iphone','iPhone 17e':'iphone',
-  'iPhone Air':'iphone'
-};
+/* Las tres tablas de pricing (NAC por defecto, familia por LOB e IVA) viven en
+   `pricing-core.js`, que se carga justo antes que este archivo: el cotizador
+   multimarca las necesita sin cargar todo el estado de la app de Apple. Acá
+   quedan con los nombres de siempre para no tocar los lugares que ya las usan. */
+var NAC_DEF = CEVEN_APPLE_NAC_DEF;
+var MODEL_CATEGORY = CEVEN_APPLE_MODEL_CATEGORY;
 var nacRates = JSON.parse(JSON.stringify(NAC_DEF));
 var quoteNacOverrides = {}; // {LOB: %} aplica solo a la cotización activa
 try {
@@ -64,7 +48,7 @@ try {
   }
 } catch(e) {}
 
-var IVA_MAP = {"Accessories":"21%","TV & Home":"21%","Mac":"10.5%","Mac English":"10.5%","Mac Spanish":"10.5%","iPad":"10.5%","iPhone":"10.5% + 21%","Watch":"21%"};
+var IVA_MAP = CEVEN_APPLE_IVA_MAP;
 
 // Columnas del Excel de cotizaciones. 'Condición de pago', 'Propuesta efectiva
 // hasta' y 'Entrega' se agregaron cuando doSave() empezó a persistirlas (sin eso,

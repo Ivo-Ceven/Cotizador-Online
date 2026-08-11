@@ -23,18 +23,11 @@ function refreshOpgDatalist(){
 
    Ahora el OPG es un dato informativo del proyecto y la identidad de la fila es
    el número de cotización: una cotización, una fila, siempre. */
-/* El monto de una fila del pipeline a partir de un juego de líneas.
-
-   Vive suelto porque lo calculan DOS caminos —agregar al pipeline desde la
-   cotización y cambiar la opción vigente desde la fila— y tienen que dar
-   exactamente lo mismo: si se desincronizaran, cambiar de opción dejaría la fila
-   con un total que no es el de ninguna de las dos. */
-function _pipeMontoDeItems(its){
-  var monto = 0;
-  its = its || [];
-  for(var i=0;i<its.length;i++){ monto += (its[i].salePrice||0) * (its[i].qty||1); }
-  return Math.round(monto);
-}
+/* El monto de una fila del pipeline a partir de un juego de líneas. La cuenta
+   vive en `pricing-core.js`, sin DOM: la usan también el cambio de opción
+   vigente y la emisión del cotizador multimarca, y tienen que dar exactamente
+   lo mismo o la fila muestra un total que la cotización no dice. */
+function _pipeMontoDeItems(its){ return cevenPolyMonto(its); }
 
 /* Cambia la opción vigente de una cotización desde su fila del pipeline, sin
    reabrirla. Es el momento en que el cliente define cuál de las dos compra.

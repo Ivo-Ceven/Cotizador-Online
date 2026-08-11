@@ -56,42 +56,15 @@ function recalcMarginsFromGlobal(){
   if(document.getElementById('p-catalog') && document.getElementById('p-catalog').classList.contains('on')) renderCat();
 }
 
-// ── PRECIO ──
-function calcP(base, nac, mg) { if(mg >= 100) mg = 99; return Math.round(base*(1+nac/100)/(1-mg/100)); }
+/* ── PRECIO / NACIONALIZACIÓN / IVA ──
+   Las cuentas están en `pricing-core.js`, sin DOM y sin globales, para que el
+   cotizador MULTIMARCA use exactamente las mismas. Acá quedan los envoltorios
+   que le pasan el estado de esta pantalla: las tasas NAC editadas, los
+   overrides de la cotización activa y la tabla de IVA. */
 
-// ── NACIONALIZACIÓN ──
-function getNac(p) {
-  // Buscar primero en LOB, luego en modelCol como fallback, y también en description
-  var sources = [(p.lob||''), (p.modelCol||''), (p.description||'')];
-  for(var s=0;s<sources.length;s++){
-    var src = sources[s];
-    if(!src) continue;
-    // Override por cotización gana primero
-    if(quoteNacOverrides[src] !== undefined) return quoteNacOverrides[src];
-    if(nacRates[src] !== undefined) return nacRates[src];
-    var lo = src.toLowerCase();
-    // Buscar override más específico
-    var keysO = Object.keys(quoteNacOverrides);
-    var bestO = null, bestOLen = 0;
-    for(var k=0;k<keysO.length;k++){
-      var kol = keysO[k].toLowerCase();
-      if(lo.indexOf(kol) !== -1 && kol.length > bestOLen){ bestO = keysO[k]; bestOLen = kol.length; }
-    }
-    if(bestO !== null) return quoteNacOverrides[bestO];
-    // Si no hay override, ir al global
-    var keys = Object.keys(nacRates);
-    var bestKey = null, bestLen = 0;
-    for(var i=0;i<keys.length;i++) {
-      var kl = keys[i].toLowerCase();
-      if(lo.indexOf(kl) !== -1 && kl.length > bestLen) {
-        bestKey = keys[i];
-        bestLen = kl.length;
-      }
-    }
-    if(bestKey !== null) return nacRates[bestKey];
-  }
-  return 20;
-}
+function calcP(base, nac, mg) { return cevenAppleCalcP(base, nac, mg); }
+
+function getNac(p) { return cevenAppleNac(p, nacRates, quoteNacOverrides); }
 
 // Guarda las tasas de nacionalización. Devuelve true/false: si el navegador
 // rechaza la escritura (cuota llena) NO snapshotea, para no propagar un estado
@@ -104,20 +77,7 @@ function saveNac() {
 function resetNac() { nacRates = JSON.parse(JSON.stringify(NAC_DEF)); saveNac(); renderNac(); }
 
 // ── IVA ──
-function getIVA(lob) {
-  if(IVA_MAP[lob] !== undefined) return IVA_MAP[lob];
-  var l = (lob||'').toLowerCase();
-  var keys = Object.keys(IVA_MAP);
-  var bestKey = null, bestLen = 0;
-  for(var i=0;i<keys.length;i++) {
-    var kl = keys[i].toLowerCase();
-    if(l.indexOf(kl) !== -1 && kl.length > bestLen) {
-      bestKey = keys[i];
-      bestLen = kl.length;
-    }
-  }
-  return bestKey !== null ? IVA_MAP[bestKey] : '';
-}
+function getIVA(lob) { return cevenAppleIVA(lob, IVA_MAP); }
 
 // ── MISC ──
 // Construye una lista de <option> escapando los valores. Model / Country / LOB

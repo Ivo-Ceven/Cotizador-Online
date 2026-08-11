@@ -1,59 +1,15 @@
 
+/* La familia de un ítem (mac / iphone / ipad / acc) y los agregados de una fila
+   de pipeline viven en `pricing-core.js`, sin DOM ni globales: los calcula
+   también el cotizador MULTIMARCA al emitir una cotización de Apple, y si
+   fueran dos implementaciones distintas la fila diría un total y la cotización
+   otro. Acá quedan los envoltorios que les pasan la tabla de esta marca. */
 function categorize(item){
-  // 1. La descripción real del producto manda primero: es más confiable que "lob",
-  //    que puede corromperse si se guarda el modal de edición con el modelo en blanco
-  //    (el select cae a la primera opción del catálogo, p. ej. "AirTag").
-  var desc = ((item.description || '') + ' ' + (item.modelCol || '')).toLowerCase();
-  var isAccessoryWord = /keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc);
-  if(/\biphone\b/.test(desc) && !isAccessoryWord) return 'iphone';
-  if(/\bipad\b/.test(desc)   && !isAccessoryWord) return 'ipad';
-  if(/\bmacbook\b|\bimac\b|\bmac\s*(mini|studio|pro|neo)\b|\bmbp(ro)?\b|\bmba(ir)?\b/i.test(desc)) return 'mac';
-
-  // 2. Sin pistas claras en la descripción: lookup exacto por Model (LOB)
-  var lob = (item.lob || '').trim();
-  if(MODEL_CATEGORY[lob]) return MODEL_CATEGORY[lob];
-  return 'acc';
+  return cevenAppleCategoria(item, MODEL_CATEGORY);
 }
 
-/* Los números de una fila del pipeline a partir de un juego de líneas: cantidades
-   y montos por familia, total y margen ponderado.
-
-   Vive suelta porque la calculan DOS caminos —agregar al pipeline desde la
-   cotización y cambiar la opción vigente desde la fila— y tienen que dar
-   exactamente lo mismo: si se desincronizaran, cambiar de opción dejaría la fila
-   con un total que no es el de ninguna de las dos. */
 function _pipeAgregados(its, wrs){
-  its = its || []; wrs = wrs || [];
-  var qMac=0, qIph=0, qIpad=0, qAcc=0;
-  var montoMac=0, montoIph=0, montoIpad=0, montoAcc=0;
-  var sumMargenMonto = 0, sumMonto = 0;
-  for(var i=0;i<its.length;i++){
-    var c = categorize(its[i]);
-    var q = its[i].qty || 1;
-    var lm = (its[i].salePrice||0) * q;
-    if(c==='mac'){ qMac += q; montoMac += lm; }
-    else if(c==='iphone'){ qIph += q; montoIph += lm; }
-    else if(c==='ipad'){ qIpad += q; montoIpad += lm; }
-    else { qAcc += q; montoAcc += lm; } // accesorios = todo lo demás
-    // Margen ponderado: suma(margen_línea × monto_línea) / suma(monto_línea).
-    var lineMargen = (typeof its[i].itemMargin === 'number') ? its[i].itemMargin : 0;
-    sumMargenMonto += lineMargen * lm;
-    sumMonto += lm;
-  }
-  // Servicios = cantidad total de líneas de garantías
-  var qServ = 0, montoServ = 0;
-  for(var j=0;j<wrs.length;j++){
-    qServ += (wrs[j].cantidad||1);
-    montoServ += (wrs[j].precio||0) * (wrs[j].cantidad||1);
-  }
-  return {
-    qMac: qMac, qIph: qIph, qIpad: qIpad, qAcc: qAcc, qServ: qServ,
-    montoMac: Math.round(montoMac), montoIph: Math.round(montoIph),
-    montoIpad: Math.round(montoIpad), montoAcc: Math.round(montoAcc),
-    montoServ: Math.round(montoServ),
-    monto: Math.round(sumMonto + montoServ),
-    margenPond: sumMonto > 0 ? Math.round((sumMargenMonto / sumMonto) * 100) / 100 : null
-  };
+  return cevenAppleAgregados(its, wrs, MODEL_CATEGORY);
 }
 
 function addToPipeline(){

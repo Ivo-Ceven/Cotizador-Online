@@ -67,7 +67,10 @@ function nuevoEntorno(tierGlobalVal){
   ctx.globalThis = ctx;
   ctx._sel = selGlobal;
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/poly/js/tiers.js'), 'utf8'), ctx);
+  // pricing-core.js primero: tiers.js es el envoltorio con DOM de esas cuentas.
+  for(const f of ['src/poly/js/pricing-core.js', 'src/poly/js/tiers.js']){
+    vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, {filename: f});
+  }
   return ctx;
 }
 

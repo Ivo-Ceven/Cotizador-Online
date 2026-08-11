@@ -23,6 +23,107 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 11/08/2026 · Cotizador multimarca: un pedido que se reparte en cotizaciones reales
+
+Hay pedidos que mezclan marcas —unas Mac y un equipo de video Poly— y hasta hoy
+eran dos cotizaciones en dos cotizadores, con dos números y dos PDF para el
+mismo cliente.
+
+**La decisión que ordena todo el diseño: el multimarca no reemplaza a los
+cotizadores, reparte.** El forecast se mide por marca; la plata de Poly tiene que
+estar en el pipeline de Poly y la de Apple en el de Apple, o el responsable de
+cada marca no ve lo suyo. Entonces se arma el pedido una vez y al **emitir** se
+crea la cotización REAL de cada marca: su número, sus filas en ese historial y su
+fila en ese pipeline. La alternativa —una fila multimarca que fuera la buena— nos
+dejaba con el problema de a qué marca imputarle la plata.
+
+Esto además es la base del cotizador para clientes que viene después: ese portal
+es este mismo armado de pedido, con otra puerta de entrada y otros permisos.
+
+### Primero se sacaron las fórmulas de la pantalla
+
+El multimarca cotiza SKUs de Apple sin ser la app de Apple. Copiar la fórmula era
+garantizar que tarde o temprano el mismo SKU saliera a dos precios distintos
+según por dónde se lo cotizó — y eso se descubre cuando el cliente compara los
+dos PDF. Así que las cuentas se mudaron a `apple/js/pricing-core.js` y
+`poly/js/pricing-core.js`: sin DOM, sin globales, todo por parámetro. Las marcas
+ahora **delegan** (`calcP`, `getNac`, `getIVA`, `categorize`, `_pipeAgregados`,
+`tierDeLinea`, `precioDeCatalogo`, `repricearLinea`, `_pipeMontoDeItems`), y el
+multimarca carga esos mismos archivos.
+
+Es el mismo movimiento que ya se había hecho con `_pipeAgregados()` cuando
+llegaron las opciones A/B: **una sola cuenta, varios llamadores**. La red de
+contención fueron los 14 bancos que ya existían — el refactor no tocó ni un
+chequeo y siguieron pasando.
+
+### Lo único que sabe de marcas es un archivo
+
+`src/multi/js/marcas.js` es el espejo de `brand.js`: allá una app declara "soy
+Apple", acá una app que las cruza declara "así se trata una línea de Apple".
+Precio, repricing, la fila de `cquotes` de esa marca, la de su pipeline y qué
+controles necesita en pantalla. Un `if (linea.brand === 'apple')` en cualquier
+otro archivo va mal, por el mismo motivo por el que no van adentro de `shared/`.
+
+En pantalla eso se ve así: la grilla agrupa por marca con su subtotal —que es el
+número que va a terminar en el pipeline de esa marca— y arriba aparecen **solo
+los controles de las marcas presentes**. Sin líneas de Poly no hay selector de
+nivel; sin líneas de Apple no hay margen. Mostrar un control que no mueve nada
+invita a tocarlo y a no entender por qué no pasa nada.
+
+### Cero cambios en Supabase
+
+El plan original agregaba dos columnas a `pipeline` (`origen`, `multiQNum`). No
+hicieron falta: el link entre el pedido y las cotizaciones que generó viaja en la
+clave `_multi` de cada fila de `cquotes`, que ya se sincroniza. Es exactamente lo
+que habían hecho las opciones A/B — una migración para un dato que ya viaja es
+trabajo y riesgo de más. Y de paso desaparece el riesgo de deployar la app antes
+que la migración.
+
+### La emisión, que es lo caro de equivocar
+
+Por cada marca: se reserva número con la regla auto-reparable de siempre
+(`max(contador, mayor que existe) + 1`, pero sobre los datos remotos), se
+escriben las filas en su `cquotes` —sin eso la fila del pipeline existe pero no
+expande por SKU, que se ve como un bug— y se hace upsert de la fila.
+
+**Re-emitir pisa, no duplica.** Se sacan las filas de ese número y se reinsertan,
+y la fila del pipeline se busca por número: se le actualizan los montos y se le
+**conservan** `id`, `estado`, `mesCierre` y el link de OV/Netsuite. Eso último no
+es un detalle: son datos del vendedor de esa marca, no del pedido, y pisarlos
+sería peor que no dejar re-emitir.
+
+`cevenEmitirPlan()` quedó **puro** a propósito —recibe el estado remoto y
+devuelve qué se va a escribir, sin tocar la red— para poder probar en Node todo
+lo que puede salir mal. La capa REST solo transporta.
+
+Lo que **no** se puede garantizar: `cquotes` es un blob con last-write-wins, y
+emitir es leer-modificar-escribir el historial de otra marca. Si alguien guarda
+ahí en la misma ventana, una de las dos escrituras se pierde. Se mitiga leyendo
+justo antes de escribir, informando el resultado **por marca** en vez de un
+"listo" genérico —con dos marcas y una que falló, el vendedor tiene que saber
+cuál quedó— y con la idempotencia: recuperarse es volver a apretar el botón.
+
+### Verificación
+
+`scripts/check-multi.js` (93 chequeos) corre los archivos reales de cada marca
+contra los del multimarca y compara: el mismo SKU tiene que dar el mismo precio,
+la misma nacionalización, el mismo IVA y —en Apple— los mismos agregados de
+pipeline byte a byte. Su última sección carga el **bundle real de la página**, en
+el orden del HTML, y arma la grilla sobre un DOM mínimo: en una app sin build y
+toda global, una llamada a una función que no existe no la detecta nada hasta que
+alguien abre la pantalla.
+
+`scripts/check-emitir.js` (44) cubre reparto, numeración con el contador
+atrasado, re-emisión idempotente y que el seguimiento de la marca no se pise.
+
+`APP_VERSION` → 6.2.
+
+**Queda pendiente**: el pipeline propio del multimarca (hoy el seguimiento vive
+en el de cada marca, y por eso el ítem no está en la barra), el PDF único del
+pedido y el comprobante.
+
+---
+
 ## 10/08/2026 · Una cotización, dos opciones — y el pipeline que no las suma dos veces
 
 Se le ofrecen al cliente dos armados (uno más caro y uno más económico) y él

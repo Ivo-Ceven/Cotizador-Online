@@ -93,6 +93,7 @@ var ASSETS = [
   './tareas/js/board.js',
 
   './apple/brand.js',
+  './apple/js/pricing-core.js',
   './apple/js/state.js',
   './apple/js/pricing.js',
   './apple/js/catalog.js',
@@ -117,6 +118,7 @@ var ASSETS = [
   './poly/js/catalog.js',
   './poly/js/quote.js',
   './poly/js/picker.js',
+  './poly/js/pricing-core.js',
   './poly/js/tiers.js',
   './poly/js/products.js',
   './poly/js/quotes-db.js',
@@ -127,7 +129,22 @@ var ASSETS = [
   './poly/js/pipeline-detail.js',
   './poly/js/history.js',
   './poly/js/pdf.js',
-  './poly/js/boot.js'
+  './poly/js/boot.js',
+
+  /* Cotizador multimarca. Carga ADEMÁS los `pricing-core.js` de Apple y de Poly
+     (ya listados arriba): son las cuentas de precio de cada marca, y usarlas —en
+     vez de copiarlas— es lo que garantiza que el mismo SKU salga al mismo precio
+     por los dos caminos. */
+  './multi/brand.js',
+  './multi/js/marcas.js',
+  './multi/js/state.js',
+  './multi/js/catalogo-multi.js',
+  './multi/js/quote.js',
+  './multi/js/catalog-view.js',
+  './multi/js/quotes-db.js',
+  './multi/js/emitir.js',
+  './multi/js/history.js',
+  './multi/js/boot.js'
 ];
 
 /* Documentos: se piden las DOS variantes de cada uno porque `cleanUrls` de
@@ -143,6 +160,8 @@ var DOCS = [
   './apple/cevencare',
   './poly/',
   './poly/index.html',
+  './multi/',
+  './multi/index.html',
   './tareas/',
   './tareas/index.html'
 ];

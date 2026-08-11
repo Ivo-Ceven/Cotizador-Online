@@ -43,6 +43,10 @@ function getSortedItems(){
       if(_qSortKey==='desc'){ va=(a.description||'').toLowerCase(); vb=(b.description||'').toLowerCase(); return _qSortDir*(va<vb?-1:va>vb?1:0); }
       if(_qSortKey==='sku'){  va=(a.sku||'').toLowerCase();         vb=(b.sku||'').toLowerCase();         return _qSortDir*(va<vb?-1:va>vb?1:0); }
       if(_qSortKey==='price'){va=a.salePrice||0;                    vb=b.salePrice||0;                    return _qSortDir*(va-vb); }
+      /* Solo el multimarca tiene lineas de marcas distintas. En Apple y Poly
+         ningun item trae `brand`, asi que todas comparan iguales y el orden no
+         se mueve: es un no-op, no una rama por marca. */
+      if(_qSortKey==='brand'){va=(a.brand||'').toLowerCase();       vb=(b.brand||'').toLowerCase();       return _qSortDir*(va<vb?-1:va>vb?1:0); }
       return 0;
     });
   }

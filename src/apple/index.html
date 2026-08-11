@@ -618,6 +618,10 @@
 
 <!-- Lógica de la app (el orden de carga importa: replica el orden del monolito original) -->
 <script src="../shared/quote-num.js"></script>
+<!-- pricing-core.js ANTES que state.js: define las tablas (NAC por defecto,
+     familia por LOB, IVA) que state.js expone con sus nombres de siempre, y las
+     cuentas sin DOM que comparte con el cotizador multimarca. -->
+<script src="js/pricing-core.js"></script>
 <script src="js/state.js"></script>
 <script src="../shared/ui-core.js"></script>
 <script src="js/pricing.js"></script>

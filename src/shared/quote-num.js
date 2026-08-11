@@ -103,6 +103,16 @@ function cevenReservarQNum(){
 // Formato unico del numero: '0071'. Estaba repetido en ~8 lugares.
 function cevenQNumFmt(n){ return String(n).padStart(4, '0'); }
 
+/* Como se LEE el numero, que no es como se GUARDA. El multimarca muestra
+   'M-0042' para que nadie confunda el numero de un pedido con el de una
+   cotizacion de Apple, pero guarda 0042 igual que todas las marcas: la columna
+   qNum de Supabase es bigint. El prefijo es un campo de brand.js y no un `if`
+   por marca, como todo lo que distingue a un cotizador de otro. */
+function cevenQNumVisible(n){
+  var b = window.CEVEN_BRAND || {};
+  return (b.qNumPrefijo || '') + cevenQNumFmt(n);
+}
+
 /* ---- Guardar sobre un numero que ya existe ----------------------------------
    doSave(true) borra las filas que tengan el numero y reinserta. Eso es lo
    correcto cuando estas re-guardando TU cotizacion (la abriste del historial y
@@ -126,7 +136,9 @@ function cevenEsEdicionDe(qn){
 // Pinta el numero en el encabezado de la cotizacion.
 function cevenPintarQNum(){
   var el = document.getElementById('qnum');
-  if(el) el.textContent = 'Cotización #' + cevenQNumFmt(qNum);
+  if(!el) return;
+  var titulo = (window.CEVEN_BRAND && window.CEVEN_BRAND.qNumTitulo) || 'Cotización';
+  el.textContent = titulo + ' #' + cevenQNumVisible(qNum);
 }
 
 /* Recalcula el numero que se le va a asignar a la cotizacion en curso.

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cotizador Ceven · Multimarca</title>
+
+<!-- PWA (instalable + offline). El service worker se registra en ../shared/pwa.js. -->
+<meta name="theme-color" content="#f5f5f7">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Ceven Multi">
+
+<script src="../vendor/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="../shared/css/base.css">
+<link rel="stylesheet" href="../shared/css/dark.css">
+<style>
+  /* ── Chip de marca ──
+     Es la señal que distingue una línea de otra en una tabla mixta, así que
+     tiene que leerse de reojo. Los colores son los acentos de cada marca
+     (ver su brand.js): el mismo violeta de Apple y el mismo naranja de Poly
+     que ya identifican a cada cotizador. */
+  .mk{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.4px;
+      text-transform:uppercase;border-radius:980px;padding:2px 8px;color:#fff;white-space:nowrap}
+  .mk-apple{background:#2d1b4e}
+  .mk-poly{background:#b35333}
+  .mk-hp{background:#0096d6}
+  .mk-sub{font-size:11px;color:var(--ct2);margin-left:9px}
+
+  /* Separador de marca dentro de la grilla del pedido. Mismo patrón que el
+     separador de familia del PDF de Apple: una fila que no es una línea. */
+  .mk-sep td{background:var(--c0);border-top:1.5px solid var(--cb);padding:6px 10px}
+
+  /* Barra de controles de precio. Solo aparecen los de las marcas presentes
+     (ver pintarControles() en js/quote.js). */
+  #ctrl-box{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;
+            padding:12px 14px;background:var(--c1);border:0.5px solid var(--cb);
+            border-radius:12px;margin-bottom:14px}
+  #ctrl-box .ctrl{display:flex;flex-direction:column;gap:4px}
+
+  .emit-res{font-size:12px;color:var(--ct2);background:var(--c0);
+            border:0.5px solid var(--cb);border-radius:10px;padding:9px 12px;margin-bottom:14px}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     El login y la gestión de usuarios viven en el shell (../index.html).
+     Esta página exige sesión válida (guard más abajo, tras cargar auth.js).
+     ============================================================ -->
+
+<!-- Configuración: para todo shared/ este cotizador es "una marca más" -->
+<script src="brand.js"></script>
+<!-- Color: pegado a brand.js para que la primera pintura ya salga con el acento -->
+<script src="../shared/theme.js"></script>
+<script src="../shared/safe.js"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/auth.js"></script>
+<script src="../shared/notify.js"></script>
+<script>if(!cevenIsValidSession()) location.replace('../index.html');</script>
+
+<!-- Barra superior: va acá, antes del markup, para que no salte al cargar -->
+<script src="../shared/navbar.js"></script>
+
+<!-- ══════════════════ PEDIDO ══════════════════ -->
+<div id="p-quote" class="pg on">
+  <div class="qbar">
+    <div class="qbar-top">
+      <div class="qbar-ttl">
+        <div id="qnum" class="lbl" style="margin-bottom:2px">Pedido #—</div>
+        <div class="h2">Multimarca · un pedido, una cotización por marca</div>
+      </div>
+      <div class="qbar-main">
+        <button class="act act-pri" onclick="saveQuote()" title="Guardar el pedido en el historial"><span class="act-i">💾</span>Guardar</button>
+        <!-- Emitir es la acción central de este cotizador: crea la cotización
+             real de cada marca, con su número y su fila de pipeline. -->
+        <button id="btn-add-pipeline" class="act act-go" onclick="emitirAMarcas()" title="Crear la cotización de cada marca y su fila de pipeline"><span class="act-i">📤</span>Emitir a las marcas</button>
+      </div>
+    </div>
+    <div class="qbar-sub">
+      <button class="act act-sm" onclick="nuevoPedido()" title="Vaciar todo y empezar un pedido nuevo"><span class="act-i">＋</span>Nuevo</button>
+      <button class="act act-sm" onclick="copiarPedido()" title="Crear un pedido nuevo con los mismos productos"><span class="act-i">⧉</span>Copiar</button>
+      <span class="qbar-sep"></span>
+      <details class="ovf">
+        <summary title="Más acciones" aria-label="Más acciones">⋯</summary>
+        <div class="ovf-menu">
+          <div class="ovf-hd">Copia de seguridad</div>
+          <button onclick="exportFullBackup()"><span class="act-i">⬇️</span>Descargar backup completo</button>
+          <button onclick="document.getElementById('backup-import').click()"><span class="act-i">⬆️</span>Restaurar desde un archivo</button>
+        </div>
+      </details>
+      <input type="file" id="backup-import" accept=".json" style="display:none" onchange="importFullBackup(this)">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="g2">
+      <div>
+        <label class="lbl">Cliente</label>
+        <input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="aplicarTierDelCliente()" style="font-size:14px;font-weight:500">
+        <datalist id="cliente-datalist"></datalist>
+      </div>
+      <!-- Proyecto es obligatorio para emitir: el pipeline de Poly lo exige. -->
+      <div><label class="lbl">Proyecto <span style="color:var(--ct2);font-weight:400">(cliente final)</span></label><input id="proyecto" type="text" placeholder="Ej: Hospital Italiano — Sala Directorio"></div>
+      <div><label class="lbl">OPG <span style="color:var(--ct2);font-weight:400">— opcional, solo para las líneas de Poly</span></label><input id="opg" type="text" placeholder="Dejar vacío si no aplica"></div>
+      <div>
+        <label class="lbl">Ejecutivo</label>
+        <select id="exec"><option value="">Seleccionar ejecutivo</option></select>
+      </div>
+      <div>
+        <label class="lbl">Mes estimado de cierre</label>
+        <!-- Lo llena shared/ui-core.js con el picker de shared/monthpicker.js -->
+        <div id="mes-cierre-box"></div>
+      </div>
+      <div>
+        <label class="lbl">Estado</label>
+        <select id="quote-estado" style="width:100%">
+          <option value="Proyecto">En proyecto</option>
+          <option value="Cotizado" selected>Cotizado</option>
+          <option value="Negociacion">Negociación</option>
+          <option value="Commit">Commit</option>
+          <option value="Con OC">Con OC</option>
+          <option value="Autorizando">Autorizando</option>
+          <option value="Facturado">Facturado</option>
+          <option value="Perdido">Perdido</option>
+        </select>
+      </div>
+      <!-- "FOB" al principio de Observaciones fuerza nacionalización 0 en las
+           líneas de Apple, igual que en su cotizador. -->
+      <div><label class="lbl">Observaciones</label><input id="obs" type="text" placeholder="Notas del pedido... (empezar con FOB fuerza NAC 0 en Apple)" onchange="renderQ()"></div>
+      <div>
+        <label class="lbl">Moneda</label>
+        <div style="display:flex;gap:8px">
+          <select id="cur" onchange="toggleTC()" style="width:auto">
+            <option value="USD">USD</option><option value="ARS">ARS</option>
+          </select>
+          <input type="number" id="tc" value="1200" style="display:none;flex:1" placeholder="Tipo de cambio">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controles de precio de las marcas presentes (js/quote.js) -->
+  <div id="ctrl-box"></div>
+
+  <!-- Barra de opciones A/B (shared/opciones.js) -->
+  <div id="opc-bar-box"></div>
+  <div id="opc-aviso-box"></div>
+
+  <!-- Qué se va a crear al emitir, y dónde -->
+  <div id="emitir-resumen"></div>
+
+  <div id="qbody-wrap" class="tw" style="margin-bottom:18px">
+    <table style="table-layout:fixed;min-width:760px">
+      <colgroup>
+        <col style="width:13%"><col style="width:26%"><col style="width:108px">
+        <col style="width:13%"><col style="width:12%"><col style="width:10%">
+        <col style="width:8%"><col style="width:9%"><col style="width:48px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="qsrt" onclick="sortQBy('sku')" title="Ordenar por SKU">SKU</th>
+          <th class="qsrt" onclick="sortQBy('desc')" title="Ordenar por nombre">Descripción</th>
+          <th style="text-align:right">Qty</th>
+          <!-- Nivel en las líneas de Poly, margen en las de Apple -->
+          <th title="Nivel de precio (Poly) o margen (Apple)">Nivel / Margen</th>
+          <th class="qsrt" onclick="sortQBy('price')" style="text-align:right" title="Ordenar por precio">P. Venta Unit.</th>
+          <th style="text-align:right">Total</th>
+          <th style="text-align:center">IVA</th>
+          <th>Nota</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="qbody"></tbody>
+    </table>
+  </div>
+
+  <div style="border-top:0.5px solid var(--cb);padding-top:16px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:11px">Condiciones Comerciales</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;font-weight:600">
+      <span>Propuesta efectiva hasta:</span><input id="eff-date" type="date" style="width:auto;font-weight:400">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:13px;font-weight:600">
+      <span>Condición de pago:</span>
+      <select id="pay-mode" onchange="cevenTogglePayOtra()" style="width:auto;font-weight:400">
+        <option>Contado anticipado</option><option>30 días FF</option><option>45 días FF</option><option>60 días FF</option>
+        <option value="__otra">Otra…</option>
+      </select>
+      <input id="pay-mode-otra" type="text" placeholder="Escribí la condición" style="display:none;width:auto;min-width:210px;font-weight:400">
+      <span>– TC Dólar billete BNA del día del pago</span>
+    </div>
+    <div id="cond-cur" style="font-size:13px;font-weight:700;margin-bottom:7px">Precios unitarios expresados en dólares estadounidenses</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:7px">Los precios expresados NO incluyen Impuestos</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:600">
+      <span>Entrega:</span>
+      <select id="delivery" onchange="cevenToggleDeliveryOtra(true)" style="width:auto;font-weight:400">
+        <option value="">— Elegir plazo —</option>
+        <option>Inmediata</option>
+        <option>3 días hábiles</option>
+        <option>Entre 5 y 7 días hábiles</option>
+        <option value="__otra">Otra…</option>
+      </select>
+      <input id="delivery-otra" type="text" placeholder="Escribí el plazo de entrega" style="display:none;width:auto;min-width:210px;font-weight:400">
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ CATÁLOGO (solo lectura) ══════════════════ -->
+<div id="p-catalog" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <h2 class="h2" style="flex:1">Catálogo <span class="sub" style="font-weight:400">— de todas las marcas, junto</span></h2>
+    <button class="bo" onclick="limpiarFiltrosCat()" title="Limpiar búsqueda y marca">✕ Filtros</button>
+    <button class="bo" onclick="cargarCatalogos().then(renderCat)" title="Volver a bajar los catálogos de cada marca">↻ Actualizar</button>
+  </div>
+
+  <!-- El catálogo NO se edita acá: es de cada marca. Decirlo en pantalla evita
+       que alguien lo busque y concluya que falta una función. -->
+  <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <div id="cat-sello" class="bk bkw">Sin catálogo</div>
+    <div style="flex:1;min-width:8px"></div>
+    <span class="sub">Los productos y sus precios se cargan en el cotizador de cada marca.</span>
+  </div>
+
+  <div id="nocat" style="text-align:center;padding:36px;background:var(--c1);border-radius:12px;border:1.5px dashed var(--cb);margin-bottom:12px">
+    <div style="font-size:26px;margin-bottom:6px">📦</div>
+    <strong>Todavía no hay catálogo</strong>
+    <p style="color:var(--ct2);font-size:12px;margin-top:4px">Abrí el cotizador de Apple y el de Poly al menos una vez para que sus catálogos se sincronicen, y volvé.</p>
+  </div>
+
+  <div id="catui" style="display:none">
+    <label class="lbl">Buscar producto</label>
+    <div class="buscador" style="margin-bottom:10px">
+      <span class="buscador-lupa" aria-hidden="true">🔍</span>
+      <textarea id="fsearch" rows="1" placeholder="ej: macbook pro 14  /  studio x72" oninput="handleSearchInput()"></textarea>
+    </div>
+    <div class="pk-rubros" id="fmarca" style="padding:0 0 12px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span id="catcount" style="color:var(--ct2)"></span>
+    </div>
+    <div class="tw">
+      <table style="table-layout:fixed;width:100%;min-width:720px">
+        <colgroup><col style="width:86px"><col style="width:150px"><col><col style="width:130px"><col style="width:56px"></colgroup>
+        <thead>
+          <tr>
+            <th>Marca</th><th>SKU</th><th>Descripción</th>
+            <th style="text-align:right" title="El precio con el que entraría al pedido">P. Venta</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="catbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ HISTORIAL ══════════════════ -->
+<div id="p-history" class="pg">
+  <div class="tb">
+    <button class="bo" onclick="goTo('quote')">← Volver</button>
+    <h2 class="h2" style="flex:1">Historial de pedidos</h2>
+    <button class="bo" onclick="exportDB()">⬇ Excel</button>
+    <button class="bo red" id="hist-del-btn" onclick="deleteSelected()" style="display:none">✕ Eliminar</button>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="gf">
+      <div><label class="lbl">Buscar cliente / proyecto</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
+      <div><label class="lbl">Ejecutivo</label><select id="hexec" onchange="renderHistory()"><option value="">Todos</option></select></div>
+      <div style="display:flex;align-items:flex-end"><button class="bo" style="width:100%" onclick="clearHF()">Limpiar</button></div>
+    </div>
+  </div>
+  <div id="histwrap"></div>
+
+  <!-- PAPELERA · lo eliminado se guarda 30 días (shared/papelera.js) -->
+  <details id="pap-box" style="margin-top:20px;border-top:0.5px solid var(--cb);padding-top:14px">
+    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--ct2)">
+      🗑 Papelera <span id="pap-n" style="font-weight:400;color:var(--ct3)"></span>
+    </summary>
+    <div id="pap-body" style="margin-top:10px"></div>
+  </details>
+</div>
+
+<!-- Navegación (botón Atrás del navegador + Escape) -->
+<script src="../shared/nav.js"></script>
+
+<!-- Selector de mes: ANTES de ui-core.js, que lo usa al cargar -->
+<script src="../shared/monthpicker.js"></script>
+
+<!-- Capa de sincronización con Supabase -->
+<script src="../shared/sync.js"></script>
+
+<!-- Lógica de la app (el orden de carga importa) -->
+<script src="../shared/quote-num.js"></script>
+<script src="js/state.js"></script>
+<script src="../shared/ui-core.js"></script>
+<script src="../shared/quote-core.js"></script>
+<!-- opciones.js define el estado A/B y lo lee todo lo que suma importes -->
+<script src="../shared/opciones.js"></script>
+<script src="../shared/clientes.js"></script>
+
+<!-- Las cuentas de cada marca, sin DOM. Son los MISMOS archivos que cargan los
+     cotizadores de Apple y de Poly: usarlos —en vez de copiar la fórmula— es lo
+     que garantiza que el mismo SKU salga al mismo precio por los dos caminos. -->
+<script src="../apple/js/pricing-core.js"></script>
+<script src="../poly/js/pricing-core.js"></script>
+<!-- El registro: lo único que sabe cómo se comporta cada marca -->
+<script src="js/marcas.js"></script>
+
+<script src="js/catalogo-multi.js"></script>
+<script src="js/quote.js"></script>
+<script src="js/catalog-view.js"></script>
+<script src="js/quotes-db.js"></script>
+<script src="js/emitir.js"></script>
+<script src="../shared/backup.js"></script>
+<!-- recovery.js delega en _applyBackupRestore() de backup.js: va después -->
+<script src="../shared/recovery.js"></script>
+<script src="../shared/backup-folder.js"></script>
+<script src="../shared/papelera.js"></script>
+<script src="js/history.js"></script>
+
+<div class="ver">Ceven · Multimarca · v<span id="app-ver"></span></div>
+<script src="../shared/init.js"></script>
+<script src="../shared/pwa.js"></script>
+<!-- boot.js último: necesita todos los módulos ya definidos -->
+<script src="js/boot.js"></script>
+
+</body>
+</html>
