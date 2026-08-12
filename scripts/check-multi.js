@@ -676,7 +676,102 @@ console.log('\n9 · Una marca con muchos SKUs no tapa a las demás');
      'una marca sin productos sigue apareciendo en los filtros, marcada en 0');
 }
 
-console.log('\n' + (fallos
-  ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
-  : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
-process.exit(fallos ? 1 : 0);
+/* ==================== 10) EL SELECTOR DE EJECUTIVO ======================== */
+/* El `<select id="exec">` del multimarca venía con UNA sola opción
+   ("Seleccionar ejecutivo") y ningún ejecutivo: no había nada que elegir, y
+   como guardar y emitir exigen uno (`cevenRequireExec`), el campo dejaba el
+   pedido trabado.
+
+   Ahora se llena con el equipo que puede cotizar (RPC `ceven_equipo`, ver
+   `shared/equipo.js`). Se verifica acá y no a ojo porque son todas fallas
+   silenciosas: una lista vacía, un `lector` colado como ejecutivo o una caché
+   pisada por una respuesta vacía se ven exactamente igual que funcionar bien. */
+console.log('\n10 · El selector de Ejecutivo se puede completar');
+{
+  const EQUIPO = [
+    {email:'ivo@ceven.com',   nombre:'Ivo Capezzuto', rol:'admin'},
+    {email:'fer@ceven.com',   nombre:'Fer Castro',    rol:'ventas'},
+    {email:'tsu@ceven.com',   nombre:'Tsu Rivas',     rol:'ventas'},
+    {email:'lec@ceven.com',   nombre:'Lea Lectora',   rol:'lector'}
+  ];
+  const store = {'ceven_equipo_cache': JSON.stringify(EQUIPO)};
+  const sel = {value:'', innerHTML:'', disabled:true, options:[]};
+
+  let pedido = null, respuesta = EQUIPO;
+  const ctx = {
+    console, Date, Math, JSON, Object, Array, String, Number, parseInt, parseFloat, isNaN,
+    Promise, localStorage: {getItem: k => (k in store ? store[k] : null), setItem(k,v){ store[k]=v; }, removeItem(k){ delete store[k]; }},
+    document: {getElementById: id => (id === 'exec' ? sel : null)},
+    SUPABASE_URL: 'https://x.supabase.co',
+    cevenIsValidSession: () => true,
+    cevenMyNombre: () => 'Ivo Capezzuto',
+    cevenEsc: s => String(s == null ? '' : s),
+    cevenAuthedFetch: (url, opts) => { pedido = {url, opts}; return Promise.resolve(respuesta); }
+  };
+  ctx.window = ctx; ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(lee('src/shared/equipo.js'), ctx, {filename:'equipo.js'});
+
+  const vend = ctx.cevenEquipoVendedores();
+  ok(vend.indexOf('Fer Castro') >= 0 && vend.indexOf('Tsu Rivas') >= 0,
+     'los de ventas figuran como ejecutivos posibles', JSON.stringify(vend));
+  ok(vend.indexOf('Ivo Capezzuto') >= 0, 'y los admin también');
+  ok(vend.indexOf('Lea Lectora') < 0,
+     'un lector NO: no cotiza, y ofrecerlo daría un dueño que después no puede tocar lo suyo');
+
+  ctx.cevenLlenarExec(sel, []);
+  ok(/Fer Castro/.test(sel.innerHTML) && /Tsu Rivas/.test(sel.innerHTML) && /Ivo Capezzuto/.test(sel.innerHTML),
+     'el <select> queda con todo el equipo que cotiza');
+  ok(!/Lea Lectora/.test(sel.innerHTML), 'y sin el lector');
+  ok(sel.disabled === false,
+     'queda HABILITADO: en el multimarca se arma el pedido de otro y hay que poder ponerle su nombre');
+  ok(/Seleccionar ejecutivo/.test(sel.innerHTML), 'con el placeholder de siempre arriba');
+
+  // Un ejecutivo de un pedido viejo (alguien que ya no está en el equipo) tiene
+  // que seguir ofreciéndose, o abrir ese pedido le blanquearía el ejecutivo.
+  sel.value = 'Jenny Tofel';
+  ctx.cevenLlenarExec(sel, ['Alguien Que Se Fue']);
+  ok(/Jenny Tofel/.test(sel.innerHTML) && sel.value === 'Jenny Tofel',
+     'lo ya elegido sobrevive al repintado aunque no esté en el equipo');
+  ok(/Alguien Que Se Fue/.test(sel.innerHTML),
+     'y los ejecutivos de pedidos guardados siguen disponibles');
+
+  // Sin equipo del servidor, el campo NO puede quedar vacío: queda al menos uno.
+  const store2 = {};
+  const sel2 = {value:'', innerHTML:'', disabled:true, options:[]};
+  const ctx2 = Object.assign({}, ctx, {
+    localStorage: {getItem: k => (k in store2 ? store2[k] : null), setItem(k,v){ store2[k]=v; }, removeItem(){}},
+    document: {getElementById: id => (id === 'exec' ? sel2 : null)}
+  });
+  ctx2.window = ctx2; ctx2.globalThis = ctx2;
+  vm.createContext(ctx2);
+  vm.runInContext(lee('src/shared/equipo.js'), ctx2, {filename:'equipo.js'});
+  ctx2.cevenLlenarExec(sel2, []);
+  ok(/Ivo Capezzuto/.test(sel2.innerHTML),
+     'sin caché ni servidor, al menos el nombre de quien está logueado se puede elegir');
+
+  // La RPC: se pide donde corresponde y una respuesta vacía NO borra la caché.
+  ctx.cevenEquipoRefrescar();
+  ok(pedido && /\/rest\/v1\/rpc\/ceven_equipo$/.test(pedido.url),
+     'se pide a la RPC ceven_equipo, que es la única legible por un no-admin',
+     pedido && pedido.url);
+  ok(pedido && pedido.opts.method === 'POST', 'por POST, como toda RPC de PostgREST');
+
+  /* Última verificación, y es asincrónica: por eso el resumen del banco se
+     imprime desde acá adentro. Afuera del .then() correría antes y contaría un
+     chequeo de menos. */
+  respuesta = [];
+  ctx.cevenEquipoRefrescar().then(function(lista){
+    ok(lista.length === EQUIPO.length,
+       'una respuesta vacía conserva la caché en vez de vaciar el selector',
+       'quedaron ' + lista.length);
+    resumen();
+  });
+}
+
+function resumen(){
+  console.log('\n' + (fallos
+    ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
+    : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
+  process.exit(fallos ? 1 : 0);
+}

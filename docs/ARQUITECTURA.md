@@ -30,6 +30,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `navbar.js` | Barra superior de todas las páginas: chip de marca, un ítem por vista (leídos de `CEVEN_BRAND.navItems`) y el bloque de cuenta (dark mode, usuarios, quién sos + rol, contraseña, salir). `cevenNavbarSync()` marca la vista activa y esconde lo que el rol no puede usar |
 | `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos. **No quedan diálogos nativos en ninguna marca** (desde 10/08/2026 en Apple): un error o una validación se avisa con `showToast()`, y una acción destructiva se **aplica** y se ofrece `notifyUndo()` en vez de preguntar antes. `confirmModal()` queda reservado para lo irreversible que además recarga la página (restaurar un backup). El motivo no es estético: `alert()` congela el renderer —y con él cualquier driver de test— y en la PWA se ve como un cartel del navegador, no de la app |
 | `todos.js` | Tareas del equipo: **store y sincronización**, no UI (tablas `todos` y `equipos` + RPC `ceven_equipo`, poll cada 15 s). Expone `window.cevenTareas`. Lo usan el shell (solo para la pastilla de pendientes) y `tareas/js/board.js`. Ojo con los nombres: `personas()` es la **gente**, `equipos()` son los **tableros** |
+| `equipo.js` | **Quiénes son las personas de Ceven**, para poder elegir una en un campo (hoy: el Ejecutivo del multimarca). Sale de la RPC `ceven_equipo()`, que es la única fuente legible por un no-admin: `admin-users` responde 403 a todo el que no sea `admin@ceven.com`. `cevenEquipoVendedores()` filtra a los roles que cotizan (**admin** y **ventas**) y `cevenLlenarExec()` llena el `<select>` sin deshabilitarlo nunca. Comparte la caché (`ceven_equipo_cache`) con `todos.js`: mismo dato, misma RPC |
 | `comprobante.js` | Comprobante de una cotización (botón 🧾 en cada tarjeta del historial, en las dos marcas). **Se descarga como PDF y se abre solo.** Se dibuja con jsPDF + autotable, no con html2canvas: el texto se selecciona y se busca, a diferencia de `pdf-core.js`, que rasteriza. Al ser todo sincrónico el `window.open` cae dentro del gesto del click y el navegador no lo bloquea. Los datos del emisor salen de `CEVEN_EMISOR` en `config.js`. Ojo con `cevenCompSan()`: las fuentes estándar del PDF no dibujan `– — “ ” …`, hay que pasar por ahí todo lo que se imprima |
 | `pwa.js` | Registro del service worker, aviso de versión nueva, botón instalar, pastilla de cambios pendientes |
 | `init.js` | Pinta la versión y sincroniza el ícono de dark mode |
@@ -130,7 +131,8 @@ marca y su fila en su pipeline—. La plata queda donde se factura.
 Para todo `src/shared/` esto es **una marca más**: tiene su `brand.js`
 (`id:'multi'`, `prefix:'multi_'`), su `cquotes`, su `cqc` y su papelera, así que
 reusa `sync.js`, `auth.js`, `navbar.js`, `opciones.js`, `quote-num.js`,
-`clientes.js` y `backup*.js` sin una sola rama nueva adentro de `shared/`.
+`clientes.js`, `equipo.js` y `backup*.js` sin una sola rama nueva adentro de
+`shared/`.
 
 | Archivo | Responsabilidad |
 |---|---|
@@ -142,6 +144,7 @@ reusa `sync.js`, `auth.js`, `navbar.js`, `opciones.js`, `quote-num.js`,
 | `js/quotes-db.js` | Persistencia del pedido |
 | `js/emitir.js` | **La emisión.** Ver abajo |
 | `js/history.js` | Historial, con las marcas de cada pedido y a qué número se emitió |
+| `js/boot.js` | El arranque. Además de los defaults, llena el `<select>` de **Ejecutivo** (`refrescarEjecutivos()`): va acá y no en `auth.js` porque ese archivo está en el `<head>`, con el `<select>` todavía sin existir |
 
 Lo que hay que saber para tocarlo:
 

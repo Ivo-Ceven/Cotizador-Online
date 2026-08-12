@@ -23,6 +23,71 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 12/08/2026 · El Ejecutivo del multimarca no se podía elegir
+
+Módulo nuevo `src/shared/equipo.js`.
+
+Reporte del usuario: *"en multimarca no me deja seleccionar ejecutivo"*. El
+`<select id="exec">` traía UNA sola opción —el placeholder— y **ningún**
+ejecutivo: nadie lo llenaba. Como guardar y emitir exigen uno
+(`cevenRequireExec()`), el campo no era un detalle: dejaba el pedido trabado.
+
+Es el mismo defecto que Poly ya había arreglado en su `boot.js` el 31/07 y que
+acá volvió a aparecer entero, porque el multimarca nació después y copió el
+markup pero no el arranque. `cevenApplyVendorAutofill()` (auth.js) tampoco lo
+salvaba: `auth.js` se carga en el `<head>` y el `<select>` está ~60 líneas más
+abajo, así que `getElementById('exec')` daba `null` y la función volvía en seco.
+
+### De dónde sale la lista
+
+La decisión que ordena todo: **la fuente tiene que ser legible por un no-admin.**
+La Edge Function `admin-users` valida server-side
+`caller.email === admin@ceven.com` y responde 403 a todos los demás — armar la
+lista con ella habría dejado el selector vacío para todo el equipo menos una
+persona, que es exactamente el problema que esto viene a resolver.
+
+La fuente correcta ya existía: la RPC `ceven_equipo()` (migración del 04/08, para
+delegar tareas). Es `security definer` —`auth.users` no es legible por
+`authenticated`—, devuelve solo email, nombre y rol, y lleva el filtro
+`ceven_is_staff()` adentro. Se verificó contra la base: la función está aplicada,
+`authenticated` la puede ejecutar, y hoy hay 8 cuentas @ceven.com que cotizan
+(3 admin + 5 ventas), todas con nombre cargado.
+
+`shared/equipo.js` la envuelve y comparte la caché con `todos.js`
+(`ceven_equipo_cache`): mismo dato, misma RPC, misma forma. Así el selector
+arranca con la lista puesta —incluso sin conexión— si ya se abrió el tablero de
+tareas alguna vez.
+
+### Tres reglas que valen la pena
+
+- **Solo admin y ventas.** Un `lector` no cotiza; ofrecerlo como ejecutivo sería
+  darle un dueño a la cotización que después no la va a poder tocar.
+- **Nunca se deshabilita.** En el multimarca se arma el pedido de otro, así que
+  poder ponerle su nombre es la razón de existir del campo. Apple y Poly siguen
+  con `cevenApplyVendorAutofill()`, que a los no-admin los clava en su propio
+  nombre; el multimarca no lo llama.
+- **Una respuesta vacía NO pisa la caché**, y a la lista se le suman siempre el
+  nombre de quien está logueado, los ejecutivos que ya figuran en pedidos
+  guardados y el que está elegido en ese momento. Sin lo último, abrir un pedido
+  viejo de alguien que se dio de baja le blanqueaba el ejecutivo al repintarse el
+  `<select>`.
+
+### Lo que esto habilita, y lo que no
+
+Un `ventas` ahora puede asignarle un pedido a otro, pero **no va a poder
+editarlo después**: `cevenCanEditQuote()` sigue pidiendo
+`cevenOwnsExecutive()`. Es el modelo de permisos de siempre y no se tocó; queda
+anotado porque el síntoma ("lo guardé y ahora no puedo abrirlo") no se parece en
+nada a la causa.
+
+`check-multi.js` suma el bloque 10 (13 chequeos): que aparezcan admin y ventas,
+que NO aparezca un lector, que quede habilitado, que lo elegido sobreviva al
+repintado y que una respuesta vacía conserve la caché. Todas fallas silenciosas
+—una lista vacía se ve igual que una lista bien filtrada— así que no alcanzaba
+con mirar la pantalla.
+
+---
+
 ## 12/08/2026 · El multimarca agrega productos como Poly: la subpantalla flotante
 
 Archivo nuevo `src/multi/js/picker.js`. `APP_VERSION` 6.2 → 6.3 (cambió la lista

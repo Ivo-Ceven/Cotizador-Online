@@ -27,6 +27,26 @@
 
   renderQ();
 
+  /* ── EJECUTIVOS (#exec) ────────────────────────────────────────────────────
+     El <select> venia con UNA sola opcion ("Seleccionar ejecutivo") y ningun
+     ejecutivo: no habia nada que elegir, y como guardar y emitir exigen uno
+     (cevenRequireExec), el campo dejaba el pedido trabado.
+
+     Se llena con TODO el equipo que puede cotizar —admin y ventas— desde la RPC
+     `ceven_equipo` (shared/equipo.js), y queda SIEMPRE habilitado: en el
+     multimarca se arma el pedido de otro y hay que poder ponerle su nombre.
+
+     Va aca y no al cargar auth.js porque ese archivo esta en el <head>, con el
+     <select> todavia sin existir: `cevenApplyVendorAutofill()` hacia
+     getElementById('exec') → null y volvia en seco. Es el mismo defecto que ya
+     habia arreglado Poly en su boot.js.
+
+     Dos pasadas a proposito: la cache pinta al toque (y es lo unico que hay sin
+     conexion) y el refresco la corrige despues. Al reves, el campo arranca vacio
+     justo cuando lo estas por usar. */
+  refrescarEjecutivos();
+  cevenEquipoRefrescar().then(function(){ refrescarEjecutivos(); });
+
   /* El catalogo se pinta desde el cache al toque y despues se refresca contra
      Supabase. Va al final para que el primer render de la cotizacion no espere
      a la red. */
@@ -41,3 +61,17 @@
   if(typeof cevenRefreshClienteDatalist === 'function') cevenRefreshClienteDatalist();
 
 })();
+
+/* Los ejecutivos del <select>. Fuera de la IIFE porque quotes-db.js la llama al
+   abrir un pedido del historial y al empezar uno nuevo.
+
+   A los del equipo se les suman los que ya figuran en pedidos guardados: si
+   alguien se dio de baja, sus pedidos siguen existiendo y el <select> tiene que
+   poder seguir mostrando su nombre en vez de blanquearlo al abrirlos. */
+function refrescarEjecutivos(){
+  var previos = [];
+  if(typeof getDB === 'function'){
+    getDB().forEach(function(r){ previos.push(r['Ejecutivo']); });
+  }
+  cevenLlenarExec(document.getElementById('exec'), previos);
+}

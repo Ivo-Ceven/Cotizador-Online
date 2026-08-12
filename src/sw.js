@@ -73,6 +73,7 @@ var ASSETS = [
   './shared/catalog-core.js',
   './shared/quote-num.js',
   './shared/clientes.js',
+  './shared/equipo.js',
   './shared/papelera.js',
   './shared/pipeline-store.js',
   './shared/pipeline-status.js',
