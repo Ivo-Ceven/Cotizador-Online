@@ -137,7 +137,8 @@ reusa `sync.js`, `auth.js`, `navbar.js`, `opciones.js`, `quote-num.js`,
 | `js/marcas.js` | **El registro**: lo único que sabe cómo se comporta cada marca (`nuevaLinea`, `repricear`, `filaCquotes`, `filaPipeline`, `pipelineExtra`, qué controles de precio necesita). Un `if (linea.brand === 'apple')` en cualquier otro archivo de `src/multi/` va mal: el lugar es este, igual que en `shared/` el lugar es `brand.js` |
 | `js/catalogo-multi.js` | El catálogo unificado, **de solo lectura**. Un request a `app_settings?brand=in.(apple,poly)&key=in.(cpl,cnac)` y a caché para que ande offline |
 | `js/quote.js` | La grilla, agrupada por marca y con los controles de precio de las marcas presentes |
-| `js/catalog-view.js` | El catálogo en pantalla, con filtro por marca |
+| `js/catalog-view.js` | El catálogo en pantalla, con filtro por marca. Exporta la **fila** (`_catRowHTML`), el **filtrado** (`_catFiltradosCon`), el **recorte por marca** (`_catRecortar`) y los **chips** (`_pintarFiltroMarcas`/`bindMarcas`), que comparte con el picker |
+| `js/picker.js` | La **subpantalla flotante** de "+ Agregar producto": el catálogo encima del pedido con un `+` por producto y, abajo, lo que el pedido ya lleva (con el chip de la marca a la que va a bajar). Misma pantalla que la de Poly y la de Apple, con los mismos estilos `.pk-*` |
 | `js/quotes-db.js` | Persistencia del pedido |
 | `js/emitir.js` | **La emisión.** Ver abajo |
 | `js/history.js` | Historial, con las marcas de cada pedido y a qué número se emitió |
@@ -391,7 +392,7 @@ node scripts/check-precache.js       # rutas del service worker vs. archivos rea
 node scripts/check-globals.js        # una misma función definida dos veces en un bundle
 node scripts/check-comprobante.js    # genera el comprobante en PDF y le lee el texto
 node scripts/check-opciones.js       # opciones A/B: que el pipeline NO sume las dos
-node scripts/check-multi.js          # multimarca: mismo SKU al mismo precio por los dos caminos + la pantalla se arma
+node scripts/check-multi.js          # multimarca: mismo SKU al mismo precio por los dos caminos + la pantalla y la flotante se arman
 node scripts/check-emitir.js         # emisión: reparto, numeración y re-emisión idempotente
 node scripts/check-apple-catalogo.js # importador de Apple: encabezado corrido, Model # y los dos archivos
 node scripts/check-apple-picker.js   # la flotante de Apple y la fila compartida con el catálogo

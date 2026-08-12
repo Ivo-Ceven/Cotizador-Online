@@ -31,6 +31,17 @@
   .mk-hp{background:#0096d6}
   .mk-sub{font-size:11px;color:var(--ct2);margin-left:9px}
 
+  /* ── Chips del filtro de marca ──
+     Van en el color de SU marca, igual que los globitos de rubro de Poly: el
+     color es la señal, y tiene que ser el mismo que el de la chapita de cada
+     fila o los dos dejan de leerse como lo mismo. Pastel del mismo tono, para
+     que el texto se lea encima (dark.css los apaga con un filter, como a los
+     de Poly). Van acá y no en el JS porque es donde ya viven los colores de
+     cada marca: sumar HP es agregarle su línea a este bloque. */
+  .pk-rub.mkf-apple{background:#ece7f5;color:#2d1b4e;border-color:#cfc2e6}
+  .pk-rub.mkf-poly{background:#f7e9e4;color:#8c3f26;border-color:#e8c7ba}
+  .pk-rub.mkf-hp{background:#e2f2fb;color:#00699a;border-color:#b9dcf0}
+
   /* Separador de marca dentro de la grilla del pedido. Mismo patrón que el
      separador de familia del PDF de Apple: una fila que no es una línea. */
   .mk-sep td{background:var(--c0);border-top:1.5px solid var(--cb);padding:6px 10px}
@@ -213,7 +224,7 @@
 <div id="p-catalog" class="pg">
   <div class="tb">
     <button class="bo" onclick="goTo('quote')">← Volver</button>
-    <h2 class="h2" style="flex:1">Catálogo <span class="sub" style="font-weight:400">— de todas las marcas, junto</span></h2>
+    <h2 class="h2" style="flex:1">Catálogo <span class="sub" style="font-weight:400">— de todas las marcas, junto; para armar el pedido usá “+ Agregar producto”</span></h2>
     <button class="bo" onclick="limpiarFiltrosCat()" title="Limpiar búsqueda y marca">✕ Filtros</button>
     <button class="bo" onclick="cargarCatalogos().then(renderCat)" title="Volver a bajar los catálogos de cada marca">↻ Actualizar</button>
   </div>
@@ -238,18 +249,22 @@
       <span class="buscador-lupa" aria-hidden="true">🔍</span>
       <textarea id="fsearch" rows="1" placeholder="ej: macbook pro 14  /  studio x72" oninput="handleSearchInput()"></textarea>
     </div>
-    <div class="pk-rubros" id="fmarca" style="padding:0 0 12px"></div>
+    <!-- La marca elegida vive en el `data-marca` del contenedor — ver
+         _marcaElegida() en js/catalog-view.js. -->
+    <div class="pk-rubros" id="fmarca" data-marca="" style="padding:0 0 12px"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span id="catcount" style="color:var(--ct2)"></span>
     </div>
     <div class="tw">
+      <!-- Mismas columnas que la subpantalla flotante: las dos tablas comparten
+           _catRowHTML(), así que si acá se cambia un ancho hay que cambiarlo
+           allá (y viceversa). -->
       <table style="table-layout:fixed;width:100%;min-width:720px">
-        <colgroup><col style="width:86px"><col style="width:150px"><col><col style="width:130px"><col style="width:56px"></colgroup>
+        <colgroup><col style="width:54px"><col style="width:86px"><col style="width:150px"><col><col style="width:130px"></colgroup>
         <thead>
           <tr>
-            <th>Marca</th><th>SKU</th><th>Descripción</th>
+            <th></th><th>Marca</th><th>SKU</th><th>Descripción</th>
             <th style="text-align:right" title="El precio con el que entraría al pedido">P. Venta</th>
-            <th></th>
           </tr>
         </thead>
         <tbody id="catbody"></tbody>
@@ -313,6 +328,8 @@
 <script src="js/catalogo-multi.js"></script>
 <script src="js/quote.js"></script>
 <script src="js/catalog-view.js"></script>
+<!-- picker.js DESPUÉS de catalog-view.js: reusa su fila, su filtrado y su recorte -->
+<script src="js/picker.js"></script>
 <script src="js/quotes-db.js"></script>
 <script src="js/emitir.js"></script>
 <script src="../shared/backup.js"></script>
@@ -332,6 +349,63 @@
 <script src="../shared/pwa.js"></script>
 <!-- boot.js último: necesita todos los módulos ya definidos -->
 <script src="js/boot.js"></script>
+
+<!-- ============================================================
+     SUBPANTALLA DE PRODUCTOS  ·  se abre desde "+ Agregar producto"
+     del pedido, ENCIMA de él (ver js/picker.js). Arriba el catálogo
+     unificado con un `+` por producto; abajo, lo que el pedido ya
+     lleva, con el chip de la marca a la que va a bajar al emitir.
+     Los estilos (.pk-*) están en shared/css/base.css y son los
+     mismos que usan Poly y Apple.
+     ============================================================ -->
+<div id="prod-picker" style="display:none">
+  <div class="pk-card" role="dialog" aria-modal="true" aria-label="Agregar productos">
+
+    <div class="pk-hd">
+      <div class="h3">Agregar productos <span id="pk-count" style="font-size:11px;font-weight:400;color:var(--ct3);margin-left:6px"></span></div>
+      <button type="button" class="pk-x" data-pk-cerrar title="Cerrar">&times;</button>
+    </div>
+
+    <div class="pk-filtros">
+      <div class="buscador" style="flex:1">
+        <span class="buscador-lupa" aria-hidden="true">🔍</span>
+        <textarea id="pk-search" rows="1" placeholder="Buscar &mdash; o pegá varios SKUs separados por enter, tab o coma"></textarea>
+      </div>
+    </div>
+    <!-- Marcas como globitos: es el filtro propio del multimarca. La elegida
+         vive en el `data-marca` del contenedor — ver _marcaElegida() en
+         js/catalog-view.js. -->
+    <div class="pk-rubros" id="pk-marca" data-marca=""></div>
+
+    <div class="pk-lista">
+      <!-- Mismos anchos que la vista Catálogo: las dos tablas comparten
+           _catRowHTML(). -->
+      <table style="table-layout:fixed;width:100%">
+        <colgroup><col style="width:54px"><col style="width:80px"><col style="width:130px"><col><col style="width:104px"></colgroup>
+        <thead>
+          <tr>
+            <th></th><th>Marca</th><th>SKU</th><th>Descripci&oacute;n</th>
+            <th style="text-align:right" title="El precio con el que entrar&iacute;a al pedido">P. Venta</th>
+          </tr>
+        </thead>
+        <tbody id="pk-body"></tbody>
+      </table>
+    </div>
+
+    <div class="pk-pie">
+      <div class="pk-pie-hd">
+        <span class="lbl" style="margin:0">En el pedido (<span id="pk-cart-n">0</span>)<span id="pk-cart-opc"></span></span>
+      </div>
+      <div id="pk-cart"></div>
+      <div class="pk-cierre">
+        <span>Total</span>
+        <b id="pk-total">&mdash;</b>
+        <button type="button" class="bd" data-pk-cerrar>Listo</button>
+      </div>
+    </div>
+
+  </div>
+</div>
 
 </body>
 </html>

@@ -23,6 +23,62 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 12/08/2026 · El multimarca agrega productos como Poly: la subpantalla flotante
+
+Archivo nuevo `src/multi/js/picker.js`. `APP_VERSION` 6.2 → 6.3 (cambió la lista
+de precache).
+
+En el multimarca, `+ Agregar producto` llamaba a `openCat()`, que hace
+`goTo('catalog')`: te sacaba del pedido, elegías en otra pantalla y recién al
+volver veías qué había quedado. Era el mismo flujo que Poly y Apple ya habían
+dejado atrás (ver 03/08 y 05/08), **y acá duele más**: un pedido mixto se arma
+salteando entre marcas, así que el ida y vuelta se paga una vez por salto.
+
+Ahora se abre la misma capa flotante que las otras dos marcas, encima del pedido:
+arriba el catálogo con un `+` por producto (`✓` si ya está, y ese mismo botón lo
+saca), abajo lo que el pedido ya lleva con cantidades, total y `×`. La mitad de
+abajo es el punto: se ve crecer el pedido sin cerrar nada.
+
+**Lo propio del multimarca son dos cosas**, y las dos van en la flotante:
+
+- el filtro es por **marca** y no por rubro (chips, mismo `.pk-rub` que los
+  rubros de Poly), porque es la columna que el catálogo unificado agrega;
+- cada línea del carrito lleva su **chip de marca**. En una marca sola sobraría;
+  acá es el dato que dice a qué cotización va a bajar esa línea al emitir, que es
+  justo lo que el usuario no puede deducir mirando SKUs.
+
+**Una sola fila para las dos tablas.** `_catRowHTML()`, `_catFiltradosCon()`,
+`_catRecortar()` y los chips viven en `catalog-view.js` y el picker los reusa —
+si cada tabla armara la suya, agregar una columna de un lado y olvidarse del otro
+no daría ningún error, solo dos tablas desalineadas. La vista Catálogo también
+pasó a mostrar el `+` en la primera columna, que es donde lo tiene la flotante.
+
+Efectos colaterales del reuso, los dos buscados:
+
+- **La marca elegida se mudó del módulo al `data-marca` del contenedor.** Con una
+  variable compartida, elegir marca en la flotante le movía el filtro a la vista
+  Catálogo. Mismo criterio que `_rubroElegido()` en Poly. El chip lleva `data-mk`
+  y el contenedor `data-marca`: con el mismo nombre, el `closest()` del cableado
+  matchearía además el contenedor y un clic en el borde borraría el filtro.
+- **Los chips no tenían estilo.** Salían con clase `pk-rubro`, que no existe en
+  `base.css` (la clase es `pk-rub`), así que eran botones grises del navegador.
+
+**Pegado de una columna de SKUs**: el multimarca no carga
+`shared/catalog-core.js` —arrastra la selección con checkboxes y el alta manual
+de artículos, dos cosas que acá no existen—, así que el pegado se escribió
+aparte, chico. Lo propio de acá es la **ambigüedad**: el mismo SKU podría existir
+en dos marcas. Con el filtro puesto se resuelve solo; sin filtro se toma la
+primera del registro **y se avisa cuál**, porque agregar la línea de la marca
+equivocada la manda a la cotización equivocada al emitir.
+
+`check-multi.js` suma el bloque 8c (17 chequeos): la flotante abre, lista las dos
+marcas, el carrito crece al agregar, el `✓` saca solo esa línea sin tocar la otra
+marca, el pegado agrega lo que existe y avisa lo que no. Existe porque el picker
+reusa tres funciones de `catalog-view.js`: renombrar cualquiera de ellas deja
+esta pantalla tirando en el navegador y en ningún otro lado.
+
+---
+
 ## 12/08/2026 · El multimarca mostraba solo Apple: tres bugs, uno de ellos en la documentación
 
 Reporte del usuario: *"solo me muestra los productos apple"*. Eran **tres bugs

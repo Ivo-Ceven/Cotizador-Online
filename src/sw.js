@@ -141,6 +141,7 @@ var ASSETS = [
   './multi/js/catalogo-multi.js',
   './multi/js/quote.js',
   './multi/js/catalog-view.js',
+  './multi/js/picker.js',
   './multi/js/quotes-db.js',
   './multi/js/emitir.js',
   './multi/js/history.js',

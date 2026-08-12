@@ -290,8 +290,11 @@ function renderQ(){
     }
   }
 
+  // abrirPicker() y no openCat(): la subpantalla flotante deja elegir sin salir
+  // del pedido (js/picker.js). openCat() sigue existiendo para la vista Catálogo
+  // del menú, que es donde se ve el catálogo entero y se lo actualiza.
   html += '<tr><td colspan="9" style="padding:9px 10px">'
-       +    '<button class="al" onclick="openCat()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button>'
+       +    '<button class="al" onclick="abrirPicker()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button>'
        +  '</td></tr>';
 
   if(visibles.length){

@@ -387,7 +387,10 @@ console.log('\n8 · La pantalla se arma sin romperse');
   // Los contenedores que la pantalla espera encontrar.
   ['qbody','ctrl-box','opc-bar-box','opc-aviso-box','emitir-resumen','catbody','fmarca',
    'catcount','cat-sello','nocat','catui','histwrap','hist-del-btn','client','proyecto',
-   'obs','opg','exec','quote-estado','eff-date','qnum','hclient','hexec','fsearch'].forEach(el);
+   'obs','opg','exec','quote-estado','eff-date','qnum','hclient','hexec','fsearch',
+   // La subpantalla flotante de productos (js/picker.js).
+   'prod-picker','pk-body','pk-cart','pk-cart-n','pk-cart-opc','pk-total','pk-count',
+   'pk-marca','pk-search'].forEach(el);
 
   let error = null;
   try{
@@ -446,6 +449,117 @@ console.log('\n8 · La pantalla se arma sin romperse');
       if(!e3) ok(/mk-poly/.test(els['catbody'].innerHTML), 'con productos de las dos marcas');
     }
   }
+}
+
+/* ============ 8c) LA SUBPANTALLA DE PRODUCTOS SE ARMA IGUAL ============== */
+/* "+ Agregar producto" abre una capa flotante encima del pedido (js/picker.js),
+   como en Poly: arriba el catálogo con un `+` por producto, abajo lo que el
+   pedido ya lleva. Antes mandaba a la vista Catálogo y volvías a ciegas.
+
+   Se prueba el CABLEADO, que es lo que no avisa cuando se rompe: el picker
+   reusa la fila, el filtrado y el recorte de catalog-view.js, así que renombrar
+   cualquiera de los tres allá deja esta pantalla tirando en el navegador y en
+   ningún otro lado. */
+console.log('\n8c · La subpantalla de productos ("+ Agregar producto")');
+{
+  const els = {};
+  function el(id){
+    if(!els[id]) els[id] = {id, value:'', innerHTML:'', textContent:'', style:{},
+      classList:{add(){},remove(){},contains(){return false}},
+      getAttribute(){return null}, setAttribute(){}, addEventListener(){}, contains(){return true}};
+    return els[id];
+  }
+  ['catbody','fmarca','catcount','cat-sello','nocat','catui','qbody','ctrl-box',
+   'opc-bar-box','opc-aviso-box','emitir-resumen','client','obs','fsearch',
+   'prod-picker','pk-body','pk-cart','pk-cart-n','pk-cart-opc','pk-total','pk-count',
+   'pk-marca','pk-search'].forEach(el);
+
+  let toasts = [];
+  const ctx = {
+    console, Date, Math, JSON, Object, Array, String, Number, parseInt, parseFloat, isNaN,
+    setTimeout: () => 0, encodeURIComponent,
+    localStorage: {getItem: () => null, setItem(){}, removeItem(){}},
+    document: {getElementById: id => els[id] || null, querySelectorAll: () => [], addEventListener(){}},
+    addEventListener(){}, location: {}, navigator: {onLine: true},
+    fetch: () => Promise.reject(new Error('sin red')),
+    showToast(m){ toasts.push(m); }, showErr(){}, notifyUndo(){}, goTo(){},
+    cevenOpcActiva: () => 1, cevenOpcDe: () => 1, cevenOpcFiltrar: a => a,
+    cevenOpcEfectiva: () => 1, cevenOpcPintarBarra(){}, cevenOpcHayB: () => false,
+    cevenOpcLetra: n => (n === 2 ? 'B' : 'A'),
+    cevenDelegate(){}, cevenActEl: () => null,
+    getCur: () => 'USD', getTC: () => 0, dp: u => 'USD ' + Math.round(u),
+    fI: n => String(Math.round(n)), fD: n => String(n),
+    getSortedItems: () => ctx.items, upField(){},
+    rmItem(id){ ctx.items = ctx.items.filter(x => String(x.id) !== String(id)); ctx.renderQ(); },
+    items: [], products: [], histSel: {}, emitidas: {},
+    _qSortKey: null, _qSortDir: 1,
+    cevenLsSet: () => true, cevenLsJSON: (k, d) => d,
+    cevenEsc: s => String(s == null ? '' : s),
+    cevenK: b => 'multi_' + b,
+    CEVEN_BRAND: {id:'multi', prefix:'multi_'}
+  };
+  ctx.window = ctx; ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  ['src/apple/js/pricing-core.js','src/poly/js/pricing-core.js','src/multi/js/marcas.js',
+   'src/multi/js/catalogo-multi.js','src/multi/js/quote.js','src/multi/js/catalog-view.js',
+   'src/multi/js/picker.js']
+    .forEach(f => vm.runInContext(lee(f), ctx, {filename: f}));
+
+  ctx.catalogos = {apple: JSON.parse(JSON.stringify(CAT_APPLE)), poly: JSON.parse(JSON.stringify(CAT_POLY))};
+  ctx.nacRatesApple = JSON.parse(JSON.stringify(ctx.CEVEN_APPLE_NAC_DEF));
+  ctx._margenGlobalValor = 12;
+  ctx._tierGlobalValor = T1;
+  ctx._catRearmar();
+
+  let e1 = null;
+  try{ ctx.abrirPicker(); }catch(e){ e1 = e; }
+  ok(!e1, 'abre sin romperse', e1 && (e1.message + ' @ ' + e1.stack.split('\n')[1]));
+
+  const lista = els['pk-body'].innerHTML;
+  ok(/mk-apple/.test(lista) && /mk-poly/.test(lista), 'la lista trae productos de las dos marcas');
+  ok(/data-act="add"/.test(lista), 'cada producto tiene su botón de agregar');
+  ok(/Todas/.test(els['pk-marca'].innerHTML) && /Poly/.test(els['pk-marca'].innerHTML),
+     'y están los chips para filtrar por marca');
+  ok(/Todavía no agregaste nada/.test(els['pk-cart'].innerHTML),
+     'el carrito arranca explicando qué hacer');
+
+  // Agregar es lo mismo que hace el `+`: la mitad de abajo tiene que crecer sin
+  // cerrar nada, que es el punto entero de la pantalla.
+  ctx.agregarAlPedido('apple|MX2H3LE/A');
+  ctx.agregarAlPedido('poly|772D0AA');
+  ok(ctx.items.length === 2, 'agregar desde la flotante suma las líneas al pedido', 'dio ' + ctx.items.length);
+  ok(els['pk-cart-n'].textContent === 2, 'el contador del carrito se actualiza solo',
+     'dio ' + els['pk-cart-n'].textContent);
+  ok(/MX2H3LE\/A/.test(els['pk-cart'].innerHTML) && /772D0AA/.test(els['pk-cart'].innerHTML),
+     'y los dos SKU aparecen abajo');
+  ok(/mk-apple/.test(els['pk-cart'].innerHTML) && /mk-poly/.test(els['pk-cart'].innerHTML),
+     'cada línea del carrito dice a qué marca va a bajar al emitir');
+  ok(els['pk-total'].textContent !== '—', 'y el total deja de estar vacío',
+     els['pk-total'].textContent);
+
+  // Lo que ya está en el pedido se muestra como `✓`, y ese mismo botón lo saca.
+  ok(/data-act="unq"/.test(els['pk-body'].innerHTML),
+     'lo ya agregado cambia el + por el ✓ que lo saca');
+  ctx.quitarDelPedido('poly|772D0AA');
+  ok(ctx.items.length === 1 && ctx.items[0].brand === 'apple',
+     'el ✓ saca solo esa línea y no toca la otra marca', JSON.stringify(ctx.items.map(i => i.brand)));
+
+  // El pegado de una columna de SKUs, que es la otra forma de cargar rápido.
+  const paste = {clipboardData: {getData: () => 'MYD83LE/A\nA4LZ8AA\nNO-EXISTE'}, preventDefault(){}};
+  toasts = [];
+  let e2 = null;
+  try{ ctx._pickPaste(paste, els['pk-search']); }catch(e){ e2 = e; }
+  ok(!e2, 'pegar varios SKUs no rompe', e2 && e2.message);
+  ok(ctx.items.length === 3, 'los 2 SKUs que existen entran al pedido', 'dio ' + ctx.items.length);
+  ok(toasts.length && /no encontrados/.test(toasts[0]), 'y el que no existe se avisa en vez de perderse',
+     JSON.stringify(toasts));
+
+  ctx.cerrarPicker();
+  ok(els['prod-picker'].style.display === 'none', 'cerrar la esconde');
+  // Cerrada, un render del catálogo NO puede repintarla: renderCat() la llama.
+  let e3 = null;
+  try{ ctx.renderCat(); }catch(e){ e3 = e; }
+  ok(!e3, 'y renderCat() sigue andando con la flotante cerrada', e3 && e3.message);
 }
 
 /* ============== 8b) LA CLAVE DE app_settings LLEVA PREFIJO ================ */
