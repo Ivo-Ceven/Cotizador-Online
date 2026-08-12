@@ -12,8 +12,9 @@
    ponderado, filas virtuales por override de SKU y facturacion
    parcial. Eso no es la misma tabla con otras columnas.
 
-   Depende de: brand.js (pipeColCount), safe.js (cevenEsc).
-   Se carga ANTES de <marca>/js/pipeline-view.js.
+   Depende de: brand.js (pipeColCount), safe.js (cevenEsc),
+   clientes.js (cevenNormClient).
+   Se carga DESPUES de clientes.js y ANTES de <marca>/js/pipeline-view.js.
    ============================================================ */
 
 /* ---- Registro de nodos ------------------------------------------------------
@@ -74,19 +75,17 @@ function cevenPipeAbierto(key){
 }
 
 /* ---- Clientes ---------------------------------------------------------------
-   El campo es texto libre, sin normalizar: "Coca Cola", "coca cola" y
-   "Coca-Cola " eran tres clientes distintos para cualquier agrupacion. Se
-   agrupa por esta clave y se MUESTRA la grafia mas frecuente, que es la que el
+   La forma canonica de un nombre de cliente —cevenNormClient()— vive en
+   `shared/clientes.js`, que es el modulo del cliente: el pipeline AGRUPA por
+   cliente, no lo define. Estuvo aca hasta el 12/08/2026 y la dependencia iba al
+   reves (clientes.js dependia del pipeline), lo que dejaba a cualquier pagina
+   sin pipeline —el multimarca— llamando a una funcion que no existia. Ver el
+   comentario en clientes.js.
+
+   Se agrupa por esa clave y se MUESTRA la grafia mas frecuente, que es la que el
    usuario escribio mas veces y por lo tanto la que reconoce.
 
-   Los guiones y la puntuacion NO se tocan: "Coca-Cola" y "Coca Cola" pueden ser
-   dos razones sociales distintas de verdad, y unir de mas es peor que unir de
-   menos — se pierde plata de vista abajo del cliente equivocado. */
-function cevenNormClient(s){
-  return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-/* Agrupa filas ya FILTRADAS por cliente.
+   Agrupa filas ya FILTRADAS por cliente.
 
    El orden es filtrar -> agrupar (no al reves): asi los totales del encabezado
    siempre coinciden con las filas que se ven abajo, que es la falla clasica de

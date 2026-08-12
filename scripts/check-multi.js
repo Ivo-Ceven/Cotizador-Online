@@ -447,6 +447,31 @@ console.log('\n8 · La pantalla se arma sin romperse');
       try{ ctx.renderCat(); }catch(e){ e3 = e; }
       ok(!e3, 'el catálogo unificado se renderiza', e3 && e3.message);
       if(!e3) ok(/mk-poly/.test(els['catbody'].innerHTML), 'con productos de las dos marcas');
+
+      /* GUARDAR de verdad. Es el camino que reventaba el 12/08/2026 con
+         "cevenNormClient is not defined": la pantalla se armaba perfecta y el
+         error saltaba recién al apretar Guardar, porque `clientes.js` usaba una
+         función que vivía en `pipeline-group.js` y el multimarca no lo carga.
+
+         Se guarda CON cliente y CON nivel, que es lo único que dispara
+         `cevenClienteSet()` — con el campo vacío el bug no aparece. */
+      els['client'].value = 'ACME S.A.';
+      els['exec'].value   = 'Ivo Capezzuto';
+      ctx.items = ctx.items.length ? ctx.items : [];
+      ctx.agregarAlPedido('poly|772D0AA');
+      let e4 = null, guardo = null;
+      try{ guardo = ctx.doSave(true); }catch(e){ e4 = e; }
+      ok(!e4, 'guardar el pedido no tira', e4 && (e4.message + ' @ ' + e4.stack.split('\n')[1]));
+      ok(guardo === true, 'y el guardado informa que se escribió', 'devolvió ' + guardo);
+      /* La función que faltaba, en el bundle de ESTA página. El `localStorage`
+         del banco es un no-op, así que acá no se puede verificar que la ficha
+         quede guardada; lo que importa —y lo que fallaba— es que la
+         normalización exista donde se la llama. */
+      ok(typeof ctx.cevenNormClient === 'function',
+         'cevenNormClient() está en el bundle del multimarca, que no carga el pipeline');
+      ok(ctx.cevenNormClient('  ACME   S.A. ') === 'acme s.a.',
+         'y "ACME   S.A. " y "acme s.a." comparten ficha',
+         'dio ' + JSON.stringify(ctx.cevenNormClient('  ACME   S.A. ')));
     }
   }
 }

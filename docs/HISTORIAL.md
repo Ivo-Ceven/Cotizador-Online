@@ -23,6 +23,57 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 12/08/2026 · `cevenNormClient is not defined` al guardar en el multimarca
+
+```
+Uncaught ReferenceError: cevenNormClient is not defined
+    at cevenClienteSet (clientes.js:47)
+    at doSave (quotes-db.js:116)
+    at saveQuote (quotes-db.js:136)
+```
+
+**La dependencia iba al revés.** `shared/clientes.js` —la ficha del cliente—
+usaba `cevenNormClient()`, que vivía en `shared/pipeline-group.js`. O sea: el
+módulo del cliente dependía del módulo del pipeline. Poly cargaba los dos y no
+pasaba nada; el multimarca carga `clientes.js` pero **no** el pipeline (emite a
+las marcas, no tiene uno propio), así que la página cargaba entera, se veía
+perfecta, y reventaba recién al apretar Guardar.
+
+La función se mudó a `clientes.js`, que es su lugar: **el pipeline agrupa por
+cliente, no lo define.** `pipeline-group.js` pasa a depender de `clientes.js`, y
+Apple —que agrupa su pipeline por cliente pero no tenía `clientes.js` en su
+bundle— ahora lo carga, antes de `pipeline-group.js`.
+
+También afectaba a `aplicarTierDelCliente()` y al selector de nivel de Poly
+dentro del multimarca: los tres caminos pasan por la misma función.
+
+### Lo que deja: el chequeo del caso inverso
+
+`check-globals.js` verificaba que un nombre no estuviera definido **dos veces**.
+Ahora verifica además que no esté definido **ninguna**: si un bundle llama a una
+`ceven*()` que ninguno de sus `<script>` define, lo dice. Es la misma clase de
+falla que el duplicado —silenciosa, sin build que la detecte— pero al revés, y
+esta ni siquiera aparece al cargar la página: espera al click.
+
+Detalles que hicieron falta para que sirva:
+
+- **Se ignoran los comentarios.** Esta base documenta mucho y nombra funciones
+  —y hasta funciones SQL, `ceven_equipo()`— al explicar por qué algo es como es.
+  Sin esto el chequeo denunciaba la prosa: 15 falsos positivos en la primera
+  corrida.
+- **Se cuentan los `window.cevenX = …` indentados.** Varios módulos compartidos
+  se escriben adentro de un IIFE y publican así (`monthpicker.js`). El ancla de
+  columna 0 que usa la detección de duplicados —y que ahí es lo que evita
+  decenas de falsos positivos— no los ve.
+- **Se respetan las dependencias opcionales.** Todo `shared/` pregunta
+  `typeof cevenX === 'function'` antes de usar lo que puede no estar en esa
+  marca; esas llamadas son el mecanismo, no un error.
+
+Se verificó al revés: renombrando `cevenNormClient` a mano, el chequeo lo
+encuentra y falla.
+
+---
+
 ## 12/08/2026 · El Ejecutivo del multimarca no se podía elegir
 
 Módulo nuevo `src/shared/equipo.js`.

@@ -19,9 +19,34 @@
    ficha. Se guarda ademas la grafia con la que se lo vio por
    ultima vez, para poder mostrarlo como lo escribe el usuario.
 
+   ⚠ cevenNormClient() VIVE ACA, y no en pipeline-group.js como
+   hasta el 12/08/2026. La dependencia iba al reves —el modulo
+   del cliente dependia del modulo del pipeline—, asi que una
+   pagina con clientes pero SIN pipeline se cargaba entera y
+   recien reventaba al guardar:
+
+     Uncaught ReferenceError: cevenNormClient is not defined
+         at cevenClienteSet (clientes.js:47)
+
+   Le paso al multimarca, que no tiene pipeline propio (emite a
+   las marcas). Ahora el pipeline depende del cliente, que es el
+   sentido correcto: el pipeline AGRUPA por cliente, no lo define.
+
    Depende de: brand.js (cevenK), safe.js (cevenLsSet,
-   cevenLsJSON), pipeline-group.js (cevenNormClient).
+   cevenLsJSON).
+   Se carga ANTES de pipeline-group.js.
    ============================================================ */
+
+/* La forma canonica de un nombre de cliente. El campo es texto libre: sin esto,
+   "Coca Cola", "coca cola" y "Coca Cola " son tres clientes distintos para
+   cualquier agrupacion y para cualquier ficha.
+
+   Los guiones y la puntuacion NO se tocan: "Coca-Cola" y "Coca Cola" pueden ser
+   dos razones sociales distintas de verdad, y unir de mas es peor que unir de
+   menos — se pierde plata de vista abajo del cliente equivocado. */
+function cevenNormClient(s){
+  return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
 function cevenGetClientes(){
   var c = window.cevenLsJSON(window.cevenK('cclientes'), {});
