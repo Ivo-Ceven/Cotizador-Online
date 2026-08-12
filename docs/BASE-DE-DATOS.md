@@ -49,6 +49,20 @@ create table public.pipeline (
 -- Nota: el campo local `skuOvLinks` NO se sincroniza (excluido a propósito en sync.js).
 -- Nota: qMac/qIph/qIpad/qServ/qAcc/montoMac.../qNum/margenPond/skuStatus/skuMesCierre/skuPartial*/ovLink
 -- son 100% de brand='apple' — para brand='poly' quedan siempre NULL (agregados 2026-07-24, migración aditiva).
+--
+-- 🔴 FALTA "esFOB" (boolean), Y EL CLIENTE LA ESCRIBE.
+-- Este bloque describe la base REAL, verificada contra information_schema el
+-- 12/08/2026. La columna "esFOB" está declarada en
+-- supabase/migrations/20260803120000_poly_pipeline_por_proyecto.sql, pero esa
+-- migración NUNCA se aplicó (y hoy no se puede: empieza borrando los datos de
+-- Poly, que ya son reales — ver el bloque rojo de docs/HISTORIAL.md).
+--
+-- Consecuencia: TODO insert/upsert que incluya "esFOB" se rechaza con 400 y la
+-- fila entera no entra. Le pasa al multimarca al emitir Apple, y al propio
+-- cotizador de Apple, cuyo `pipeCols` la incluye — ahí sync.js se come el error
+-- con un console.warn, así que falla en silencio (0 filas de Apple en la tabla).
+-- El arreglo, cuando se decida hacerlo, es aditivo y de una línea:
+--     alter table public.pipeline add column if not exists "esFOB" boolean;
 
 -- Tareas del equipo: organizador colaborativo del SHELL (src/index.html), NO es
 -- de una marca — sin columna brand, un solo checklist compartido entre Apple y

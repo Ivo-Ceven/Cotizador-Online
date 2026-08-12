@@ -9,17 +9,114 @@ Bitácora de qué se hizo, cuándo y **por qué**. Complementa a `ARQUITECTURA.m
 
 ---
 
-## Estado actual (31/07/2026)
+## Estado actual (12/08/2026)
 
 Plataforma multi-marca deployada en **https://cotizadores-ceven.vercel.app**
 (Vercel, team CEVEN, proyecto `cotizadores-ceven`). Shell con login + selector de
-marcas, cotizador **Apple** y cotizador **Poly** completos, HP pendiente.
-PWA instalable y funcional offline. Base Supabase `iqewnebpdyctexavtpmt`, con RLS
-por rol y marca aplicada y restringida a cuentas `@ceven.com`.
+marcas, cotizador **Apple** y cotizador **Poly** completos, **multimarca** en
+marcha, HP pendiente. PWA instalable y funcional offline. Base Supabase
+`iqewnebpdyctexavtpmt`, con RLS por rol y marca aplicada y restringida a cuentas
+`@ceven.com`. 8 cuentas activas (3 admin + 5 ventas).
 
-**Todavía no está en uso real** (sin usuarios ni datos productivos), que es lo que
-permitió el refactor del 28–30/07 sin red de contención. Los signups públicos están
-cerrados: la única alta es la Edge Function `admin-users`.
+---
+
+## 🔴 LOS DATOS DE POLY YA SON REALES
+
+Hasta el 31/07/2026 esta base no tenía nada productivo, y eso es lo que permitió
+el refactor del 28–30/07 y el cambio de modelo de Poly del 03/08 **borrando y
+recreando** en vez de migrar. **Eso se terminó.**
+
+Hoy Poly tiene cotizaciones y pipeline de verdad cargados por el equipo. A partir
+de ahora, cualquier cosa que toque `pipeline`, `app_settings` o las claves
+`poly_*`:
+
+- **nada de `delete` ni `drop` sobre datos de Poly.** Lo que antes se resolvía
+  borrando lo de prueba, ahora se migra;
+- **las migraciones se leen enteras antes de aplicarlas**, incluso las que ya
+  están en `supabase/migrations/`. Una escrita cuando no había datos puede
+  empezar con un `delete` que en su momento era correcto;
+- ante la duda, primero un `select count(*)` para saber qué hay del otro lado.
+
+### ⚠ La trampa concreta que ya está en el repo
+
+`supabase/migrations/20260803120000_poly_pipeline_por_proyecto.sql`
+**nunca se aplicó** a la base productiva (se ve en `supabase migration list`, y en
+que la columna `salas` —que ese archivo dropea— sigue existiendo). Y **NO se
+puede aplicar como está**, porque empieza con:
+
+```sql
+delete from public.pipeline      where brand = 'poly';
+delete from public.app_settings  where brand = 'poly'
+  and key in ('poly_cquotes', 'poly_carchive', 'poly_cqc');
+```
+
+Era correcto el 03/08 —su encabezado dice "NO HAY DATOS PRODUCTIVOS"— y hoy
+borraría **18 filas de pipeline y ~34 KB de historial de Poly**. Si alguna vez
+hace falta lo que ese archivo agrega, hay que sacarle los `delete` y aplicar solo
+la parte de esquema.
+
+Consecuencia que sigue abierta: la columna `pipeline."esFOB"` **no existe en la
+base** porque venía en ese archivo. Ver la entrada del 12/08 más abajo.
+
+Los signups públicos están cerrados: la única alta es la Edge Function
+`admin-users`.
+
+---
+
+## 12/08/2026 · Emitir a Apple da 400: falta la columna `pipeline."esFOB"`
+
+```
+POST https://iqewnebpdyctexavtpmt.supabase.co/rest/v1/pipeline 400 (Bad Request)
+    at cevenEmitirEscribirMarca (emitir.js:267)
+    at emitirAMarcas (emitir.js:343)
+```
+
+**Diagnosticado, NO arreglado** — por decisión del usuario: lo de Apple va a
+cambiar, así que no se toca la base todavía. Queda acá para no volver a
+diagnosticarlo desde cero.
+
+### Qué pasa
+
+La fila de pipeline que arma el multimarca para Apple incluye `esFOB`
+(`pipelineExtra()` en `js/marcas.js`), y **esa columna no existe en la base**.
+PostgREST rechaza el insert entero con 400. Se comparó campo por campo lo que se
+manda contra `information_schema.columns`: es la única que falta. Poly manda
+`{monto, opg, factura}` y las tres existen — por eso Poly emite bien.
+
+Falta porque venía en la migración del 03/08 que nunca se aplicó y que hoy **no
+se puede aplicar** (borra los datos reales de Poly). Ver el bloque rojo al
+principio de este archivo.
+
+### Lo que el 400 destapó, que es más grande
+
+**No es solo el multimarca.** El propio cotizador de Apple escribe `esFOB` en
+cada fila (`pipeCols` en `src/apple/brand.js`, `addToPipeline()` en
+`js/pipeline-core.js`), y `shared/sync.js` reporta el fallo del upsert así:
+
+```js
+if(!r.ok) r.text().then(function(t){ console.warn('[sync] upsert pipeline ' + r.status + ':', t); });
+```
+
+Un `console.warn` y sigue. O sea que **el pipeline de Apple viene fallando en
+silencio**. La base lo confirma: `app_settings` tiene cotizaciones de Apple
+(`(apple,'cquotes')`, 4,8 KB) y la tabla `pipeline` tiene **0 filas de Apple** y
+18 de Poly. No es prueba concluyente —podría ser que nadie usó el pipeline de
+Apple— pero es exactamente lo que se esperaría ver.
+
+### Cuando se quiera arreglar
+
+Un solo comando, aditivo y reversible con un `drop column`:
+
+```sql
+alter table public.pipeline add column if not exists "esFOB" boolean;
+```
+
+Queda NULL en las filas existentes, que es lo que `esFOBEntry()` ya trata como
+"no es FOB". **No aplicar** el archivo del 03/08 entero.
+
+Y aparte, valga o no `esFOB`: que `sync.js` se coma un 400 del pipeline con un
+`console.warn` es lo que hizo que esto no se viera durante nueve días. Un fallo
+de upsert que se repite debería llegar a la pantalla.
 
 ---
 
@@ -2082,6 +2179,22 @@ validaciones server-side.
 ---
 
 ## Pendientes
+
+### 🔴 `pipeline."esFOB"` no existe en la base, y el cliente la escribe
+
+Emitir Apple desde el multimarca da **400** y el pipeline de Apple no sincroniza
+(falla en silencio, `console.warn` en `sync.js`). Diagnóstico completo en la
+entrada del 12/08/2026. Se decidió **no tocar la base por ahora**: lo de Apple
+va a cambiar.
+
+Cuando se retome, dos cosas separadas:
+
+1. `alter table public.pipeline add column if not exists "esFOB" boolean;`
+   — aditivo, reversible. **No** aplicar el archivo del 03/08 entero: borra los
+   datos reales de Poly.
+2. Que un upsert de pipeline que falla repetidamente **llegue a la pantalla** en
+   vez de quedar en la consola. Es lo que hizo que esto pasara nueve días sin
+   que nadie lo notara.
 
 ### 🟡 Tareas: los tableros por equipo no se abrieron en un navegador
 
