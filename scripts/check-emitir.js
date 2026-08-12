@@ -273,7 +273,69 @@ console.log('\n6 · Lo que no se puede emitir se dice, no se inventa');
   ok(!hp.pipeRow, 'y no arma ninguna fila de pipeline para ella');
 }
 
-console.log('\n' + (fallos
-  ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
-  : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
-process.exit(fallos ? 1 : 0);
+/* ============ 7) SE ESCRIBE EN LA CLAVE QUE LA MARCA REALMENTE LEE ======== */
+/* `app_settings.key` guarda la clave REAL de localStorage, con el prefijo de la
+   marca. Escribir `(poly,'cquotes')` en vez de `(poly,'poly_cquotes')` NO da
+   error: crea una fila fantasma que el cotizador de Poly nunca lee. La
+   cotización emitida no aparecería jamás en esa marca, y desde el multimarca
+   todo se vería exitoso. Es el peor tipo de bug posible acá, así que se
+   verifica el payload exacto que sale a la red. */
+console.log('\n7 · El payload va a la clave que esa marca lee');
+(function(){
+  // La capa REST arma el body; se la corre con un fetch de mentira que lo captura.
+  const enviados = [];
+  E.fetch = function(url, opts){
+    opts = opts || {};
+    // Las lecturas son GET sin body; las escrituras traen el payload JSON.
+    enviados.push({url: url, body: opts.body ? JSON.parse(opts.body) : null, headers: opts.headers});
+    return Promise.resolve({
+      ok: true,
+      text: () => Promise.resolve(''),
+      json: () => Promise.resolve([])
+    });
+  };
+  E.SUPABASE_URL = 'https://ejemplo.supabase.co';
+  E.SUPABASE_ANON_KEY = 'key';
+  E.cevenGetSession = () => ({access_token: 'tok'});
+
+  const ctx = ctxBase();
+  const planes = E.cevenEmitirPlan(pedidoMixto(ctx), ctx, VACIO(), {});
+  const planPoly = planes.find(p => p.brand === 'poly');
+
+  return E.cevenEmitirEscribirMarca(planPoly).then(function(){
+    const settings = enviados.find(e => e.url.indexOf('app_settings') >= 0);
+    ok(!!settings, 'se manda el historial a app_settings');
+    if(settings){
+      const claves = settings.body.map(r => r.key);
+      ok(claves.indexOf('poly_cquotes') >= 0,
+         'el historial de Poly se escribe en `poly_cquotes`', JSON.stringify(claves));
+      ok(claves.indexOf('poly_cqc') >= 0,
+         'y su contador en `poly_cqc`', JSON.stringify(claves));
+      ok(claves.indexOf('cquotes') < 0,
+         'NUNCA en `cquotes` a secas, que sería una fila fantasma que Poly no lee');
+      ok(settings.body.every(r => r.brand === 'poly'), 'todas las filas con brand=poly');
+    }
+    const pipe = enviados.find(e => e.url.indexOf('pipeline') >= 0);
+    ok(!!pipe && pipe.body[0].brand === 'poly', 'y la fila de pipeline va con su marca');
+
+    // La lectura tiene que pedir esas mismas claves, o la emisión cree que la
+    // marca está vacía y le asigna el número 0001, pisando su primera cotización.
+    enviados.length = 0;
+    return E.cevenEmitirLeerRemoto(['apple', 'poly']).then(function(){
+      const get = enviados.find(e => e.url.indexOf('app_settings') >= 0);
+      ok(!!get && /poly_cquotes/.test(decodeURIComponent(get.url)),
+         'la lectura pide `poly_cquotes`, no `cquotes`', get && get.url);
+      ok(!!get && /poly_cqc/.test(decodeURIComponent(get.url)),
+         'y `poly_cqc`');
+      cerrar();
+    }, cerrar);
+  }, cerrar);
+})();
+
+function cerrar(e){
+  if(e){ fallos++; console.error('  ✗ la capa REST tiró: ' + e.message); }
+  console.log('\n' + (fallos
+    ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
+    : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
+  process.exit(fallos ? 1 : 0);
+}

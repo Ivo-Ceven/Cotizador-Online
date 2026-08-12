@@ -448,6 +448,120 @@ console.log('\n8 · La pantalla se arma sin romperse');
   }
 }
 
+/* ============== 8b) LA CLAVE DE app_settings LLEVA PREFIJO ================ */
+/* Regresión del bug del 12/08/2026, que es el que hacía que el multimarca
+   mostrara SOLO productos de Apple.
+
+   `app_settings.key` guarda la clave REAL de localStorage, con el prefijo de la
+   marca (sync.js le aplica cevenK() antes de subir). El catálogo de Poly está
+   en `(poly,'poly_cpl')`; el de Apple en `(apple,'cpl')` solo porque el prefijo
+   de Apple es ''. Pedir `key=eq.cpl` devuelve Apple y NADA más — sin error, sin
+   fila, sin pista. Por eso hay que verificarlo con un chequeo y no con la vista. */
+console.log('\n8b · La clave de app_settings se pide con el prefijo de cada marca');
+{
+  ok(M.cevenMultiClave('apple', 'cpl') === 'cpl',
+     'Apple: cpl (su prefijo es vacío, por historia)', 'dio ' + M.cevenMultiClave('apple','cpl'));
+  ok(M.cevenMultiClave('poly', 'cpl') === 'poly_cpl',
+     'Poly: poly_cpl', 'dio ' + M.cevenMultiClave('poly','cpl'));
+  ok(M.cevenMultiClave('poly', 'cquotes') === 'poly_cquotes',
+     'y su historial es poly_cquotes', 'dio ' + M.cevenMultiClave('poly','cquotes'));
+
+  var claves = M.cevenMultiClaves(['cpl', 'cnac']);
+  ok(claves.indexOf('poly_cpl') >= 0 && claves.indexOf('cpl') >= 0,
+     'la lista para el `key=in.(...)` incluye las de TODAS las marcas', JSON.stringify(claves));
+
+  // El prefijo del registro tiene que ser el mismo que el del brand.js de esa
+  // marca: si divergen, el multimarca lee una clave que no existe.
+  ['apple', 'poly'].forEach(function(b){
+    var src = lee('src/' + b + '/brand.js');
+    var m = src.match(/prefix:\s*'([^']*)'/);
+    ok(m && m[1] === M.CEVEN_MULTI_MARCAS[b].prefix,
+       'el prefijo de ' + b + ' coincide con el de su brand.js',
+       'brand.js=' + (m && m[1]) + ' registro=' + M.CEVEN_MULTI_MARCAS[b].prefix);
+  });
+}
+
+/* ============ 9) UNA MARCA GRANDE NO PUEDE TAPAR A LAS OTRAS ============== */
+/* Regresión de un bug real (12/08/2026): el catálogo recortaba a 300 filas
+   sobre la lista entera, y como `products` se arma marca por marca —Apple
+   primero, con cientos de SKUs— el corte caía antes de la primera línea de
+   Poly. La pantalla mostraba SOLO productos de Apple y se leía como "el
+   multimarca no conoce Poly".
+
+   El tope es necesario (pintar miles de filas congela la pantalla), así que lo
+   que se verifica es que sea POR MARCA. */
+console.log('\n9 · Una marca con muchos SKUs no tapa a las demás');
+{
+  const els = {};
+  function el(id){
+    if(!els[id]) els[id] = {id, value:'', innerHTML:'', textContent:'', style:{},
+      classList:{add(){},remove(){},contains(){return false}},
+      getAttribute(){return null}, setAttribute(){}, addEventListener(){}, appendChild(){}};
+    return els[id];
+  }
+  ['catbody','fmarca','catcount','cat-sello','nocat','catui','qbody','ctrl-box',
+   'opc-bar-box','opc-aviso-box','emitir-resumen','client','obs','fsearch'].forEach(el);
+
+  const ctx = {
+    console, Date, Math, JSON, Object, Array, String, Number, parseInt, parseFloat, isNaN,
+    setTimeout: () => 0, encodeURIComponent,
+    localStorage: {getItem: () => null, setItem(){}, removeItem(){}},
+    document: {getElementById: id => els[id] || null, querySelectorAll: () => [], addEventListener(){}},
+    addEventListener(){}, location: {}, navigator: {onLine: true},
+    fetch: () => Promise.reject(new Error('sin red')),
+    showToast(){}, showErr(){}, notifyUndo(){}, goTo(){},
+    cevenOpcActiva: () => 1, cevenOpcDe: () => 1, cevenOpcFiltrar: a => a,
+    cevenOpcEfectiva: () => 1, cevenOpcPintarBarra(){}, cevenOpcHayB: () => false,
+    cevenDelegate(){}, cevenActEl: () => null,
+    getCur: () => 'USD', getTC: () => 0, dp: u => 'USD ' + Math.round(u),
+    fI: n => String(Math.round(n)), fD: n => String(n),
+    getSortedItems: () => ctx.items, upField(){}, rmItem(){},
+    items: [], products: [], histSel: {}, emitidas: {},
+    cevenLsSet: () => true, cevenLsJSON: (k, d) => d,
+    cevenEsc: s => String(s == null ? '' : s),
+    cevenK: b => 'multi_' + b,
+    CEVEN_BRAND: {id:'multi', prefix:'multi_'}
+  };
+  ctx.window = ctx; ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  ['src/apple/js/pricing-core.js','src/poly/js/pricing-core.js','src/multi/js/marcas.js',
+   'src/multi/js/catalogo-multi.js','src/multi/js/quote.js','src/multi/js/catalog-view.js']
+    .forEach(f => vm.runInContext(lee(f), ctx, {filename: f}));
+
+  // Un catálogo con la proporción real: Apple con cientos de SKUs, Poly con pocos.
+  const apple = [];
+  for(let i=0;i<800;i++){
+    apple.push({sku:'AP'+i+'LE/A', description:'Producto Apple '+i, lob:'MacBook Pro 14', sellingPrice:1000+i});
+  }
+  ctx.catalogos = {apple: apple, poly: JSON.parse(JSON.stringify(CAT_POLY))};
+  ctx.nacRatesApple = JSON.parse(JSON.stringify(ctx.CEVEN_APPLE_NAC_DEF));
+  ctx._margenGlobalValor = 12;
+  ctx._tierGlobalValor = T1;
+  ctx._catRearmar();
+
+  ok(ctx.products.length === 800 + CAT_POLY.length,
+     'la lista unificada trae los productos de las dos marcas', 'dio ' + ctx.products.length);
+
+  ctx.renderCat();
+  const html = els['catbody'].innerHTML;
+  ok(/mk-poly/.test(html),
+     'con el buscador vacío se ven productos de Poly aunque Apple tenga 800 SKUs');
+  ok(/mk-apple/.test(html), 'y también de Apple');
+  ok(/772D0AA/.test(html), 'los SKU de Poly están de verdad en la tabla');
+
+  // El contador tiene que decir QUÉ marca quedó recortada, no solo un total.
+  ok(/Apple/.test(els['catcount'].textContent),
+     'el contador nombra la marca que quedó recortada', els['catcount'].textContent);
+
+  // Y una marca sin catálogo se muestra en cero en vez de desaparecer: es lo que
+  // permite distinguir "no bajó" de "el multimarca no la conoce".
+  ctx.catalogos = {apple: apple, poly: []};
+  ctx._catRearmar();
+  ctx.renderCat();
+  ok(/Poly/.test(els['fmarca'].innerHTML),
+     'una marca sin productos sigue apareciendo en los filtros, marcada en 0');
+}
+
 console.log('\n' + (fallos
   ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
   : ('✓ ' + corridas + '/' + corridas + ' OK\n')));

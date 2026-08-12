@@ -118,8 +118,10 @@ function _ensureFolderPermission(){
 
 async function autoBackupPipeline(silentSuccess){
   if(!_pipeBackupHandle) return;
-  var wb = buildPipelineWorkbook();
-  if(!wb) return; // pipeline vacío, no escribir
+  /* Con guarda: buildPipelineWorkbook() lo define el pipeline de cada marca, y
+     hay páginas que cargan este módulo sin tener pipeline (el multimarca). */
+  var wb = (typeof buildPipelineWorkbook === 'function') ? buildPipelineWorkbook() : null;
+  if(!wb) return; // pipeline vacío o página sin pipeline: no escribir
   try {
     if(!(await _ensureFolderPermission())){
       showToast('⚠ Permiso de carpeta revocado — reactivá tocando 📂');

@@ -23,6 +23,76 @@ cerrados: la única alta es la Edge Function `admin-users`.
 
 ---
 
+## 12/08/2026 · El multimarca mostraba solo Apple: tres bugs, uno de ellos en la documentación
+
+Reporte del usuario: *"solo me muestra los productos apple"*. Eran **tres bugs
+independientes**, y cada uno alcanzaba para producir exactamente ese síntoma.
+
+### 1. La clave de `app_settings` lleva el prefijo de la marca
+
+`sync.js` sube como `key` la clave **REAL de localStorage**, o sea con el
+prefijo: el catálogo de Poly vive en `(poly, 'poly_cpl')` y el de Apple en
+`(apple, 'cpl')` — este último **solo porque el prefijo de Apple es `''`**, por
+historia. El multimarca pedía `key=in.(cpl,cnac)`, así que recibía Apple y nada
+más. Sin error, sin fila, sin pista: PostgREST descarta la fila server-side.
+
+**El origen del error no fue el código sino los docs**: `BASE-DE-DATOS.md`
+documentaba la columna como `key -- cquotes | cpl | carchive…` y
+`ARQUITECTURA.md` decía que `settingKeys` va "sin prefijo" (cierto para la
+*declaración* en `brand.js`, falso para lo que termina en la base). Los dos
+quedaron corregidos, porque si no el próximo que lea `app_settings` de otra
+marca vuelve a caer igual.
+
+El mismo error estaba **dos veces**: en la URL y en el parser (`f.key === 'cpl'`).
+Arreglar solo uno no cambiaba nada.
+
+**Y estaba también en la emisión, donde era peor**: se escribía
+`(poly, 'cquotes')`, una fila fantasma que el cotizador de Poly nunca lee. La
+cotización emitida no habría aparecido jamás en esa marca y desde el multimarca
+todo se veía exitoso. Además, al leer vacío, la emisión creía que Poly estaba en
+cero y le asignaba el número 0001 — pisando su primera cotización.
+
+El prefijo pasó a declararse en el registro `CEVEN_MULTI_MARCAS`, con
+`cevenMultiClave()`/`cevenMultiClaves()`. `window.cevenK()` **no sirve** acá:
+prefija con `multi_`, que es el del multimarca y no el de la marca que se lee.
+
+### 2. El tope de filas era, en la práctica, un filtro por marca
+
+`renderCat()` recortaba a 300 filas sobre la lista entera, y `products` se arma
+marca por marca (Apple primero, con cientos de SKUs). El corte caía **antes** de
+la primera línea de Poly: 300 filas, 100 % Apple. El tope hace falta —pintar
+miles de filas congela la pantalla— pero **sobre una lista ordenada por marca, un
+tope global es un filtro por marca encubierto**. Ahora el tope es por marca, y el
+contador dice cuál quedó recortada y cuánto.
+
+### 3. La marca vacía desaparecía en vez de mostrarse en cero
+
+El chip de Poly se escondía si no tenía productos, así que el bug 1 se leía como
+"el multimarca no conoce Poly" en vez de "el catálogo de Poly no bajó" — y
+además tapaba la única vía de escape al bug 2. Ahora se muestran todas las marcas
+del registro; la que no tiene catálogo sale con `· 0` y deshabilitada.
+
+### De yapa, dos que encontró la revisión
+
+- **`shared/init.js` tiraba en la primera línea** del multimarca: escribía en
+  `#app-ver-num` sin guarda y yo le había puesto otro id al zócalo. La excepción
+  se llevaba puesto todo lo que venía abajo. Se corrigió el id **y** se le puso
+  guarda al archivo compartido, que es donde estaba el filo.
+- **`agregarAlPedido()` no repintaba la grilla**: se agregaban productos desde el
+  catálogo y la cotización mostraba la lista vieja hasta que otra acción
+  disparara un render (cambiar de vista no repinta).
+
+### Lo que deja esto
+
+Los tres bugs principales son **silenciosos**: ninguno tira excepción, todos
+devuelven vacío o de menos. Por eso quedaron cubiertos con bancos que miran el
+payload y los datos, no la pantalla: `check-multi.js` verifica la clave
+prefijada, que coincida con el `brand.js` de cada marca, y que una marca con 800
+SKUs no tape a otra con 2; `check-emitir.js` inspecciona el **body exacto** que
+sale a la red y confirma que se escribe en `poly_cquotes` y nunca en `cquotes`.
+
+---
+
 ## 11/08/2026 · Cotizador multimarca: un pedido que se reparte en cotizaciones reales
 
 Hay pedidos que mezclan marcas —unas Mac y un equipo de video Poly— y hasta hoy

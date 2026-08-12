@@ -111,8 +111,16 @@ revoke all on table public.todos from anon;
 -- Settings compartidos: espeja claves de localStorage como key/value, por marca
 create table public.app_settings (
   brand text not null default 'apple',
-  key   text,                 -- cquotes | cpl | carchive | cnac | cqc | ctarget |
-                              -- ctarget_manual | clogo | clogo_dark | cnac_mac24_v2
+  -- ⚠ `key` es la clave REAL de localStorage, o sea CON el prefijo de la marca:
+  --      apple → cpl, cquotes, cqc…        (su prefix es '' por historia)
+  --      poly  → poly_cpl, poly_cquotes…   (su prefix es 'poly_')
+  --      multi → multi_cquotes, multi_cqc…
+  --    Lo que va SIN prefijo es la declaración `settingKeys` de brand.js;
+  --    sync.js le antepone cevenK() antes de subir (ver sync.js:73-80 y :564).
+  --    Es redundante con la columna `brand`, pero es lo que ya hay en la base.
+  --    Quien lea app_settings de OTRA marca (lo hace el cotizador multimarca)
+  --    tiene que pedir la clave prefijada: `key=eq.cpl` no encuentra a Poly.
+  key   text,
   value text,                 -- el JSON serializado tal cual está en localStorage
   primary key (brand, key)
 );

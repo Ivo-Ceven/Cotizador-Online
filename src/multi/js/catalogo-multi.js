@@ -97,16 +97,21 @@ function _catRearmar(){
 
 /* ── Bajada desde Supabase ───────────────────────────────────────────────── */
 
-/* Un solo request por las claves de todas las marcas. `key=in.(cpl,cnac)` trae
-   los catalogos y la tabla NAC de Apple juntos: son dos ida y vuelta menos, y
-   sobre todo evita el estado intermedio en el que hay catalogo de Apple pero
-   todavia no sus tasas — que daria precios calculados con NAC 20 por defecto. */
+/* Un solo request por las claves de todas las marcas: los catalogos y la tabla
+   NAC de Apple juntos. Son dos ida y vuelta menos, y sobre todo evita el estado
+   intermedio en el que hay catalogo de Apple pero todavia no sus tasas — que
+   daria precios calculados con la NAC del 20% por defecto.
+
+   ⚠ Las claves van CON el prefijo de cada marca (`cpl` en Apple, `poly_cpl` en
+   Poly): es lo que guarda la columna `key`. Ver cevenMultiClave() en marcas.js
+   — pedirlas sin prefijo devolvia solo Apple, en silencio. */
 function _catURL(){
   var marcas = _catMarcas().join(',');
+  var claves = cevenMultiClaves(['cpl', 'cnac']).join(',');
   return SUPABASE_URL + '/rest/v1/app_settings'
        + '?select=brand,key,value'
        + '&brand=in.(' + encodeURIComponent(marcas) + ')'
-       + '&key=in.(cpl,cnac)';
+       + '&key=in.(' + encodeURIComponent(claves) + ')';
 }
 
 function _catHeaders(){
@@ -139,12 +144,15 @@ function cargarCatalogos(silencioso){
       filas.forEach(function(f){
         var val = null;
         try{ val = JSON.parse(f.value); }catch(e){ return; }
-        if(f.key === 'cpl'){
+        /* La clave se compara contra la de ESA marca, con su prefijo. Un
+           `f.key === 'cpl'` a secas descartaba la fila de Poly aunque hubiera
+           llegado — el mismo bug que la URL, y arreglar uno solo no alcanzaba. */
+        if(f.key === cevenMultiClave(f.brand, 'cpl')){
           if(Object.prototype.toString.call(val) === '[object Array]'){
             catalogos[f.brand] = val;
             huboCpl = true;
           }
-        } else if(f.key === 'cnac' && f.brand === 'apple'){
+        } else if(f.brand === 'apple' && f.key === cevenMultiClave('apple', 'cnac')){
           if(val && typeof val === 'object') nacRatesApple = val;
         }
       });

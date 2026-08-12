@@ -1,4 +1,8 @@
-document.getElementById('app-ver-num').textContent = APP_VERSION;
+/* Con guarda: este archivo lo carga toda página que muestre versión, y si el
+   zócalo no está —o se le puso otro id— la excepción de la PRIMERA línea se
+   llevaba puesto todo lo que viene abajo, en silencio salvo por la consola. */
+var _verEl = document.getElementById('app-ver-num');
+if(_verEl) _verEl.textContent = APP_VERSION;
 
 /* El número de la próxima cotización: se recalcula acá, con TODOS los módulos
    cargados. state.js —donde se muestra por primera vez— corre antes que

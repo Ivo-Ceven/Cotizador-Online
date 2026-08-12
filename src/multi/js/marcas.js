@@ -59,6 +59,9 @@ var CEVEN_MULTI_MARCAS = {
      garantías CevenCare: las dos cosas se agregan ahí si hacen falta. */
   apple: {
     label: 'Apple',
+    // Prefijo de sus claves en localStorage Y en la columna `key` de
+    // app_settings. El de Apple es '' por historia (fue la primera marca).
+    prefix: '',
     controles: ['margen'],
 
     nuevaLinea: function(p, ctx){
@@ -138,6 +141,7 @@ var CEVEN_MULTI_MARCAS = {
      El nivel sale del selector global, o del propio de la línea si tiene. */
   poly: {
     label: 'Poly',
+    prefix: 'poly_',
     controles: ['tier'],
 
     nuevaLinea: function(p, ctx){
@@ -195,6 +199,37 @@ var CEVEN_MULTI_MARCAS = {
 
 // Las marcas que el multimarca conoce, en orden de presentación.
 function cevenMultiMarcasIds(){ return Object.keys(CEVEN_MULTI_MARCAS); }
+
+/* ⚠ LA CLAVE DE `app_settings` LLEVA EL PREFIJO DE LA MARCA.
+
+   La columna `key` guarda la clave REAL de localStorage, no el nombre base:
+   `sync.js` le aplica `cevenK()` antes de subir (sync.js:73-80 y :564). O sea
+   que el catálogo de Poly está en `(poly, 'poly_cpl')` y el de Apple en
+   `(apple, 'cpl')` — este último solo porque el prefijo de Apple es ''.
+
+   Pedir `key=eq.cpl` devuelve Apple y NADA de las demás marcas, sin error: la
+   fila simplemente no existe. Ese fue el bug del 12/08/2026, que hacía que el
+   multimarca mostrara únicamente productos de Apple.
+
+   NO sirve `window.cevenK()` acá: en esta página prefija con `multi_`, que es
+   el prefijo del multimarca y no el de la marca que se está leyendo. */
+function cevenMultiClave(brand, base){
+  var m = cevenMultiMarca(brand);
+  return (m ? (m.prefix || '') : '') + base;
+}
+
+/* Todas las claves de una lista de bases, para armar un `key=in.(...)` que
+   alcance a todas las marcas. Sumar HP es agregarla al registro y nada más. */
+function cevenMultiClaves(bases){
+  var out = [];
+  cevenMultiMarcasIds().forEach(function(b){
+    (bases || []).forEach(function(base){
+      var k = cevenMultiClave(b, base);
+      if(out.indexOf(k) < 0) out.push(k);
+    });
+  });
+  return out;
+}
 
 function cevenMultiMarca(id){ return CEVEN_MULTI_MARCAS[id] || null; }
 

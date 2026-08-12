@@ -322,7 +322,12 @@
 <script src="../shared/papelera.js"></script>
 <script src="js/history.js"></script>
 
-<div class="ver">Ceven · Multimarca · v<span id="app-ver"></span></div>
+<!-- Los ids son los MISMOS que en las otras marcas y no un nombre propio:
+     `shared/init.js` escribe en `#app-ver-num` sin guarda, y `notify.js` y
+     `pwa.js` levantan sus carteles por encima de `#app-ver-bar`. Con otro id,
+     init.js tiraba en la primera línea y se llevaba puesto el resto de su
+     arranque. -->
+<div id="app-ver-bar"><span>Cotizador Ceven · Multimarca v<span id="app-ver-num"></span></span></div>
 <script src="../shared/init.js"></script>
 <script src="../shared/pwa.js"></script>
 <!-- boot.js último: necesita todos los módulos ya definidos -->

@@ -66,16 +66,26 @@ function _catPrecio(p){
   return (linea.salePrice === '' || linea.salePrice == null) ? null : linea.salePrice;
 }
 
+/* Los chips de marca. Se pintan TODAS las que el multimarca conoce, incluidas
+   las que hoy no tienen ni un producto — esas quedan con "0" y sin poder
+   apretarse.
+
+   Antes se escondía la marca vacía, y eso convertía un problema de datos ("el
+   catálogo de Poly no bajó") en lo que parecía una limitación del programa ("el
+   multimarca no conoce Poly"). Mostrar el cero es lo que permite darse cuenta. */
 function _pintarFiltroMarcas(){
   var box = document.getElementById('fmarca');
   if(!box) return;
-  var marcas = cevenMultiMarcasIds().filter(function(b){ return (catalogos[b] || []).length; });
-  // data-act además de data-marca: cevenActEl() sube por el DOM buscando
-  // data-act, así que sin él el clic no encuentra nada accionable.
   var h = '<button class="pk-rubro' + (_catMarcaFiltro === '' ? ' on' : '') + '" data-act="marca" data-marca="">Todas</button>';
-  marcas.forEach(function(b){
-    h += '<button class="pk-rubro' + (_catMarcaFiltro === b ? ' on' : '') + '" data-act="marca" data-marca="' + cevenEsc(b) + '">'
-       + cevenEsc(cevenMultiMarcaLabel(b)) + '</button>';
+  cevenMultiMarcasIds().forEach(function(b){
+    var n = (catalogos[b] || []).length;
+    // data-act además de data-marca: cevenActEl() sube por el DOM buscando
+    // data-act, así que sin él el clic no encuentra nada accionable.
+    h += '<button class="pk-rubro' + (_catMarcaFiltro === b ? ' on' : '') + '"'
+       + (n ? '' : ' disabled title="Todavía no bajó el catálogo de esta marca"')
+       + ' data-act="marca" data-marca="' + cevenEsc(b) + '">'
+       + cevenEsc(cevenMultiMarcaLabel(b))
+       + (n ? '' : ' · 0') + '</button>';
   });
   box.innerHTML = h;
 }
@@ -83,6 +93,40 @@ function _pintarFiltroMarcas(){
 function filtrarPorMarca(b){
   _catMarcaFiltro = b || '';
   renderCat();
+}
+
+/* ── El recorte, POR MARCA ───────────────────────────────────────────────────
+   Hay que limitar cuántas filas se dibujan: el price list de Apple tiene cientos
+   de SKUs y pintarlos todos congela la pantalla en cada tecla.
+
+   Pero el tope tiene que ser POR MARCA y no sobre la lista entera. `products` se
+   arma marca por marca (Apple primero, ver _catRearmar()), así que un
+   `slice(0, 300)` sobre el total devolvía 300 productos de Apple y CERO de Poly
+   — la marca entera quedaba del otro lado del corte y la pantalla se leía como
+   "el multimarca no conoce Poly". Un tope global es, en una lista ordenada por
+   marca, un filtro por marca encubierto.
+
+   Devuelve las filas y cuánto quedó afuera de cada marca, para poder decirlo. */
+var CEVEN_CAT_TOPE_MARCA = 150;
+
+function _catRecortar(lista){
+  var porMarca = {}, i;
+  for(i=0;i<lista.length;i++){
+    var b = lista[i].brand || '';
+    (porMarca[b] = porMarca[b] || []).push(lista[i]);
+  }
+  var filas = [], ocultos = [];
+  // En el orden del registro, para que la tabla no dependa del orden del Excel.
+  var marcas = cevenMultiMarcasIds().filter(function(b){ return porMarca[b]; });
+  Object.keys(porMarca).forEach(function(b){ if(marcas.indexOf(b) < 0) marcas.push(b); });
+  marcas.forEach(function(b){
+    var todas = porMarca[b];
+    filas = filas.concat(todas.slice(0, CEVEN_CAT_TOPE_MARCA));
+    if(todas.length > CEVEN_CAT_TOPE_MARCA){
+      ocultos.push({brand: b, n: todas.length - CEVEN_CAT_TOPE_MARCA});
+    }
+  });
+  return {filas: filas, ocultos: ocultos};
 }
 
 function renderCat(){
@@ -93,12 +137,8 @@ function renderCat(){
   _catPintarEstadoVacio();
 
   var lista = _catFiltrados();
-  /* Tope de filas dibujadas. El price list de Apple tiene miles de SKUs y
-     pintarlos todos congela la pantalla en cada tecla; el que busca un producto
-     mira las primeras. El contador de abajo dice cuantos quedaron afuera para
-     que nadie crea que no existen. */
-  var TOPE = 300;
-  var recortada = lista.slice(0, TOPE);
+  var recorte = _catRecortar(lista);
+  var recortada = recorte.filas;
 
   var html = '';
   for(var i=0;i<recortada.length;i++){
@@ -125,9 +165,15 @@ function renderCat(){
 
   var cont = document.getElementById('catcount');
   if(cont){
+    /* El contador dice qué marca quedó recortada y cuánto. "613 productos · se
+       muestran los primeros 300" era verdad pero no explicaba que faltaba una
+       marca entera; con el detalle por marca, que falte algo se ve. */
+    var det = recorte.ocultos.map(function(o){
+      return o.n + ' de ' + cevenMultiMarcaLabel(o.brand);
+    }).join(' y ');
     cont.textContent = lista.length
       ? (lista.length + (lista.length === 1 ? ' producto' : ' productos')
-         + (lista.length > TOPE ? (' · se muestran los primeros ' + TOPE + ', afiná la búsqueda') : ''))
+         + (det ? (' · no se muestran ' + det + ', afiná la búsqueda') : ''))
       : 'Ningún producto coincide con la búsqueda';
   }
   _catBindDelegation();
@@ -186,6 +232,11 @@ function agregarAlPedido(pid){
   // y no salte de lugar: mismo criterio que addToQuote() en las marcas.
   _qSortKey = null; _qSortDir = 1;
   renderCat();
+  /* Y la grilla del pedido: cambiar de vista NO repinta (ver _navApply() en
+     shared/ui-core.js), así que sin esto se agregaban productos desde el
+     catálogo y la cotización seguía mostrando la lista vieja hasta que otra
+     acción disparara un render. El equivalente de Poly repinta las dos. */
+  renderQ();
   showToast('✓ ' + p.description + ' agregado al pedido.');
 }
 

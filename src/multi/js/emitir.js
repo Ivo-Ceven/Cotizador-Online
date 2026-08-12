@@ -207,8 +207,15 @@ function _emHeaders(extra){
    entre leer y escribir, menos chance de pisarle el historial a alguien. */
 function cevenEmitirLeerRemoto(brands){
   var lista = brands.join(',');
+  /* ⚠ Con el prefijo de cada marca: la columna `key` guarda la clave REAL de
+     localStorage (`poly_cquotes`, no `cquotes`). Ver cevenMultiClave() en
+     marcas.js. Sin esto, para Poly volvía vacío y la emisión creía que su
+     historial y su contador estaban en cero — o sea que le asignaba el número
+     0001 y le pisaba la primera cotización de la marca. */
+  var claves = cevenMultiClaves(['cquotes', 'cqc']).join(',');
   var pSettings = fetch(_emRest() + 'app_settings?select=brand,key,value'
-      + '&brand=in.(' + encodeURIComponent(lista) + ')&key=in.(cquotes,cqc)',
+      + '&brand=in.(' + encodeURIComponent(lista) + ')'
+      + '&key=in.(' + encodeURIComponent(claves) + ')',
       {headers: _emHeaders()})
     .then(function(r){ if(!r.ok) throw new Error('historial: HTTP ' + r.status); return r.json(); });
 
@@ -222,9 +229,10 @@ function cevenEmitirLeerRemoto(brands){
     brands.forEach(function(b){ out[b] = {cqc: 0, cquotes: [], pipeline: []}; });
     (res[0] || []).forEach(function(f){
       if(!out[f.brand]) return;
-      if(f.key === 'cqc'){
+      // Igual que arriba: la clave se compara con el prefijo de ESA marca.
+      if(f.key === cevenMultiClave(f.brand, 'cqc')){
         out[f.brand].cqc = parseInt(f.value, 10) || 0;
-      } else if(f.key === 'cquotes'){
+      } else if(f.key === cevenMultiClave(f.brand, 'cquotes')){
         try{
           var v = JSON.parse(f.value);
           if(Object.prototype.toString.call(v) === '[object Array]') out[f.brand].cquotes = v;
@@ -243,9 +251,13 @@ function cevenEmitirLeerRemoto(brands){
    —que se ve enseguida y se arregla re-emitiendo— que una fila sin cotización,
    que se ve como una fila rota que no expande. */
 function cevenEmitirEscribirMarca(plan){
+  /* ⚠ La clave se escribe CON el prefijo de la marca destino, que es la que su
+     cotizador va a leer. Escribir `(poly, 'cquotes')` no da error: crea una fila
+     fantasma que Poly NUNCA lee, así que la cotización emitida no aparecería
+     jamás en esa marca y el problema sería invisible desde acá. */
   var settings = [
-    {brand: plan.brand, key: 'cquotes', value: JSON.stringify(plan.cquotes)},
-    {brand: plan.brand, key: 'cqc',     value: String(plan.cqcNuevo)}
+    {brand: plan.brand, key: cevenMultiClave(plan.brand, 'cquotes'), value: JSON.stringify(plan.cquotes)},
+    {brand: plan.brand, key: cevenMultiClave(plan.brand, 'cqc'),     value: String(plan.cqcNuevo)}
   ];
   return fetch(_emRest() + 'app_settings', {
       method: 'POST',

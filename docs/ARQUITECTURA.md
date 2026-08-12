@@ -49,7 +49,7 @@ Nació de dos HTML monolíticos (7.365 y 2.627 líneas) que en 07/2026 se partie
 |---|---|
 | `id` | valor de la columna `brand` en Supabase (`'apple'` / `'poly'`) |
 | `prefix` | prefijo de las claves de localStorage (`''` en Apple por historia, `'poly_'` en Poly) |
-| `settingKeys` | claves que se sincronizan a `app_settings`, **sin** prefijo |
+| `settingKeys` | claves que se sincronizan a `app_settings`, declaradas **sin** prefijo. Ojo: lo que termina en la **columna `key` de la base es la clave con prefijo** (`poly_cpl`), porque `sync.js` le aplica `cevenK()` antes de subir. Leer `app_settings` de otra marca —lo hace el multimarca— exige pedir la clave prefijada |
 | `pipeCols` / `numCols` / `objCols` | columnas de la tabla `pipeline` de esa marca, cuáles son numéricas y cuáles jsonb |
 | `nullableCols` | escalares que aceptan `NULL`. Hay que emitirlos explícitamente: si se omiten, PostgREST conserva el valor viejo y el poll lo revierte en un ciclo infinito |
 | `localOnlyCols` | campos que existen solo en localStorage y que el poll debe preservar al mergear (`skuOvLinks`) |
