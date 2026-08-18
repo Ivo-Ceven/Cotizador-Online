@@ -481,8 +481,12 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 .as-lista{display:flex;flex-direction:column;gap:2px}
 .as-row{display:flex;align-items:flex-start;gap:10px;padding:8px 4px;border-bottom:0.5px solid var(--cb);cursor:pointer}
 .as-row:last-child{border-bottom:none}
-.as-check{margin-top:3px;flex-shrink:0}
-.as-desc{flex:1;font-size:13px;line-height:1.4}
+/* width:auto porque el reset global `input,select,textarea{width:100%}` (línea
+   ~147) también le pega al checkbox: sin esto, con flex-shrink:0 se negaba a
+   achicarse y ocupaba casi toda la fila, dejando la descripción apachurrada
+   en una columna angosta con scroll horizontal. */
+.as-check{margin-top:3px;flex-shrink:0;width:auto}
+.as-desc{flex:1;min-width:0;font-size:13px;line-height:1.4}
 .as-cat{font-size:10px;color:#6e6e73;background:var(--c0);padding:1px 6px;border-radius:8px;white-space:nowrap}
 .as-motivo{font-size:12px;color:var(--ct2)}
 .as-qty{width:54px;flex-shrink:0;padding:4px 6px;border:0.5px solid var(--cb);border-radius:6px;font-size:13px;font-family:inherit;text-align:center}
