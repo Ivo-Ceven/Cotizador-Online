@@ -4,6 +4,7 @@ Thumbs.db
 
 .vercel
 .env*
+!.env.example
 
 # Datos de trabajo: price lists, cotizaciones de clientes, planillas sueltas.
 # El 24/07/2026 se colaron tres al repo y siguen en el historial de git

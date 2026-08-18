@@ -81,6 +81,7 @@ var ASSETS = [
   './shared/pipeline-ui.js',
   './shared/pdf-core.js',
   './shared/comprobante.js',
+  './shared/asistente.js',
   './shared/css/base.css',
   './shared/css/dark.css',
 

@@ -546,3 +546,51 @@ function cevenAplicarSkusPegados(found){
 }
 
 // _qSortKey/_qSortDir viven en shared/quote-core.js.
+
+/* ── ASISTENTE IA ─────────────────────────────────────────────────────────────
+   Los tres hooks que pide shared/asistente.js (ver el comentario de cabecera
+   de ese archivo) — mismo patrón opcional que cevenAplicarSkusPegados de
+   arriba: si una página no los define, el asistente avisa en vez de fallar
+   en silencio. */
+
+// El catálogo recortado que se le manda al modelo: sin los 4 precios por
+// nivel enteros, solo una referencia de presupuesto al nivel vigente (el
+// mismo que usa aplicarTierDelCliente()) — el asistente nunca debe decidir
+// ni devolver un precio, price_ref es puro contexto para elegir mejor.
+function _asisCatalogoCompacto(){
+  var tier = tierGlobal();
+  return products.map(function(p){
+    return {
+      id: p.sku,
+      description: p.description,
+      category: p.rubro || '',
+      price_ref: cevenPolyPrecioDe(p, tier)
+    };
+  });
+}
+
+// Lo que la cotización ya lleva (solo la opción que se está editando), para
+// que el asistente no lo vuelva a sugerir sin que el pedido lo justifique.
+function _asisItemsActuales(){
+  return cevenOpcFiltrar(items, cevenOpcActiva()).map(function(it){
+    return {id: it.sku, qty: it.qty};
+  });
+}
+
+// Alta real de lo que el usuario confirmó en el overlay del asistente. Mismo
+// patrón que cevenAplicarSkusPegados: loop + un solo renderQ() al final, y el
+// precio lo pone repricearLinea() dentro de _nuevoItemDeProducto() — el
+// asistente nunca lo calcula ni lo transporta.
+function _asisAplicarSeleccion(seleccion){
+  var sumados = 0;
+  for(var i=0;i<seleccion.length;i++){
+    var p = cevenPolyProducto(products, seleccion[i].id);
+    if(!p || _enCotizacion(p.sku)) continue;
+    var it = _nuevoItemDeProducto(p, sumados);
+    it.qty = Math.max(1, Math.min(200, parseInt(seleccion[i].qty, 10) || 1));
+    items.push(it);
+    sumados++;
+  }
+  if(sumados) renderQ();
+  return sumados;
+}

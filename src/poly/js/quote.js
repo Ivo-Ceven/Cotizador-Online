@@ -76,7 +76,10 @@ function renderQ() {
       +'</td>'
       +'</tr>';
   }
-  html+='<tr><td colspan="9" style="padding:9px 10px"><button class="al" onclick="abrirPicker()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button></td></tr>';
+  html+='<tr><td colspan="9" style="padding:9px 10px 9px 10px;display:flex;gap:8px;flex-wrap:wrap">'
+    +'<button class="al" onclick="abrirPicker()"><span style="font-size:18px;line-height:1;font-weight:300">+</span> Agregar producto</button>'
+    +'<button class="al" onclick="abrirAsistente()">✨ Asistente IA</button>'
+    +'</td></tr>';
   if(visibles.length){
     html+='<tr>'
       +'<td colspan="5" style="text-align:right;color:#6e6e73;font-size:13px;font-weight:500;padding:11px 10px;background:#f5f5f7;border-top:1px solid #d2d2d7">Total</td>'

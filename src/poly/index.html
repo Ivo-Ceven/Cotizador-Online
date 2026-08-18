@@ -483,6 +483,11 @@
 <script src="js/tiers.js"></script>
 <script src="js/quote.js"></script>
 <script src="js/picker.js"></script>
+<!-- Asistente IA: motor genérico en shared/, hooks propios de Poly en
+     js/catalog.js. Va después de picker.js: usa cevenAuthedFetch (auth.js),
+     cevenOpcActiva/cevenOpcFiltrar (opciones.js), cevenEsc (safe.js),
+     cevenNav (nav.js) y showToast (notify.js), todos ya cargados acá. -->
+<script src="../shared/asistente.js"></script>
 <script src="js/products.js"></script>
 <script src="js/quotes-db.js"></script>
 <script src="../shared/pipeline-store.js"></script>
