@@ -25,10 +25,11 @@ var core = require('./_lib/asistente-core');
 var SUPABASE_URL = 'https://iqewnebpdyctexavtpmt.supabase.co';
 var SUPABASE_ANON_KEY = 'sb_publishable_Za9l64nzVBsaKHrSCgeu0w_x7Vhe7Aa';
 
-// TODO al desplegar: confirmar contra el catálogo vigente de OpenRouter que
-// este modelo sigue existiendo y sostiene tool-calling forzado de forma
-// confiable. OPENROUTER_MODEL en las env vars lo pisa sin tocar código.
-var OPENROUTER_MODEL_DEFAULT = 'openai/gpt-4o-mini';
+// Gratuito (":free") y soporta tool_choice forzado — confirmado contra
+// GET https://openrouter.ai/api/v1/models el 18/08/2026. Si algún día deja de
+// existir o de sostener tool-calling, OPENROUTER_MODEL en las env vars lo pisa
+// sin tocar código; no hace falta que sea gratis, es solo el default.
+var OPENROUTER_MODEL_DEFAULT = 'nvidia/nemotron-3.5-lightning:free';
 
 var OPENROUTER_TIMEOUT_MS = 20000;
 var RATE_LIMIT_POR_HORA = 30;
