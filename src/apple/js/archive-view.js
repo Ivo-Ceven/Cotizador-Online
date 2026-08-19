@@ -160,6 +160,7 @@ function renderArchiveMonth(monthKey, entries){
         +'<button class="bs" data-aact="expand" data-akey="'+cevenEsc(archExpandKey)+'" title="Ver SKUs" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(archExpanded?'▼':'▶')+'</button>'
         +cevenEsc(r.fecha)
       +'</td>'
+      +'<td style="text-align:center;white-space:nowrap">'+_pipeModificadoChip(r)+'</td>'
       +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
       +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+partialBadge+'</div></td>'
       +'<td><div title="'+cevenEsc(r.proyecto||'')+'" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
@@ -200,7 +201,7 @@ function renderArchiveMonth(monthKey, entries){
       +'</td>'
     +'</tr>';
   }
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="14" style="text-align:center;color:#aeaeb2;padding:24px">No hay entradas para '+cevenEsc(lbl)+'</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="15" style="text-align:center;color:#aeaeb2;padding:24px">No hay entradas para '+cevenEsc(lbl)+'</td></tr>';
   attachPipeSortHandlers();
 }
 
@@ -238,7 +239,7 @@ function renderArchiveDetailRow(r, db){
   // se listarían las líneas de las dos.
   var lines = cevenOpcFilasDeCotiz(db, r.qNum, ['producto','garantia']);
   if(!lines.length){
-    return '<tr class="pipe-detail"><td colspan="14" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">No se encontraron líneas para esta cotización (#'+cevenEsc(r.qNum||'—')+') en el historial.</td></tr>';
+    return '<tr class="pipe-detail"><td colspan="15" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">No se encontraron líneas para esta cotización (#'+cevenEsc(r.qNum||'—')+') en el historial.</td></tr>';
   }
   var inner = '<div style="padding:10px 14px 14px;background:#fafafa">'
     +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Detalle por SKU · #'+cevenEsc(r.qNum)
@@ -280,7 +281,7 @@ function renderArchiveDetailRow(r, db){
     +'<td style="padding:7px 10px;text-align:right;color:#6e6e73">MgPd '+mgPd+'</td>'
     +'<td style="padding:7px 10px;text-align:right">USD '+fI(totMonto)+'</td>'
   +'</tr></tfoot></table></div>';
-  return '<tr class="pipe-detail"><td colspan="14" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
+  return '<tr class="pipe-detail"><td colspan="15" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
 }
 
 function restoreFromArchive(monthKey, id){

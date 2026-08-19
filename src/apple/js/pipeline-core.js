@@ -12,45 +12,21 @@ function _pipeAgregados(its, wrs){
   return cevenAppleAgregados(its, wrs, MODEL_CATEGORY);
 }
 
-function addToPipeline(){
-  if(!cevenCanUsePipeline()){ showToast('Tu rol no permite agregar al pipeline.'); return; }
-  if(!items.length && !warrantyItems.length){ showToast('La cotización está vacía.'); return; }
-  /* Con dos opciones, la que va al pipeline es la vigente: si está vacía la fila
-     entraría en 0 y nadie entendería por qué. */
-  var _ef = cevenOpcEfectiva();
-  if(!cevenOpcFiltrar(items, _ef).length && !cevenOpcFiltrar(warrantyItems, _ef).length){
-    showToast('La Opción '+cevenOpcLetra(_ef)+' es la vigente y está vacía: cargale productos o marcá la otra como vigente.');
-    return;
-  }
-  var client = (document.getElementById('client').value||'').trim();
-  if(!client){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
-  var proyecto = (document.getElementById('proyecto').value||'').trim();
-  var exec = document.getElementById('exec').value || '';
-  var mesCierre = getMesCierre();
-  var qn = String(qNum).padStart(4,'0');
-
+/* Campos derivados del ESTADO ACTUAL de la cotización en pantalla — todo lo
+   que antes armaba `entry` inline en addToPipeline(). Separado de
+   applyPipeFields() para poder recalcular sin tocar identidad ni
+   seguimiento comercial al actualizar una fila que ya existe. */
+function computeQuotePipeFields(){
   /* SOLO la opción vigente. Si sumaran las dos, el pipeline del equipo quedaría
      inflado con plata que nunca se va a facturar — y no se nota mirando la
      pantalla, se nota a fin de mes cuando el total no cierra. */
-  var ag = _pipeAgregados(cevenOpcFiltrar(items, cevenOpcEfectiva()),
-                          cevenOpcFiltrar(warrantyItems, cevenOpcEfectiva()));
-
-  var now = new Date();
-  var fecha = now.toLocaleDateString('es-AR');
-
-  var entry = {
-    /* `Date.now()` a secas colisiona entre dos usuarios que agregan en el mismo
-       milisegundo, y la PK en Supabase es (brand, id): el upsert pisa una fila
-       con la otra. Tiene que quedar ENTERO — la columna es bigint. */
-    id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
-    fecha: fecha,
-    fechaISO: now.toISOString(),
-    qNum: qn,
-    cliente: client,
-    proyecto: proyecto || '—',
-    ejecutivo: exec || '—',
-    mesCierre: mesCierre || '',
-    estado: (document.getElementById('quote-estado') && document.getElementById('quote-estado').value) || 'Cotizado',
+  var _ef = cevenOpcEfectiva();
+  var ag = _pipeAgregados(cevenOpcFiltrar(items, _ef), cevenOpcFiltrar(warrantyItems, _ef));
+  return {
+    cliente: (document.getElementById('client').value||'').trim(),
+    proyecto: (document.getElementById('proyecto').value||'').trim() || '—',
+    ejecutivo: document.getElementById('exec').value || '—',
+    mesCierre: getMesCierre() || '',
     qMac: ag.qMac,
     qIph: ag.qIph,
     qIpad: ag.qIpad,
@@ -69,6 +45,48 @@ function addToPipeline(){
        el flag se guarda acá y se sincroniza (está en pipeCols). Ver esFOBEntry(). */
     esFOB: (typeof isCotizacionFOB === 'function') ? isCotizacionFOB() : false
   };
+}
+
+/* Aplica los campos derivados sobre una entrada EXISTENTE del pipeline sin
+   tocar su identidad ni el seguimiento comercial ya cargado.
+
+   Antes addToPipeline() reemplazaba el objeto entero al re-agregar una
+   cotización que ya estaba en el pipeline, y con eso se perdían fecha/
+   fechaISO (se recalculaban con `now`) y TODOS los overrides por SKU
+   (skuStatus, skuMesCierre, skuPartialQty, skuPartialRemSt,
+   skuPartialRemMes, skuArchivedQty) más ovLink — el objeto nuevo no los
+   incluía. La única red era pushPipeUndo(), frágil: se pierde si el
+   vendedor sigue trabajando después. */
+function applyPipeFields(existing, fields){
+  var out = Object.assign({}, existing, fields);
+  out.id = existing.id;
+  out.fecha = existing.fecha;
+  out.fechaISO = existing.fechaISO;
+  out.qNum = existing.qNum;
+  out.estado = existing.estado || 'Cotizado';
+  out.skuStatus = existing.skuStatus;
+  out.skuMesCierre = existing.skuMesCierre;
+  out.skuPartialQty = existing.skuPartialQty;
+  out.skuPartialRemSt = existing.skuPartialRemSt;
+  out.skuPartialRemMes = existing.skuPartialRemMes;
+  out.skuArchivedQty = existing.skuArchivedQty;
+  out.ovLink = existing.ovLink;
+  return out;
+}
+
+function addToPipeline(){
+  if(!cevenCanUsePipeline()){ showToast('Tu rol no permite agregar al pipeline.'); return; }
+  if(!items.length && !warrantyItems.length){ showToast('La cotización está vacía.'); return; }
+  /* Con dos opciones, la que va al pipeline es la vigente: si está vacía la fila
+     entraría en 0 y nadie entendería por qué. */
+  var _ef = cevenOpcEfectiva();
+  if(!cevenOpcFiltrar(items, _ef).length && !cevenOpcFiltrar(warrantyItems, _ef).length){
+    showToast('La Opción '+cevenOpcLetra(_ef)+' es la vigente y está vacía: cargale productos o marcá la otra como vigente.');
+    return;
+  }
+  var fields = computeQuotePipeFields();
+  if(!fields.cliente){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
+  var qn = String(qNum).padStart(4,'0');
 
   var pipe = getPipeline();
   var existingIdx = -1;
@@ -77,14 +95,24 @@ function addToPipeline(){
   // Nunca se bloquea con un confirm(): la acción se aplica siempre y, cuando el
   // caso es ambiguo, se avisa con un cartel que permite deshacer.
   var warnMsg = null;
+  var entry;
   if(existingIdx >= 0){
     if(typeof pushPipeUndo === 'function') pushPipeUndo(pipe[existingIdx].id); // snapshot antes de mutar
     warnMsg = 'Actualizaste la cotización #'+qn+', que ya estaba en el pipeline.';
-    // Preservar estado e id originales al actualizar
-    entry.estado = pipe[existingIdx].estado || 'Cotizado';
-    entry.id = pipe[existingIdx].id;
+    entry = applyPipeFields(pipe[existingIdx], fields);
     pipe[existingIdx] = entry;
   } else {
+    var now = new Date();
+    entry = Object.assign({
+      /* `Date.now()` a secas colisiona entre dos usuarios que agregan en el mismo
+         milisegundo, y la PK en Supabase es (brand, id): el upsert pisa una fila
+         con la otra. Tiene que quedar ENTERO — la columna es bigint. */
+      id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+      fecha: now.toLocaleDateString('es-AR'),
+      fechaISO: now.toISOString(),
+      qNum: qn,
+      estado: (document.getElementById('quote-estado') && document.getElementById('quote-estado').value) || 'Cotizado'
+    }, fields);
     pipe.push(entry);
   }
   savePipeline(pipe);
@@ -94,7 +122,7 @@ function addToPipeline(){
   // guardado que no ocurrió (savePipeline ya corrió, es otra clave).
   if(!doSave(true)) return;
 
-  var msg = warnMsg || ('✓ Agregada al pipeline: ' + client + (proyecto?' / '+proyecto:''));
+  var msg = warnMsg || ('✓ Agregada al pipeline: ' + fields.cliente + (fields.proyecto!=='—'?' / '+fields.proyecto:''));
   notifyUndo(msg, function(){ if(typeof undoPipelineChange === 'function') undoPipelineChange(); });
 }
 

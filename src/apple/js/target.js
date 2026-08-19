@@ -368,14 +368,9 @@ function renderTargetAnual(){
       var factQty  = (partQty>0&&partQty<totalQty) ? partQty : totalQty;
       var price    = parseFloat(ln['P. Venta Unitario'])||0;
       var lMonto   = factQty * price;
-      var lob  = (ln['_lob']||'').trim();
-      var desc = (ln['Descripción']||'').toLowerCase();
-      var cat  = null;
-      if(/\biphone\b/.test(desc)&&!/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc)) cat='iphone';
-      else if(/\bipad\b/.test(desc)&&!/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc)) cat='ipad';
-      else if(/\bmacbook\b|\bimac\b|\bmac\s*(mini|studio|pro|neo)\b|\bmbp(ro)?\b|\bmba(ir)?\b/i.test(desc)) cat='mac';
-      else cat = MODEL_CATEGORY[lob];
-      if(!cat) cat='acc';
+      // categorize() (pipeline-core.js): única fuente, ver el comentario de
+      // cabecera de esta sección sobre por qué no se copia inline.
+      var cat = categorize({description: ln['Descripción']||'', lob: (ln['_lob']||'').trim()});
       var m=pipe_m[mc];
       m.monto+=lMonto;
       if(ln['Tipo']==='garantia'){m.serv+=factQty;m.montoServ+=lMonto;}
@@ -424,13 +419,8 @@ function renderTargetAnual(){
     var qty=parseInt(ln['Cantidad'])||0;
     if(qty<=0) return;
     var price=parseFloat(ln['P. Venta Unitario'])||0;
-    var lob=(ln['_lob']||'').trim(), desc=(ln['Descripción']||'').toLowerCase();
-    var cat=null;
-    if(/\biphone\b/.test(desc)&&!/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc)) cat='iphone';
-    else if(/\bipad\b/.test(desc)&&!/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc)) cat='ipad';
-    else if(/\bmacbook\b|\bimac\b|\bmac\s*(mini|studio|pro|neo)\b|\bmbp(ro)?\b|\bmba(ir)?\b/i.test(desc)) cat='mac';
-    else cat=MODEL_CATEGORY[lob];
-    if(!cat) cat='acc';
+    // categorize() (pipeline-core.js): única fuente.
+    var cat = categorize({description: ln['Descripción']||'', lob: (ln['_lob']||'').trim()});
     // Unidades: siempre se cuentan. Monto: solo si tiene precio
     var lMonto=price>0?qty*price:0;
     if(cat==='mac')         {_aqMM+=lMonto;_aqMU+=qty;}
@@ -477,15 +467,9 @@ function renderTargetAnual(){
   var ocMac=0,ocIph=0,ocIpad=0,ocAcc=0;
   var commitMac=0,commitIph=0,commitIpad=0,commitAcc=0;
   var autMac=0,autIph=0,autIpad=0,autAcc=0;
+  // categorize() (pipeline-core.js): única fuente.
   function _catLn(ln){
-    var lob=(ln['_lob']||'').trim(), desc=(ln['Descripción']||'').toLowerCase();
-    var cat=null;
-    if(/\biphone\b/.test(desc)&&!/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc)) cat='iphone';
-    else if(/\bipad\b/.test(desc)&&!/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc)) cat='ipad';
-    else if(/\bmacbook\b|\bimac\b|\bmac\s*(mini|studio|pro|neo)\b|\bmbp(ro)?\b|\bmba(ir)?\b/i.test(desc)) cat='mac';
-    else cat=MODEL_CATEGORY[lob];
-    if(!cat) cat='acc';
-    return cat;
+    return categorize({description: ln['Descripción']||'', lob: (ln['_lob']||'').trim()});
   }
   function _addUnits(st, qty, cat){
     if(st==='Autorizando'){

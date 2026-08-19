@@ -34,16 +34,11 @@ function recalcPipelineUnits(){
       var mg = parseFloat(ln['Margen %']);
       if(!isNaN(mg) && lineTot>0){ marW += mg*lineTot; marM += lineTot; }
       if(ln['Tipo']==='garantia'){ qS+=qty; return; }
-      var lob = (ln['_lob']||'').trim();
-      var desc = (ln['Descripción']||'').toLowerCase();
-      var cat = null;
-      if(/\biphone\b/.test(desc) && !/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc)) cat='iphone';
-      else if(/\bipad\b/.test(desc) && !/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(desc)) cat='ipad';
-      else if(/\bmacbook\b|\bimac\b|\bmac\s*(mini|studio|pro|neo)\b|\bmbp(ro)?\b|\bmba(ir)?\b/i.test(desc)) cat='mac';
-      else cat = MODEL_CATEGORY[lob];
-      if(!cat){
-        cat='acc';
-      }
+      // Categorización centralizada en categorize() (pipeline-core.js): antes
+      // era una copia inline de la misma heurística, y un ajuste futuro que
+      // se olvidara de acordarse de este lugar volvía a producir totales que
+      // no cierran entre pipeline, archivo y Target.
+      var cat = categorize({description: ln['Descripción']||'', lob: (ln['_lob']||'').trim()});
       if(cat==='iphone') qI+=qty;
       else if(cat==='ipad') qP+=qty;
       else if(cat==='mac') qM+=qty;
@@ -61,6 +56,28 @@ function recalcPipelineUnits(){
     }
   });
   if(changed) savePipeline(pipe);
+}
+
+// Alerta de cotizaciones estancadas: días sin movimiento sobre `fechaMod`
+// (shared/pipeline-store.js la estampa solo cuando algo cambió de verdad).
+// Los estados cerrados nunca se marcan: no hay ninguna acción pendiente
+// sobre algo ya Facturado o Perdido.
+var PIPE_STALE_AVISO  = 30;
+var PIPE_STALE_ALERTA = 60;
+
+function _pipeModificadoChip(r){
+  if(!r.fechaMod) return '<span style="color:#aeaeb2;font-size:11px">—</span>';
+  var dias = Math.floor((Date.now() - new Date(r.fechaMod).getTime()) / 86400000);
+  var label = dias<=0 ? 'hoy' : (dias===1 ? '1 día' : dias+' días');
+  var estado = r.estado || 'Cotizado';
+  var cerrada = (estado==='Facturado' || estado==='Perdido');
+  if(cerrada || dias < PIPE_STALE_AVISO){
+    return '<span style="font-size:11px;color:#6e6e73;white-space:nowrap">'+label+'</span>';
+  }
+  var alerta = dias >= PIPE_STALE_ALERTA;
+  var bg = alerta ? '#fde8e8' : '#fff4e5', fg = alerta ? '#d70015' : '#c86400';
+  var tip = (alerta?'Estancada · ':'Sin movimiento hace ')+dias+' días';
+  return '<span title="'+cevenEsc(tip)+'" style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;white-space:nowrap;background:'+bg+';color:'+fg+'">'+label+'</span>';
 }
 
 function renderPipeline(){
@@ -367,15 +384,11 @@ function renderPipeline(){
         var lineTotal = qty * price;
         mont += lineTotal;
         if(ln['Tipo'] === 'garantia'){ qS += qty; return; }
-        var lnLob  = (ln['_lob'] || '').trim();
-        var lnDesc = (ln['Descripción'] || '').toLowerCase();
-        // Misma lógica que categorize(): la descripción manda primero, lookup por Model como fallback
-        var lnCat = null;
-        if(/\biphone\b/.test(lnDesc) && !/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(lnDesc)) lnCat = 'iphone';
-        else if(/\bipad\b/.test(lnDesc) && !/keyboard|mouse|pencil|case|cover|cable|adapter|folio/i.test(lnDesc)) lnCat = 'ipad';
-        else if(/\bmacbook\b|\bimac\b|\bmac\s*(mini|studio|pro|neo)\b|\bmbp(ro)?\b|\bmba(ir)?\b/i.test(lnDesc)) lnCat = 'mac';
-        else lnCat = MODEL_CATEGORY[lnLob];
-        if(!lnCat) lnCat = 'acc';
+        // categorize() (pipeline-core.js): antes esto era una copia inline de
+        // la misma heurística ("misma lógica que categorize()", decía el
+        // comentario viejo) — con una sola fuente, un ajuste futuro no puede
+        // desincronizarse entre este lugar y el resto del pipeline.
+        var lnCat = categorize({description: ln['Descripción']||'', lob: (ln['_lob']||'').trim()});
         if(lnCat === 'iphone') qI += qty;
         else if(lnCat === 'ipad') qP += qty;
         else if(lnCat === 'mac') qM += qty;
@@ -757,7 +770,10 @@ function renderPipeline(){
     // Opciones desde shared/pipeline-status.js, que también conserva un estado
     // guardado fuera de la lista en vez de cambiarlo en silencio.
     var statusSel = '<select data-pact="status"'+rowA+' style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
-      + cevenEstadoOptions(estado, false) + '</select>';
+      + cevenEstadoOptions(estado, false) + '</select>'
+      + (estado==='Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
+          ? ' <span title="'+cevenEsc(r.perdidoMotivo.motivo + (r.perdidoMotivo.detalle ? ': '+r.perdidoMotivo.detalle : ''))+'" style="cursor:help">💬</span>'
+          : '');
 
     var expanded = window._pipeExpanded && window._pipeExpanded[expandKey];
     // Badge para identificar filas virtuales
@@ -777,6 +793,7 @@ function renderPipeline(){
         +'<button class="bs" data-pact="expand"'+rowA+' title="Ver SKUs" style="padding:0 5px;font-size:11px;line-height:1.4;margin-right:4px;min-width:20px">'+(expanded?'▼':'▶')+'</button>'
         +cevenEsc(r.fecha)
       +'</td>'
+      +'<td style="text-align:center;white-space:nowrap">'+_pipeModificadoChip(r)+'</td>'
       +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
       +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+virtualBadge
         /* Chapita de opción A/B: solo aparece si esa cotización tiene dos, y
@@ -829,7 +846,7 @@ function renderPipeline(){
   var _vacio = _hayFiltros
     ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Filtros" para limpiarlos.'
     : 'El pipeline está vacío. Cargá una cotización y tocá "Agregar al pipeline".';
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="14" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="15" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
 }
 

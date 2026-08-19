@@ -35,14 +35,12 @@ function archiveOldEntries(){
   var db = getDB();
   var partialMoved = 0;
   var pipeChanged = false;
+  // categorize() (pipeline-core.js) es ahora la única fuente: esta copia
+  // inline había divergido en silencio (le faltaba la exclusión de
+  // accesorios que sí tienen las otras), justo el riesgo que motiva
+  // centralizarla en un solo lugar.
   function _catOf(ln){
-    var lob=(ln['_lob']||'').trim(), desc=(ln['Descripción']||'').toLowerCase();
-    // La descripción real del producto manda sobre "_lob" (puede haberse corrompido
-    // si se guardó el modal de edición con el modelo en blanco — ver categorize()).
-    var cat=/\biphone\b/.test(desc)?'iphone':/\bipad\b/.test(desc)?'ipad'
-      :/\bmacbook\b|\bimac\b|\bmac\s*(mini|studio|pro|neo)\b|\bmbp(ro)?\b|\bmba(ir)?\b/i.test(desc)?'mac':MODEL_CATEGORY[lob];
-    if(!cat) cat='acc';
-    return cat;
+    return categorize({description: ln['Descripción']||'', lob: (ln['_lob']||'').trim()});
   }
   toKeep.forEach(function(r){
     var hasAnyOverride = (r.skuStatus && Object.keys(r.skuStatus).length)

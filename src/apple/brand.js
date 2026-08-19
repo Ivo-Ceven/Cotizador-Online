@@ -37,14 +37,14 @@ window.CEVEN_BRAND = {
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','ejecutivo','mesCierre','estado',
     'qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad','montoAcc','montoServ',
     'monto','margenPond','moneda','skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',
-    'skuPartialRemMes','skuArchivedQty','ovLink','esFOB'],
+    'skuPartialRemMes','skuArchivedQty','ovLink','esFOB','perdidoMotivo','fechaMod'],
 
   numCols: ['id','qNum','qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad',
     'montoAcc','montoServ','monto','margenPond'],
 
   // Columnas jsonb: viajan como objeto nativo, no como string.
   objCols: ['skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt','skuPartialRemMes',
-    'skuArchivedQty'],
+    'skuArchivedQty','perdidoMotivo'],
 
   // Columnas numericas en Supabase que la app guarda como string con ceros a la
   // izquierda. col -> ancho. qNum vuelve de la base como 71 (bigint) pero
@@ -121,9 +121,9 @@ window.CEVEN_BRAND = {
   // (numeros y fechas se leen "de mayor a menor"; el texto, alfabetico).
   // Cuantas columnas tiene la tabla: el <tr> de encabezado de cada cliente lo
   // necesita para el colspan (shared/pipeline-group.js).
-  pipeColCount: 14,
+  pipeColCount: 15,   // +1 por la columna "Modificado" (alerta de estancadas)
 
-  pipeSortDescCols: ['monto','qMac','qIph','qIpad','qServ','qAcc','margenPond','fechaISO'],
+  pipeSortDescCols: ['monto','qMac','qIph','qIpad','qServ','qAcc','margenPond','fechaISO','fechaMod'],
 
   /* --- Backup (shared/backup.js, shared/backup-folder.js) ----------- */
 
