@@ -22,8 +22,13 @@ function computeQuotePipeFields(){
      pantalla, se nota a fin de mes cuando el total no cierra. */
   var _ef = cevenOpcEfectiva();
   var ag = _pipeAgregados(cevenOpcFiltrar(items, _ef), cevenOpcFiltrar(warrantyItems, _ef));
+  var _cliente = (document.getElementById('client').value||'').trim();
   return {
-    cliente: (document.getElementById('client').value||'').trim(),
+    cliente: _cliente,
+    // Solo trae un id si ya se resolvió (o se creó) contra la tabla `clientes`
+    // para ESTE mismo nombre — ver shared/clientes-db.js. null es un resultado
+    // esperado, no un error: applyPipeFields() no lo pisa si no hay uno fresco.
+    clienteId: (typeof cevenClienteIdParaNombre === 'function') ? cevenClienteIdParaNombre(_cliente) : null,
     proyecto: (document.getElementById('proyecto').value||'').trim() || '—',
     ejecutivo: document.getElementById('exec').value || '—',
     mesCierre: getMesCierre() || '',
@@ -64,6 +69,9 @@ function applyPipeFields(existing, fields){
   out.fechaISO = existing.fechaISO;
   out.qNum = existing.qNum;
   out.estado = existing.estado || 'Cotizado';
+  // clienteId: solo se pisa con un valor fresco (ver computeQuotePipeFields).
+  // Si esta actualización no lo resolvió, se conserva el que ya tenía la fila.
+  out.clienteId = (fields.clienteId != null) ? fields.clienteId : existing.clienteId;
   out.skuStatus = existing.skuStatus;
   out.skuMesCierre = existing.skuMesCierre;
   out.skuPartialQty = existing.skuPartialQty;

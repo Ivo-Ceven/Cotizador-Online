@@ -370,6 +370,10 @@ function _pipeTablaHTML(filas, scope, opts){
         +'</td>'
         +'<td style="cursor:pointer" data-act="exp" data-k="'+kA+'"><div style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
           +cevenEsc(r.proyecto||'—')
+          // Pedido que un cliente-canal mandó él mismo desde el portal (Fase 1).
+          // El cliente ya se agrupa arriba (ver comentario de más arriba), así
+          // que acá es donde va: junto al proyecto, que es lo propio de la fila.
+          +(r.origenPortalId ? '<span style="background:#eef2ff;color:#4338ca;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Pedido enviado por el cliente desde el portal">portal</span>' : '')
           +' <span style="color:#6e6e73;font-size:11px;white-space:nowrap">▸</span>'
         +'</div></td>'
         +'<td style="font-size:12px;white-space:nowrap">'+celdaMes+'</td>'

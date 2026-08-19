@@ -216,6 +216,37 @@
   </div>
 </div>
 
+<!-- Modal: gestión de clientes del portal (Fase 3, admin-only). navbar.js solo
+     pinta el botón 🧑‍💼 si este modal existe en la página — mismo criterio
+     que ya usa el de Usuarios. -->
+<div id="ceven-portal-modal" class="modal" onclick="if(event.target===this)cevenClosePortalClientes()" style="z-index:99998">
+  <div class="modal-card" style="width:420px">
+    <div class="modal-hd">
+      <div class="h3">🧑‍💼 Clientes del portal</div>
+      <button onclick="cevenClosePortalClientes()" class="modal-x" title="Cerrar">×</button>
+    </div>
+    <form onsubmit="return cevenCreatePortalCliente(event)" style="border:0.5px solid #d2d2d7;border-radius:12px;padding:14px;margin-bottom:16px">
+      <div class="h3" style="font-size:13px;margin-bottom:10px">Dar de alta un cliente-canal</div>
+      <input id="cpa-email" type="email" placeholder="email del cliente (no @ceven.com)" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
+      <input id="cpa-pass" type="password" autocomplete="new-password" placeholder="Contraseña (mínimo 6 caracteres)" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
+      <input id="cpa-nombre" type="text" placeholder="Nombre del cliente, ej: Newtech" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
+      <div class="sub" style="margin-bottom:6px">Nivel de precio (opcional, se puede cargar después)</div>
+      <select id="cpa-tier" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px;background:#fff">
+        <option value="">Poly: sin asignar</option>
+        <option value="Ceven - Tier 1">Poly · Tier 1</option>
+        <option value="Ceven - Tier 2">Poly · Tier 2</option>
+        <option value="Ceven - Tier 3">Poly · Tier 3</option>
+        <option value="Negocios Especiales">Poly · Negocios Especiales</option>
+      </select>
+      <input id="cpa-margen" type="number" min="0" max="80" step="0.5" placeholder="Margen Apple % (opcional)" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:10px">
+      <div id="ceven-portal-err" class="err" style="font-size:12px;padding:7px 10px;margin-bottom:10px"></div>
+      <button type="submit" class="btn-dark" style="padding:8px 16px;font-size:13px">Dar de alta</button>
+    </form>
+    <div class="lbl" style="margin-bottom:6px">Clientes del portal</div>
+    <div id="ceven-portal-list" style="max-height:280px;overflow-y:auto"></div>
+  </div>
+</div>
+
 <!-- Modal: editar perfil (nombre + rol) de un usuario existente -->
 <div id="ceven-edit-profile-modal" class="modal" onclick="if(event.target===this)cevenCloseEditProfile()" style="z-index:99999">
   <div class="modal-card" style="width:360px">
@@ -241,6 +272,10 @@
 <script src="shared/safe.js"></script>
 <script src="shared/config.js"></script>
 <script src="shared/auth.js"></script>
+<!-- Clientes del portal (Fase 3): después de auth.js (usa cevenAuthedFetch,
+     cevenIsAdmin) y antes de navbar.js (que busca #ceven-portal-modal, ya
+     definido arriba, para decidir si pinta el botón 🧑‍💼). -->
+<script src="shared/portal-clientes-admin.js"></script>
 <!-- navbar.js después de auth.js: lee el rol para decidir qué botones pinta.
      Acá no hay CEVEN_BRAND, así que sale sin ítems de navegación. -->
 <script src="shared/navbar.js"></script>

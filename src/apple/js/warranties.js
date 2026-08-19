@@ -201,6 +201,10 @@ function _warrantiesShowToastLegacy(msg) {
 // ── INIT ──
 renderQ();
 renderWarranties();
+// Autocompletado de Cliente contra la ficha local y la tabla real `clientes`
+// (shared/clientes.js / shared/clientes-db.js). Apple no lo tenía cableado.
+if(typeof cevenRefreshClienteDatalist === 'function') cevenRefreshClienteDatalist();
+if(typeof cevenClientesDbRefreshDatalist === 'function') cevenClientesDbRefreshDatalist();
 
 // ── DEFAULTS: fecha +15 días y pago 30FF ──
 (function(){

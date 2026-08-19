@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portal de Clientes · Ceven</title>
+
+<meta name="theme-color" content="#f5f5f7">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Ceven Portal">
+
+<script src="../vendor/html2canvas.min.js"></script>
+<script src="../vendor/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="../shared/css/base.css">
+<link rel="stylesheet" href="../shared/css/dark.css">
+<link rel="stylesheet" href="css/portal.css">
+</head>
+<body>
+
+<!-- ============================================================
+     Portal de autoservicio para clientes-canal (revendedores).
+     No es una marca ni pertenece al staff: login propio, sin
+     @ceven.com, contra la cuenta que le da de alta un admin de
+     Ceven (Edge Function portal-admin). Ver docs/HISTORIAL.md y
+     el plan "Portal de clientes-canal".
+     ============================================================ -->
+
+<!-- LOGIN -->
+<div id="pg-login" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
+  <form id="plogin-form" class="card" style="max-width:340px;width:100%">
+    <p class="h1" style="margin-bottom:4px">Portal de Clientes</p>
+    <p class="sub" style="margin-bottom:18px">Ceven</p>
+    <label class="lbl">Email</label>
+    <input id="plogin-email" type="email" autocomplete="username" required style="margin-bottom:10px">
+    <label class="lbl">Contraseña</label>
+    <input id="plogin-password" type="password" autocomplete="current-password" required style="margin-bottom:10px">
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:14px;font-size:12px;color:var(--ct2)">
+      <input id="plogin-remember" type="checkbox" style="width:auto" checked> Mantener la sesión iniciada
+    </label>
+    <p id="plogin-error" class="sub" style="color:var(--cred);margin-bottom:10px"></p>
+    <button id="plogin-submit" type="submit" class="bd" style="width:100%">Entrar</button>
+  </form>
+</div>
+
+<!-- ONBOARDING (una sola vez) -->
+<div id="pg-onboarding" style="display:none;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div class="card" style="max-width:420px;width:100%">
+    <p class="h2" style="margin-bottom:4px">Completá tu perfil</p>
+    <p class="sub" style="margin-bottom:16px">Esto se pide una sola vez.</p>
+    <label class="lbl">Razón social</label>
+    <input id="pob-razon-social" type="text" style="margin-bottom:10px">
+    <div class="g2" style="margin-bottom:10px">
+      <div><label class="lbl">CUIT</label><input id="pob-cuit" type="text"></div>
+      <div><label class="lbl">Teléfono</label><input id="pob-telefono" type="text"></div>
+    </div>
+    <label class="lbl">Domicilio</label>
+    <input id="pob-domicilio" type="text" style="margin-bottom:10px">
+    <label class="lbl">Contacto</label>
+    <input id="pob-contacto" type="text" style="margin-bottom:10px">
+    <label class="lbl">Margen de reventa por defecto (%)</label>
+    <input id="pob-markup" type="number" min="0" max="500" step="0.5" placeholder="0" style="margin-bottom:16px">
+    <p class="sub" style="margin-bottom:14px">Se usa para calcular lo que le cobrás a tu cliente final sobre el precio que te da Ceven. Podés definir uno distinto por cada cliente final más adelante.</p>
+    <button id="pob-guardar" type="button" class="bd" style="width:100%">Guardar y continuar</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="pg-app" style="display:none">
+  <header style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:12px 20px;border-bottom:0.5px solid var(--c3);background:var(--c1)">
+    <span class="h3" style="margin-right:10px">Portal de Clientes · Ceven</span>
+    <button type="button" class="ptab on" id="pgt-marca" data-pgt="marca">Marca</button>
+    <button type="button" class="ptab" id="pgt-catalogo" data-pgt="catalogo">Catálogo</button>
+    <button type="button" class="ptab" id="pgt-clientes" data-pgt="clientes">Mis clientes</button>
+    <button type="button" class="ptab" id="pgt-historial" data-pgt="historial">Historial</button>
+    <span style="flex:1"></span>
+    <span id="pgh-email" class="sub"></span>
+    <button type="button" class="bs" id="pbtn-logout">Salir</button>
+  </header>
+
+  <div style="padding:20px 24px 40px;max-width:1100px;margin:0 auto">
+
+    <!-- MARCA -->
+    <div id="pgv-marca">
+      <p class="h2" style="margin-bottom:4px">¿Qué querés cotizar?</p>
+      <p class="sub" style="margin-bottom:18px">Elegí una marca para no mezclar catálogos.</p>
+      <div class="g2" style="max-width:520px">
+        <button type="button" class="card" data-marca="apple" style="cursor:pointer;text-align:left;border-left:4px solid #0071e3">
+          <span class="h3">Apple</span><br><span class="sub">Mac, iPhone, iPad y accesorios</span>
+        </button>
+        <button type="button" class="card" data-marca="poly" style="cursor:pointer;text-align:left;border-left:4px solid #7c3aed">
+          <span class="h3">Poly</span><br><span class="sub">Videoconferencia y audio</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- CATÁLOGO + CARRITO + ASISTENTE -->
+    <div id="pgv-catalogo" style="display:none">
+      <div class="tb">
+        <span class="h2" id="pcat-marca-actual">—</span>
+        <button type="button" class="bo" id="pbtn-asistente" onclick="abrirAsistente()">✨ Preguntarle a la IA</button>
+        <span style="flex:1"></span>
+        <input id="pcat-search" type="text" placeholder="Buscar por SKU o descripción…" style="max-width:260px">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start">
+        <div>
+          <p id="pcat-count" class="sub" style="margin-bottom:6px"></p>
+          <div class="tw">
+            <table>
+              <thead><tr><th></th><th>SKU</th><th>Descripción</th><th style="text-align:right">Precio</th></tr></thead>
+              <tbody id="pcat-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="h3" style="margin-bottom:8px">Tu pedido</p>
+          <div class="tw" style="margin-bottom:10px">
+            <table>
+              <thead><tr><th>Producto</th><th>Cant.</th><th style="text-align:right">Costo</th><th style="text-align:right">Tu precio</th><th></th></tr></thead>
+              <tbody id="pcarrito-body"></tbody>
+            </table>
+          </div>
+
+          <label class="lbl">¿Para qué cliente final es este pedido?</label>
+          <select id="pemitir-cliente-final" style="margin-bottom:8px"></select>
+          <div id="pemitir-libre-box">
+            <label class="lbl">Proyecto / cliente final</label>
+            <input id="pemitir-proyecto-libre" type="text" placeholder="Nombre del proyecto o comprador" style="margin-bottom:8px">
+            <label class="lbl">Margen de reventa (%)</label>
+            <input id="pemitir-markup-libre" type="number" min="0" max="500" step="0.5" style="margin-bottom:8px">
+          </div>
+
+          <div class="sub" style="display:flex;justify-content:space-between;margin-top:10px">
+            <span>Total costo Ceven</span><span id="pcarrito-total-ceven">USD 0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;margin:4px 0 2px">
+            <span>Total tu precio (<span id="pcarrito-markup">0%</span>)</span><span id="pcarrito-total-reventa">USD 0</span>
+          </div>
+
+          <button type="button" class="bd" id="pbtn-emitir" style="width:100%;margin-top:12px" disabled>Enviar pedido a Ceven</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIS CLIENTES (finales) + LOGO -->
+    <div id="pgv-clientes" style="display:none">
+      <div class="g2" style="align-items:start">
+        <div>
+          <p class="h2" style="margin-bottom:10px">Tus clientes finales</p>
+          <div class="card" style="margin-bottom:14px">
+            <p class="h3" style="margin-bottom:8px">Agregar uno nuevo</p>
+            <label class="lbl">Nombre</label>
+            <input id="pcf-nombre" type="text" style="margin-bottom:8px">
+            <div class="g2" style="margin-bottom:8px">
+              <div><label class="lbl">CUIT</label><input id="pcf-cuit" type="text"></div>
+              <div><label class="lbl">Margen propio (%)</label><input id="pcf-markup" type="number" min="0" max="500" step="0.5" placeholder="usa el default"></div>
+            </div>
+            <label class="lbl">Contacto</label>
+            <input id="pcf-contacto" type="text" style="margin-bottom:8px">
+            <label class="lbl">Domicilio</label>
+            <input id="pcf-domicilio" type="text" style="margin-bottom:10px">
+            <button type="button" class="bd" id="pcf-crear">Agregar cliente final</button>
+          </div>
+          <div class="tw">
+            <table>
+              <thead><tr><th>Nombre</th><th>CUIT</th><th>Margen</th><th></th></tr></thead>
+              <tbody id="pcf-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <p class="h2" style="margin-bottom:10px">Tu logo</p>
+          <div class="card">
+            <p class="sub" style="margin-bottom:10px">Aparece en el PDF que le mandás a tu cliente final, junto al de Ceven (que siempre va).</p>
+            <img id="plogo-preview" style="display:none;max-height:70px;max-width:100%;object-fit:contain;margin-bottom:12px">
+            <input id="plogo-input" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+            <p class="sub" style="margin-top:8px">PNG, JPG, WEBP o SVG · hasta 2 MB.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORIAL -->
+    <div id="pgv-historial" style="display:none">
+      <p class="h2" style="margin-bottom:10px">Tus pedidos</p>
+      <div class="tw" style="margin-bottom:16px">
+        <table>
+          <thead><tr><th>Fecha</th><th>Marca</th><th>Proyecto</th><th>N°</th><th>Estado</th><th style="text-align:right">Costo Ceven</th><th style="text-align:right">Tu precio</th></tr></thead>
+          <tbody id="phist-body"></tbody>
+        </table>
+      </div>
+      <div id="phist-detalle" style="display:none"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Configuración compartida (URL/key de Supabase) -->
+<script src="../shared/config.js"></script>
+<script src="../shared/safe.js"></script>
+<script src="../shared/notify.js"></script>
+
+<!-- Sesión propia del portal (NO shared/auth.js: ver el comentario en session.js) -->
+<script src="js/session.js"></script>
+<script src="js/state.js"></script>
+
+<script src="../shared/pdf-core.js"></script>
+
+<script src="js/pricing-client.js"></script>
+<script src="js/onboarding.js"></script>
+<script src="js/clientes-finales.js"></script>
+<script src="js/logo.js"></script>
+<script src="js/catalog.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/emitir.js"></script>
+<script src="js/historial.js"></script>
+
+<!-- Asistente IA: motor genérico compartido, hooks propios del portal arriba.
+     Va después: usa cevenAuthedFetch (session.js), cevenEsc (safe.js),
+     showToast (notify.js), ya cargados acá. -->
+<script src="js/asistente-hooks.js"></script>
+<script src="../shared/asistente.js"></script>
+
+<script src="js/boot.js"></script>
+</body>
+</html>

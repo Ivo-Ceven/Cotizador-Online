@@ -46,10 +46,10 @@ window.CEVEN_BRAND = {
      fila), igual que las opciones A/B resolvieron su chapita sin agregar una
      columna: el dato ya se sincroniza y una migracion para algo que ya viaja
      es trabajo y riesgo de mas. */
-  pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','ejecutivo',
+  pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','ejecutivo',
     'mesCierre','estado','monto','moneda'],
 
-  numCols: ['id','qNum','monto'],
+  numCols: ['id','qNum','clienteId','monto'],
 
   objCols: [],
 
@@ -58,7 +58,7 @@ window.CEVEN_BRAND = {
      cada 15s. Misma trampa documentada en apple/brand.js y poly/brand.js. */
   padCols: { qNum: 4 },
 
-  nullableCols: ['proyecto','mesCierre'],
+  nullableCols: ['proyecto','mesCierre','clienteId'],
 
   localOnlyCols: [],
 

@@ -13,6 +13,7 @@
 var SUPABASE_URL      = 'https://iqewnebpdyctexavtpmt.supabase.co';
 var SUPABASE_ANON_KEY = 'sb_publishable_Za9l64nzVBsaKHrSCgeu0w_x7Vhe7Aa';
 var CEVEN_AUTH_FN_URL = SUPABASE_URL + '/functions/v1/admin-users';
+var CEVEN_PORTAL_ADMIN_FN_URL = SUPABASE_URL + '/functions/v1/portal-admin';
 
 /* Datos del emisor que encabezan el comprobante imprimible
    (shared/comprobante.js). Cambiarlos acá los cambia en las dos marcas.
@@ -40,4 +41,4 @@ var CEVEN_SESSION_KEY = 'ceven_auth_session';
 /* Versión mostrada en el zócalo inferior de la app. Subirla reinstala el
    service worker (ver sw.js) — necesario cada vez que cambia la lista de
    archivos a precachear (ASSETS/DOCS), o el shell cacheado queda pegado. */
-var APP_VERSION = '6.5';
+var APP_VERSION = '6.7';

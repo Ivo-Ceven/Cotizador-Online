@@ -85,7 +85,7 @@
   </div>
   <div class="card">
     <div class="g2">
-      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" style="font-size:14px;font-weight:500"></div>
+      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
       <div><label class="lbl">Ejecutivo</label>
         <select id="exec">
           <option value="">Seleccionar ejecutivo</option>
@@ -647,6 +647,8 @@
 <!-- clientes.js ANTES de pipeline-group.js: define cevenNormClient(), con la
      que el pipeline agrupa por cliente. -->
 <script src="../shared/clientes.js"></script>
+<!-- clientes-db.js: tabla real `clientes`, complementa a clientes.js -->
+<script src="../shared/clientes-db.js"></script>
 <script src="../shared/pipeline-group.js"></script>
 <script src="../shared/pipeline-ui.js"></script>
 <script src="js/pipeline-view.js"></script>

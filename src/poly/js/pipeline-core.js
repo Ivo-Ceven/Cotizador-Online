@@ -77,6 +77,10 @@ function addToPipeline(){
     return;
   }
   var client   = (document.getElementById('client').value||'').trim();
+  // Solo trae un id si ya se resolvió (o se creó) contra la tabla `clientes`
+  // para ESTE mismo nombre — ver shared/clientes-db.js. null es esperado, no
+  // un error: más abajo no se pisa un clienteId ya guardado con uno vacío.
+  var clienteId = (typeof cevenClienteIdParaNombre === 'function') ? cevenClienteIdParaNombre(client) : null;
   var opg      = (document.getElementById('opg').value||'').trim();
   var proyecto = (document.getElementById('proyecto').value||'').trim();
   if(!client){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
@@ -110,7 +114,7 @@ function addToPipeline(){
     newRowId = cevenNuevoIdFila();
     pipe.push({
       id: newRowId, fecha: fecha, fechaISO: now.toISOString(), qNum: qn,
-      cliente: client, proyecto: proyecto, opg: opg || null,
+      cliente: client, clienteId: clienteId, proyecto: proyecto, opg: opg || null,
       ejecutivo: exec || '—', mesCierre: mesCierre || '',
       estado: estadoQ, monto: monto, moneda: 'USD', factura: null
     });
@@ -125,6 +129,9 @@ function addToPipeline(){
     }
     row.proyecto  = proyecto;
     row.cliente   = client;
+    // Solo se pisa con un valor fresco: si esta pasada no lo resolvió, se
+    // conserva el que ya tenía la fila (mismo criterio que estado/id/factura).
+    if(clienteId != null) row.clienteId = clienteId;
     row.opg       = opg || null;
     row.monto     = monto;
     row.ejecutivo = exec || row.ejecutivo;

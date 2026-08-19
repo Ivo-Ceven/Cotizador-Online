@@ -77,6 +77,7 @@
     // Todo lo que cuelga un nivel abajo de la raíz vuelve al panel; el shell ya está ahí.
     var vuelve  = !!(B || P);
     var hayUsuarios = !!document.getElementById('ceven-users-modal');
+    var hayPortal = !!document.getElementById('ceven-portal-modal');
 
     var h = '<header class="cvnav"><div class="cvnav-in">';
 
@@ -113,6 +114,9 @@
     if(hayUsuarios){
       h += '<button class="cvnav-btn" id="ceven-users-btn" title="Gestionar usuarios">👤</button>';
     }
+    if(hayPortal){
+      h += '<button class="cvnav-btn" id="ceven-portal-btn" title="Clientes del portal">🧑‍💼</button>';
+    }
     h += '<div class="cvnav-user" id="cvnav-user">' +
            '<span class="cvnav-ava" id="cvnav-ava">–</span>' +
            '<span class="cvnav-who"><b id="cvnav-nombre"></b><span id="cvnav-rol"></span></span>' +
@@ -141,6 +145,9 @@
 
     var us = document.getElementById('ceven-users-btn');
     if(us) us.addEventListener('click', function(){ if(typeof cevenOpenUsers === 'function') cevenOpenUsers(); });
+
+    var pc = document.getElementById('ceven-portal-btn');
+    if(pc) pc.addEventListener('click', function(){ if(typeof cevenOpenPortalClientes === 'function') cevenOpenPortalClientes(); });
 
     var pw = document.getElementById('cvnav-pass');
     if(pw) pw.addEventListener('click', function(){ if(typeof cevenChangeMyPassword === 'function') cevenChangeMyPassword(); });

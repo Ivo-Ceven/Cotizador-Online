@@ -1,5 +1,67 @@
 # Historial · Cotizadores Ceven
 
+## Estado de avance
+
+**Instruccion para el agente que retome este proyecto:** leer este archivo
+completo antes de tocar nada. Esta seccion resume el estado real; el resto del
+archivo contiene la arquitectura y las decisiones necesarias para continuar.
+
+### Fase 0 — Clientes reales en Supabase
+
+- **Estado: HECHA, incluido el backfill** (19/08/2026). Los 21 clientes
+  distintos que ya había en `pipeline` (todos de Poly) se crearon en
+  `clientes` y se les completó `pipeline."clienteId"` en las 28 filas que
+  matchearon por nombre normalizado. "Gabriel Tosso"/"Tosso Gabriel"
+  (nombre invertido, dos filas por el match exacto) ya se fusionaron a mano.
+- Detalle completo, con el porqué de cada decisión, en la entrada
+  "Portal de clientes-canal + tabla `clientes` real" más abajo.
+
+### Fase 1 — Portal de clientes-canal
+
+- **Estado: HECHA end-to-end** (19/08/2026): hook de JWT extendido, tablas
+  `portal_*` con RLS, bucket de Storage `portal-logos`, las tres Edge
+  Functions (`portal-admin`, `portal-catalogo`, `portal-emitir`) desplegadas,
+  y la app `src/portal/` completa (14 archivos) con el chat IA reutilizado
+  sin tocarlo.
+- **Pendiente: no se probó en un navegador ni con una llamada HTTP real.**
+  El usuario cortó la verificación en vivo a mitad de la sesión ("no
+  verifiques, hacelo bien de una"). Antes de dar el portal por productivo
+  falta como mínimo: dar de alta un cliente-canal de prueba (ahora se puede
+  desde el shell, 🧑‍💼 "Clientes del portal", en vez de `curl` a mano) y
+  recorrer el flujo completo.
+- El portal no tiene PWA/offline (no carga `shared/pwa.js`, no está en
+  `src/sw.js`) — decisión deliberada, sin verificar cómo interactuaría con el
+  service worker ya activo en `/`.
+
+### Fase 3 — Pulido operativo
+
+- **Estado: HECHA** (19/08/2026): panel 🧑‍💼 "Clientes del portal" en el
+  shell (alta/suspender/reactivar, admin-only — `shared/portal-clientes-admin.js`,
+  mismo patrón que el modal de Usuarios) y un trigger (`trg_portal_sync_estado`
+  sobre `pipeline`) que copia `estado` hacia `portal_solicitudes.estado_ceven`
+  cuando un vendedor cambia el estado de una fila — así el cliente-canal ve
+  en qué va su pedido sin poder leer `pipeline`.
+- **No hecho**: extraer `shared/session-core.js` de `auth.js` (el refactor de
+  DRY que evitaría mantener dos copias del refresh de JWT). Se descartó a
+  propósito: es beneficio interno puro sobre un archivo `auth.js` que ya
+  funciona y que usan todas las páginas de staff — no vale el riesgo de
+  regresión sin un motivo funcional que lo empuje.
+
+### Fases siguientes
+
+| Fase | Alcance | Estado |
+|---|---|---|
+| 2 | Notificaciones por mail al emitir y al cambiar de estado. **Bloqueada**: el proveedor elegido por `vercel integration discover --category messaging` fue Resend, pero instalarlo pide aceptar términos en el navegador (`vercel.com/ceven1/~/integrations/accept-terms/resend`) — paso que solo puede hacer el usuario. Se le preguntó y pidió pausar esta fase. | Pausada, esperando esa aceptación. |
+| 4 | Nice to have: notificación interna a Ceven y markup por línea. | Sin empezar. |
+
+**Requisito de acceso:** el agente necesita acceso al mismo proyecto Supabase
+`iqewnebpdyctexavtpmt` (por MCP o credenciales) para aplicar migraciones. El
+server MCP correcto es `mcp__supabase__*` (no `claude_ai_Supabase`, que está
+autenticado con otra cuenta y no ve este proyecto). Para retomar la Fase 2:
+confirmar con el usuario si ya aceptó los términos de Resend en
+`vercel.com/ceven1`, y si no, preguntar si sigue queriendo Resend o prefiere
+otro proveedor antes de reintentar `vercel integration add resend/resend-email`.
+
 Bitácora de qué se hizo, cuándo y **por qué**. Complementa a `ARQUITECTURA.md`
 (cómo está armado hoy) y a `BASE-DE-DATOS.md` (esquema de Supabase).
 
@@ -9,7 +71,7 @@ Bitácora de qué se hizo, cuándo y **por qué**. Complementa a `ARQUITECTURA.m
 
 ---
 
-## Estado actual (12/08/2026)
+## Estado actual (19/08/2026)
 
 Plataforma multi-marca deployada en **https://cotizadores-ceven.vercel.app**
 (Vercel, team CEVEN, proyecto `cotizadores-ceven`). Shell con login + selector de
@@ -17,6 +79,12 @@ marcas, cotizador **Apple** y cotizador **Poly** completos, **multimarca** en
 marcha, HP pendiente. PWA instalable y funcional offline. Base Supabase
 `iqewnebpdyctexavtpmt`, con RLS por rol y marca aplicada y restringida a cuentas
 `@ceven.com`. 8 cuentas activas (3 admin + 5 ventas).
+
+Desde el 19/08/2026 hay además una tabla `clientes` real compartida por todas
+las marcas (con backfill aplicado) y un **portal de autoservicio para
+clientes-canal** (`src/portal/`, cuentas separadas del staff, nunca
+`@ceven.com`) construido de punta a punta pero **sin probar en un navegador
+todavía** — ver "Estado de avance" arriba y la entrada completa más abajo.
 
 ---
 
@@ -60,6 +128,200 @@ base** porque venía en ese archivo. Ver la entrada del 12/08 más abajo.
 
 Los signups públicos están cerrados: la única alta es la Edge Function
 `admin-users`.
+
+---
+
+## 19/08/2026 · Portal de clientes-canal + tabla `clientes` real
+
+El pedido: una web de autoservicio para los clientes-canal (revendedores) de
+Ceven — cotizan con el catálogo y el nivel de precio que Ceven les asignó, le
+suman su propio margen de reventa para armar el precio a su cliente final, y
+al enviar el pedido eso tiene que aparecer como una cotización real en el
+pipeline interno. Sobre la marcha se sumaron dos pedidos más: una tabla
+`clientes` real (los cotizadores internos venían atando el cliente a un blob
+sin dueño en `app_settings`) y notificaciones por mail (Fase 2, en curso).
+
+### La pregunta que ordenó todo el diseño: ¿puede un cliente-canal tocar la base?
+
+No, nunca. Las policies de `pipeline`/`app_settings`/`todos` exigen
+`ceven_is_staff()` (dominio `@ceven.com`) **sin ninguna excepción**, y eso no
+se tocó. Un cliente-canal:
+
+- tiene su propia identidad de sesión, un claim de JWT (`portal_client_id`)
+  **ortogonal** al de staff (`user_role`) — inyectado por el mismo
+  `custom_access_token_hook`, en una rama nueva que no toca la lógica
+  existente. Una cuenta nunca es staff y cliente-canal a la vez: lo garantiza
+  la Edge Function de alta, no la base;
+- solo puede leer/escribir tablas nuevas (`portal_*`), todas con RLS propia
+  contra ese claim;
+- **nunca** ve el catálogo ni el pipeline directo — todo pasa por tres Edge
+  Functions (`portal-admin`, `portal-catalogo`, `portal-emitir`) que corren
+  con `service_role`, mismo esqueleto que ya usa `admin-users`: validan
+  server-side quién llama y nunca confían en el body para nada que le cueste
+  plata a Ceven.
+
+El precio que ve un cliente-canal (y el que se escribe al pipeline al emitir)
+**siempre se recalcula server-side**, con una copia byte a byte de
+`apple/js/pricing-core.js` / `poly/js/pricing-core.js` — nunca lo manda el
+cliente. Es el mismo movimiento que ya usa el multimarca para no duplicar la
+fórmula, llevado a una Edge Function: las copias viven en
+`supabase/functions/_shared/pricing/` y se cargan con **`eval` indirecto**
+(`Deno.readTextFile` + `(0,eval)(src)`) — funciona porque esos archivos son
+scripts sloppy-mode sin `'use strict'` ni exports, así que sus
+`var`/`function` quedan en `globalThis`. `scripts/check-portal-pricing-parity.js`
+(nuevo) compara las copias contra el original y falla si alguien edita una
+sin la otra.
+
+Y el monto que entra al pipeline/forecast interno es **siempre el precio
+Ceven→canal, nunca el de reventa** que el canal le cobra a su cliente final —
+mismo principio que ya está firmado en el código con Opciones A/B ("solo la
+opción vigente suma"): si el markup ajeno se mezclara, el forecast quedaría
+inflado con plata que Ceven nunca factura.
+
+### `clientes`: la tabla que faltaba, no solo para el portal
+
+Antes de esto, "el cliente" de una cotización era: un campo de texto libre en
+`pipeline`/`cquotes`, más un blob `cclientes` en `app_settings` (una entrada
+por cliente, sin dueño, sincronizado como una clave más de settings —
+last-write-wins sobre **todo el diccionario**). Suficiente para mostrar un
+nombre, nada para atarle un mail o un nivel de precio de forma confiable.
+
+`clientes` es la tabla madre, compartida por Apple/Poly/Multi **y** el
+portal. `nombre_norm` es una columna **generada** (`lower(regexp_replace(
+btrim(nombre),'\s+',' ','g'))`) — el mismo criterio que ya usaba
+`cevenNormClient()` en JS, ahora garantizado del lado del servidor, con un
+índice único que hace que el alta sea un upsert idempotente
+(`on_conflict=nombre_norm`) tanto desde los cotizadores internos
+(`shared/clientes-db.js`, nuevo) como desde `portal-admin`.
+
+**No reemplaza nada**: `pipeline.cliente`/`cquotes.Cliente` (texto libre)
+siguen siendo lo que se muestra siempre. `pipeline."clienteId"` es aditiva,
+nullable, y se resuelve en segundo plano al cambiar el campo Cliente —
+`cevenClienteIdParaNombre()` devuelve `null` si el nombre cambió mientras se
+esperaba la respuesta de la red, así que nunca se aplica el id de un cliente
+a la fila de otro, y nunca bloquea el guardado si la red tarda.
+
+Apple no tenía ni datalist de cliente ni ningún cableado de este tipo en su
+campo `#client` (Poly y Multi sí, con tier); se lo agregó parejo.
+
+**Backfill**: 21 clientes distintos ya existían en `pipeline` (todos de
+Poly — Apple tiene 0 filas de pipeline por el bug de `esFOB` de más abajo).
+Se corrió un dry-run primero, se revisó, y recién después se aplicó: 21
+clientes creados, 28 filas de `pipeline` con `clienteId` completado por match
+exacto de nombre normalizado. Nunca se tocó `pipeline.cliente` ni se borró
+nada. Caso a fusionar a mano cuando alguien tenga tiempo: "Gabriel Tosso" y
+"Tosso Gabriel" son casi seguro el mismo cliente con el nombre invertido — el
+backfill por match exacto los dejó como dos filas separadas, decisión
+deliberada (nunca fusionar de más, que es peor que fusionar de menos).
+
+### El chat IA no se construyó de nuevo — ya existía
+
+Hallazgo a mitad de sesión: el 18/08/2026 —un día antes de arrancar esto— ya
+se había construido toda la infraestructura del asistente IA (`api/asistente.js`,
+`src/shared/asistente.js`, tabla `asistente_usage` para el rate-limit), con el
+comentario de cabecera diciendo literalmente que era *"para el cotizador de
+clientes externos que se está por construir"*. Ya estaba integrada en Poly
+(botón "✨ Asistente IA"). El portal la reusó **tal cual, sin tocarle una
+línea** — solo se escribieron los tres hooks que el módulo ya pedía
+(`_asisCatalogoCompacto`/`_asisItemsActuales`/`_asisAplicarSeleccion`), mismo
+patrón que ya usaba `poly/js/catalog.js`.
+
+### Lo que arma un pedido del portal
+
+`src/portal/` (14 archivos): login propio con su propia clave de
+`localStorage` (`ceven_portal_auth_session`, **no** la del staff — mismo
+origin, así que reusar la clave pisaría la sesión de un vendedor con las dos
+pestañas abiertas), onboarding de una sola vez, selector de marca (recarga el
+catálogo entero al cambiar, nunca mezcla dos marcas en memoria), catálogo +
+carrito + chat IA en la misma pantalla, clientes finales propios (CRUD
+directo por REST, RLS ya filtra "los míos"), logo propio (Storage
+`portal-logos`, no el mecanismo `clogo`/`app_settings` de los cotizadores
+internos — ese se descarga completo cada 15 s por cada sesión de staff
+abierta, sumarle un logo por cliente-canal habría agravado ese problema
+latente), PDF con dos logos (el del canal + el de Ceven, siempre) e historial
+propio.
+
+El PDF y el "Enviar pedido" arman el documento con la **respuesta confirmada
+del servidor**, nunca con los números que tenía el carrito local — pueden
+haber cambiado entre que se armó el pedido y se emitió.
+
+En el pipeline interno, la fila que genera un pedido del portal lleva
+`"origenPortalId"` (badge "portal" agregado en `pipeline-view.js` de Apple y
+Poly) y `ejecutivo:'—'` a propósito: no hay un vendedor real todavía, así que
+solo un admin puede tocarla hasta que alguien la reasigne
+(`cevenCanEditPipelineRow` ya hace esa cuenta con cualquier ejecutivo que no
+matchee).
+
+### Verificación
+
+Ninguna, más allá de lo estático: los 18 `scripts/check-*.js` existentes
+siguen pasando (confirmando que Fase 0 no rompió nada de los cotizadores
+internos — `check-multi.js`, `check-emitir.js` y `check-pipe-roundtrip.js`
+son los que más importaban acá), `node --check` sobre los 12 `.js` nuevos del
+portal, y `scripts/check-portal-pricing-parity.js` (nuevo, 10/10) para la
+paridad de precios. Los `get_advisors(security)` de Supabase se corrieron
+después de cada migración: sin warnings nuevos en ninguna.
+
+**Lo que NO se probó**: ninguna llamada HTTP real a las tres Edge Functions,
+ni el flujo completo en un navegador. El usuario cortó la verificación en
+vivo a mitad de sesión ("no verifiques, hacelo bien de una"). El riesgo
+residual más concreto es el `eval` indirecto para cargar `_shared/pricing/`
+en runtime: si el path relativo no resolviera bien en el bundle desplegado,
+el fallo es un 500 limpio (ya hay try/catch), nunca un precio mal calculado
+en silencio — pero sigue siendo el primer lugar para mirar si algo falla.
+
+### Fase 3, mismo día: panel de staff + estado sincronizado
+
+Dos agregados chicos, después de que el usuario pausó la Fase 2 (mail) porque
+instalar Resend pedía aceptar términos en el navegador — algo que solo puede
+hacer él.
+
+**Alta de clientes-canal desde el shell**: hasta acá la única forma de dar de
+alta una cuenta era `curl` a mano contra `portal-admin`. Se agregó el modal
+🧑‍💼 "Clientes del portal" (`shared/portal-clientes-admin.js`), calcado del
+modal "👤 Usuarios" que ya existía (`cevenOpenUsers`/`cevenRenderUsers` en
+`auth.js`): mismo patrón de `navbar.js` pintando el botón solo si el modal
+`#ceven-portal-modal` existe en la página (así solo aparece en el shell), y
+la misma Edge Function ya desplegada. El nombre del cliente en el alta es
+texto libre a propósito — `portal-admin` ya resuelve-o-crea por
+`nombre_norm`, así que si el nombre coincide con un cliente que un vendedor
+ya cargó, se reusa esa fila de `clientes` en vez de duplicarla.
+
+**El cliente ve el estado de su pedido sin poder leer `pipeline`**: un
+trigger (`trg_portal_sync_estado`, `AFTER UPDATE OF estado ON pipeline`,
+`WHEN (old.estado IS DISTINCT FROM new.estado)`) copia el nuevo estado hacia
+`portal_solicitudes.estado_ceven` cada vez que un vendedor cambia el estado
+de la fila que originó ese pedido. El `WHEN` es la parte que importa: sin
+él, cualquier `PATCH` que hace `sync.js` en el poll de 15 s dispararía el
+trigger aunque no tocara `estado`.
+
+La función del trigger es `security definer` (`portal_solicitudes` no tiene
+policy de UPDATE para `authenticated`, así que el trigger necesita correr con
+los privilegios del owner) — y ahí `get_advisors` marcó algo que valía la
+pena arreglar: Postgres le da `EXECUTE` a `PUBLIC` por default en cualquier
+función nueva de `public`, así que quedaba invocable por `anon`/
+`authenticated` vía `/rest/v1/rpc/portal_sync_estado_desde_pipeline` — aunque
+llamarla directo ya falla sola (es una función de trigger, necesita
+`NEW`/`OLD` de verdad), se revocó `EXECUTE` igual, mismo criterio que ya
+aplica el resto del repo a las funciones privilegiadas. Confirmado con
+`get_advisors` después: vuelve a quedar en los dos warnings de siempre, sin
+nada nuevo.
+
+### Pendiente
+
+- Probar el flujo completo en un navegador: alta de un cliente-canal desde
+  el shell (🧑‍💼), login, onboarding, cotizar (catálogo y chat IA), cliente
+  final + logo, emitir, y confirmar la fila en el pipeline interno con el
+  badge y el monto correcto.
+- Fase 2 (notificaciones por mail): **bloqueada** en instalar Resend — el
+  usuario tiene que aceptar los términos en
+  `vercel.com/ceven1/~/integrations/accept-terms/resend` antes de reintentar
+  `vercel integration add resend/resend-email --no-claim --non-interactive`.
+- El portal no tiene PWA/offline (no está en `src/sw.js`, no carga
+  `shared/pwa.js`) — sin verificar cómo interactuaría con el service worker
+  ya activo en `/`.
+- `shared/session-core.js`: descartado por ahora (ver Fase 3 arriba), no
+  bloquea nada.
 
 ---
 

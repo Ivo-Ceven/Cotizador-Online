@@ -108,7 +108,7 @@
     <div class="g2">
       <!-- Al salir del campo se propone el nivel de precio con el que se le
            cotizó la última vez a ese cliente (shared/clientes.js). -->
-      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="aplicarTierDelCliente()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
+      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
       <div><label class="lbl">OPG <span style="color:#6e6e73;font-weight:400">— opcional, solo si la marca asignó precio especial</span></label><input id="opg" type="text" placeholder="Dejar vacío si no aplica" list="opg-datalist"><datalist id="opg-datalist"></datalist></div>
       <!-- Sin datalist a propósito, al revés que OPG: dos proyectos distintos
            pueden llamarse parecido y autocompletar invitaría a pisar uno con
@@ -477,6 +477,8 @@
 <script src="../shared/catalog-core.js"></script>
 <script src="js/catalog.js"></script>
 <script src="../shared/clientes.js"></script>
+<!-- clientes-db.js: tabla real `clientes`, complementa a clientes.js -->
+<script src="../shared/clientes-db.js"></script>
 <!-- pricing-core.js ANTES que tiers.js: las cuentas de precio por nivel, sin
      DOM, que esta marca comparte con el cotizador multimarca. -->
 <script src="js/pricing-core.js"></script>

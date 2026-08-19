@@ -96,6 +96,7 @@ function _emitirFilaComun(qn, ctx, now){
     fechaISO: now.iso,
     qNum: qn,
     cliente: ctx.cliente,
+    clienteId: ctx.clienteId || null,
     proyecto: ctx.proyecto || '—',
     ejecutivo: ctx.ejecutivo || '—',
     mesCierre: ctx.mesCierre || '',
@@ -145,6 +146,10 @@ function cevenEmitirPlanMarca(brand, lineas, ctx, remoto, yaEmitido){
     if(previa.ovLink !== undefined)  fila.ovLink  = previa.ovLink;
     if(previa.factura !== undefined) fila.factura = previa.factura;
     if(previa.opg)                   fila.opg     = previa.opg;
+    // clienteId: solo se pisa con un valor fresco. Si esta emisión no lo pudo
+    // resolver (recién cargó la página, no se tocó el campo Cliente), se
+    // conserva el de la fila anterior en vez de perderlo en cada re-emisión.
+    if(fila.clienteId == null && previa.clienteId != null) fila.clienteId = previa.clienteId;
   } else {
     fila.id = cevenEmitirNuevoId();
   }
@@ -293,6 +298,7 @@ function cevenEmitirContexto(){
     hora:  now.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'}),
     fechaISO: now.toISOString(),
     cliente:   _v('client').trim() || '—',
+    clienteId: (typeof cevenClienteIdParaNombre === 'function') ? cevenClienteIdParaNombre(_v('client')) : null,
     proyecto:  _v('proyecto').trim() || '—',
     opg:       _v('opg').trim(),
     ejecutivo: (typeof cevenExecActual === 'function' ? cevenExecActual() : _v('exec')) || '—',

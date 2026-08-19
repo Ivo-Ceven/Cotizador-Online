@@ -31,6 +31,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos. **No quedan diálogos nativos en ninguna marca** (desde 10/08/2026 en Apple): un error o una validación se avisa con `showToast()`, y una acción destructiva se **aplica** y se ofrece `notifyUndo()` en vez de preguntar antes. `confirmModal()` queda reservado para lo irreversible que además recarga la página (restaurar un backup). El motivo no es estético: `alert()` congela el renderer —y con él cualquier driver de test— y en la PWA se ve como un cartel del navegador, no de la app |
 | `todos.js` | Tareas del equipo: **store y sincronización**, no UI (tablas `todos` y `equipos` + RPC `ceven_equipo`, poll cada 15 s). Expone `window.cevenTareas`. Lo usan el shell (solo para la pastilla de pendientes) y `tareas/js/board.js`. Ojo con los nombres: `personas()` es la **gente**, `equipos()` son los **tableros** |
 | `clientes.js` | Ficha por cliente (hoy: el nivel de precio con el que se le cotiza) y el `<datalist>` del campo Cliente. Define **`cevenNormClient()`**, la forma canónica de un nombre de cliente — vive acá y no en `pipeline-group.js` desde el 12/08/2026: el pipeline **agrupa** por cliente, no lo define, y con la dependencia al revés una página con clientes pero sin pipeline (el multimarca) reventaba al guardar. Va **antes** de `pipeline-group.js` |
+| `clientes-db.js` | Complementa a `clientes.js` con la tabla real `clientes` de Supabase (Fase 0 del portal, agosto 2026): resuelve-o-crea por `nombre_norm` al cambiar el campo Cliente (`cevenClienteCambio()`), sin bloquear el guardado si la red tarda — `cevenClienteIdParaNombre()` devuelve `null` en vez de un id viejo si el nombre cambió mientras se esperaba la respuesta. El `id` resuelto viaja como `pipeline."clienteId"` (aditiva, nunca pisa el texto libre `cliente`) |
 | `equipo.js` | **Quiénes son las personas de Ceven**, para poder elegir una en un campo (hoy: el Ejecutivo del multimarca). Sale de la RPC `ceven_equipo()`, que es la única fuente legible por un no-admin: `admin-users` responde 403 a todo el que no sea `admin@ceven.com`. `cevenEquipoVendedores()` filtra a los roles que cotizan (**admin** y **ventas**) y `cevenLlenarExec()` llena el `<select>` sin deshabilitarlo nunca. Comparte la caché (`ceven_equipo_cache`) con `todos.js`: mismo dato, misma RPC |
 | `comprobante.js` | Comprobante de una cotización (botón 🧾 en cada tarjeta del historial, en las dos marcas). **Se descarga como PDF y se abre solo.** Se dibuja con jsPDF + autotable, no con html2canvas: el texto se selecciona y se busca, a diferencia de `pdf-core.js`, que rasteriza. Al ser todo sincrónico el `window.open` cae dentro del gesto del click y el navegador no lo bloquea. Los datos del emisor salen de `CEVEN_EMISOR` en `config.js`. Ojo con `cevenCompSan()`: las fuentes estándar del PDF no dibujan `– — “ ” …`, hay que pasar por ahí todo lo que se imprima |
 | `pwa.js` | Registro del service worker, aviso de versión nueva, botón instalar, pastilla de cambios pendientes |
@@ -190,6 +191,41 @@ en la lógica se prueba en `scripts/check-emitir.js`; la capa REST solo transpor
 > informando el resultado **por marca** (no un "listo" genérico) y con la
 > idempotencia: recuperarse es volver a emitir. Las filas de `pipeline` no
 > sufren esto, van fila por fila.
+
+## `src/portal/`: el portal de clientes-canal
+
+Autoservicio para revendedores (clientes-canal): cotizan con el catálogo real
+y el nivel de precio/margen que Ceven les asignó, le suman SU propio margen de
+reventa para su cliente final, y al emitir se crea la cotización REAL en el
+pipeline interno de la marca — marcada con `"origenPortalId"` (chapita
+"portal" en `pipeline-view.js` de Apple y Poly). No es una marca ni pertenece
+al staff: no carga `shared/auth.js`, `shared/sync.js` ni `brand.js` de ninguna
+marca. Ver `docs/BASE-DE-DATOS.md` § 1b para el modelo de datos completo
+(tablas `portal_*`, el claim de JWT ortogonal a `user_role`, las tres Edge
+Functions) y el plan "Portal de clientes-canal" para el porqué de cada
+decisión.
+
+| Archivo | Responsabilidad |
+|---|---|
+| `js/session.js` | Sesión GoTrue propia, con su propia clave de `localStorage` (`ceven_portal_auth_session`, **no** `ceven_auth_session` — el origin es el mismo que el shell/cotizadores, así que reusar la clave del staff pisaría su sesión). Define `cevenAuthedFetch()` con el mismo nombre y contrato que `shared/auth.js` a propósito: es lo que deja reusar `shared/asistente.js` sin tocarle una línea |
+| `js/state.js` | Marca activa, catálogo bajado, carrito, cliente final elegido — todo en memoria, nada en `localStorage` (el portal no es offline-first). También `cevenDelegate`/`cevenActEl`, copiados de `shared/ui-core.js` porque ese archivo no se puede cargar acá (sus IIFEs de arranque asumen `brand.js`/`state.js` de un cotizador interno) |
+| `js/onboarding.js` | El perfil que se completa una sola vez (`portal_perfiles`) |
+| `js/catalog.js` | Pide el catálogo a `portal-catalogo` (ya con precio) y pinta la grilla + el carrito, mismo patrón `_catRowHTML` que `multi/js/catalog-view.js` |
+| `js/pricing-client.js` | El markup de reventa, puro — no es plata de Ceven, no hace falta que sea "la misma cuenta en todos lados" como sí lo son `apple\|poly/js/pricing-core.js` |
+| `js/clientes-finales.js` | CRUD de los compradores del cliente-canal, directo por REST (RLS ya filtra "los míos") |
+| `js/logo.js` | Sube/muestra el logo propio (Storage `portal-logos`), no el mecanismo `clogo`/`app_settings` de los cotizadores |
+| `js/pdf.js` | El documento canal→cliente final: dos logos (el propio + el de Ceven, fijo) y precios de **reventa**, nunca los de Ceven. Reusa `shared/pdf-core.js` tal cual |
+| `js/emitir.js` | Llama a `portal-emitir`; arma el PDF con la respuesta CONFIRMADA del servidor, no con el carrito local |
+| `js/historial.js` | Los pedidos propios (`portal_solicitudes`), con costo Ceven y precio de reventa lado a lado — es su propia plata, no la fórmula interna |
+| `js/asistente-hooks.js` | Los tres hooks de `shared/asistente.js` (mismo patrón que `poly/js/catalog.js`): el chat no se construyó de nuevo, ya existía (`api/asistente.js`, agosto 2026) pensado explícitamente para este portal |
+| `js/boot.js` | Cablea formularios/botones y decide login / onboarding / app según la sesión |
+
+**Lo que NO carga y por qué**: `shared/auth.js` (domain check `@ceven.com`),
+`shared/sync.js` (asume RLS de staff y el blob `app_settings`), `shared/clientes.js`
+(la ficha local se reemplaza por `portal_clientes_finales`, tabla real con RLS),
+`shared/ui-core.js` (sus IIFEs de arranque dependen del `state.js` de un
+cotizador interno), `shared/pwa.js` (sin instalación PWA en esta primera
+versión — pendiente).
 
 ## `src/tareas/`: el tablero del equipo
 

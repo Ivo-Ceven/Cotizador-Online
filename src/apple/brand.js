@@ -34,12 +34,12 @@ window.CEVEN_BRAND = {
     {nombre: 'warrantyItems', get: function(){ return warrantyItems; }, set: function(v){ warrantyItems = v; }}
   ],
 
-  pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','ejecutivo','mesCierre','estado',
+  pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','ejecutivo','mesCierre','estado',
     'qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad','montoAcc','montoServ',
     'monto','margenPond','moneda','skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',
     'skuPartialRemMes','skuArchivedQty','ovLink','esFOB','perdidoMotivo','fechaMod'],
 
-  numCols: ['id','qNum','qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad',
+  numCols: ['id','qNum','clienteId','qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad',
     'montoAcc','montoServ','monto','margenPond'],
 
   // Columnas jsonb: viajan como objeto nativo, no como string.
@@ -55,7 +55,7 @@ window.CEVEN_BRAND = {
   // Escalares que aceptan NULL: hay que emitirlos explicitamente como null.
   // Si se omiten del payload, PostgREST conserva el valor viejo y el poll lo
   // vuelve a traer, dejando el pipeline en un ciclo de revert infinito.
-  nullableCols: ['ovLink','proyecto','mesCierre'],
+  nullableCols: ['ovLink','proyecto','mesCierre','clienteId'],
 
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   // El poll tiene que preservarlos al mergear las filas del servidor.

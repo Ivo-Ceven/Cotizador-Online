@@ -172,6 +172,97 @@ Dos decisiones que conviene no revertir sin entenderlas:
 
 Efecto secundario esperado: un cambio de rol no es inmediato — se aplica cuando el usuario refresca el token (~1 h) o vuelve a entrar. Para forzarlo, cerrarle la sesión.
 
+## 1b. `clientes` y el portal de clientes-canal
+
+Dos piezas nuevas (agosto 2026), pensadas para que el equipo interno y el
+portal de autoservicio compartan la misma noción de "quién es el cliente" sin
+que un cliente-canal externo pueda tocar `pipeline`/`app_settings`, que
+siguen exigiendo `ceven_is_staff()` sin ninguna excepción.
+
+**`public.clientes`** — tabla madre, compartida por Apple/Poly/Multi y el
+portal. Complementa (no reemplaza) el texto libre `pipeline.cliente` /
+`cquotes.Cliente`, que sigue siendo lo que se muestra siempre.
+
+```sql
+create table public.clientes (
+  id bigint generated always as identity primary key,
+  nombre text not null,
+  nombre_norm text generated always as (lower(regexp_replace(btrim(nombre), '\s+', ' ', 'g'))) stored,
+  email text, telefono text, cuit text, domicilio text,
+  poly_tier text, apple_margen numeric,   -- lo que Ceven le da a este cliente
+  notas text, created_by text, created_at timestamptz, updated_at timestamptz
+);
+```
+
+`nombre_norm` (columna **generada**) usa el mismo criterio que
+`cevenNormClient()` (`shared/clientes.js`) y tiene índice único: el alta desde
+los cotizadores internos (`shared/clientes-db.js`) y desde `portal-admin` hace
+upsert por ese índice (`on_conflict=nombre_norm`), así que un cliente que ya
+existía no se duplica. RLS: `select` para todo el staff, `insert`/`update`
+solo para quien no sea `lector` (mismo patrón que `pipeline`); sin `delete`.
+
+`pipeline."clienteId"` (bigint, FK a `clientes.id`, nullable) es la columna
+aditiva que liga una fila del pipeline a su cliente real — la escriben tanto
+`addToPipeline()` de cada marca como `portal-emitir`.
+
+**Portal de clientes-canal** — un cliente-canal (revendedor) nunca es
+`@ceven.com` y nunca tiene acceso directo a `pipeline`/`app_settings`. Su
+identidad es un claim de JWT **ortogonal** al de staff (`user_role`),
+inyectado por el mismo `custom_access_token_hook` en una rama aparte que no
+toca la lógica de staff:
+
+```sql
+-- rama nueva del hook, ver supabase/migrations/<...>_portal_clientes_canal.sql
+select pc.id, pc.status into v_portal_id, v_portal_status
+from public.portal_clientes pc where pc.user_id = (event->>'user_id')::uuid;
+-- si existe: claims.portal_client_id / claims.portal_client_status
+```
+
+Helpers: `ceven_portal_client_id()` (el id, o null) y `ceven_is_portal_client()`
+(activo o no) — mismo estilo `stable`/`set search_path=''` que `ceven_is_staff()`.
+
+| Tabla | Qué guarda | RLS |
+|---|---|---|
+| `portal_clientes` | El login: `cliente_id` (FK a `clientes`, único), `user_id` (FK a `auth.users`, único), `email`, `status`. Solo la escribe `service_role` (Edge Function `portal-admin`) | `select` propio (`user_id = auth.uid()`) |
+| `portal_perfiles` | Lo que completa el cliente-canal (razón social, CUIT, `markup_default_pct`, `perfil_completo`). Tabla **aparte** de `portal_clientes` para que ninguna policy de update pueda dejarlo tocar su propio `status` | `select`/`insert`/`update` propios (`portal_client_id = ceven_portal_client_id()`) |
+| `portal_clientes_finales` | Los compradores DEL cliente-canal (externos a Ceven, no confundir con `clientes`). `markup_pct` nullable = usa el default del perfil | CRUD propio completo |
+| `portal_solicitudes` | Historial de lo emitido: `total_ceven` (lo que entra al pipeline/forecast — nunca el de reventa), `total_reventa`, `markup_pct_aplicado`, `pipeline_brand`/`pipeline_id`/`pipeline_qnum` (correlación informativa, sin FK), `estado_ceven` (sincronizado, ver abajo) | Solo `select` propio — el insert es exclusivo de `service_role` |
+| `portal_solicitud_items` | Detalle por SKU de cada solicitud: `precio_ceven` y `precio_reventa` | `select` propio, vía subquery a `portal_solicitudes` |
+
+`pipeline."origenPortalId"` (uuid, FK a `portal_clientes`, nullable) marca qué
+fila del pipeline interno vino de un pedido del portal — es lo que pinta la
+chapita "portal" en `pipeline-view.js` de Apple y Poly.
+
+**Storage**: bucket `portal-logos` (privado, 2 MB, solo imágenes), path
+`<portal_client_id>/logo.<ext>`, policies por carpeta contra
+`ceven_portal_client_id()`. Deliberadamente NO es el mecanismo `clogo`/
+`app_settings` de los cotizadores internos (blob que el staff se baja entero
+cada 15 s).
+
+**Estado sincronizado**: trigger `trg_portal_sync_estado`
+(`after update of estado on pipeline`, `when (old.estado is distinct from
+new.estado)`) copia `estado` hacia `portal_solicitudes.estado_ceven` por
+`(pipeline_brand, pipeline_id)` — es cómo el cliente-canal ve en qué va su
+pedido sin poder leer `pipeline`. La función (`portal_sync_estado_desde_pipeline()`)
+es `security definer` (necesaria porque `portal_solicitudes` no tiene policy
+de `update` para `authenticated`) con `execute` revocado de `public`/`anon`/
+`authenticated` — Postgres lo otorga por default en toda función nueva de
+`public`, y `get_advisors` lo marca aunque una función de trigger no se pueda
+invocar por RPC directo (falla igual, sin `NEW`/`OLD` de verdad).
+
+**Alta desde el shell**: además de `curl`, hay un panel 🧑‍💼 "Clientes del
+portal" en `src/index.html` (`shared/portal-clientes-admin.js`, admin-only),
+calcado del modal de Usuarios existente.
+
+**Edge Functions del portal** (`supabase/functions/`, mismo patrón que
+`admin-users`: `service_role` + validación server-side de quién llama):
+
+| Función | Qué hace |
+|---|---|
+| `portal-admin` | Alta/gestión de cuentas (solo `admin@ceven.com`). Resuelve o crea la fila de `clientes`, fija tier/margen, crea el usuario de auth y la fila de `portal_clientes` en la misma pasada — si el alta de `portal_clientes` falla, deshace el usuario recién creado en vez de dejarlo huérfano |
+| `portal-catalogo` | Catálogo de una marca con el precio YA calculado para ese cliente (tier de Poly / margen de Apple). Nunca expone costo ni margen interno — el cliente-canal no puede leer `app_settings` con su propio JWT |
+| `portal-emitir` | Recibe solo `{brand, items:[{sku,qty}], ...}` (intención) y RECALCULA el precio server-side con una copia byte a byte de `apple\|poly/js/pricing-core.js` (`supabase/functions/_shared/pricing/`, verificada por `scripts/check-portal-pricing-parity.js`). Escribe la fila real en `pipeline` + `cquotes`/`cqc` de la marca y el historial propio del portal |
+
 ## 2. Autenticación (GoTrue)
 
 - Proveedor **Email/Password** habilitado, sin confirmación por mail (los usuarios los crea el admin ya confirmados).

@@ -779,6 +779,9 @@ function renderPipeline(){
     // Badge para identificar filas virtuales
     var _hasArchived = r.skuArchivedQty && Object.keys(r.skuArchivedQty).length > 0;
     var virtualBadge = ((isVirtual && r._isPartial) || _hasArchived) ? '<span style="background:#f0f0f3;color:#6e6e73;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Facturación parcial: parte de esta cotización fue facturada en un mes anterior">parcial</span>' : '';
+    // Pedido que un cliente-canal mandó él mismo desde el portal (Fase 1).
+    // Solo lee el flag de la fila — no hace falta tocar shared/pipeline-status.js.
+    var portalBadge = r.origenPortalId ? '<span style="background:#eef2ff;color:#4338ca;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Pedido enviado por el cliente desde el portal">portal</span>' : '';
     // Tinte de fila según estado (mismo color de la pill)
     var rowTintInfo = cevenEstadoRow(estado);
     var rowTint = rowTintInfo.bg;
@@ -795,7 +798,7 @@ function renderPipeline(){
       +'</td>'
       +'<td style="text-align:center;white-space:nowrap">'+_pipeModificadoChip(r)+'</td>'
       +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
-      +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+virtualBadge
+      +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+virtualBadge+portalBadge
         /* Chapita de opción A/B: solo aparece si esa cotización tiene dos, y
            desde ahí se cambia cuál suma (shared/opciones.js). */
         +cevenOpcChipPipeHTML(pipeDB.filter(function(x){ return x['N° Cotización'] === r.qNum; }), ' data-pact="opc"'+rowA)

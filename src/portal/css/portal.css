@@ -1,0 +1,23 @@
+/* ============================================================
+   PORTAL · portal.css
+   ------------------------------------------------------------
+   Lo que no cubre shared/css/base.css: las pestañas propias del
+   portal y los chips de marca (en las otras apps viven en un
+   <style> inline de multi/index.html — acá el mismo criterio,
+   en archivo aparte porque el portal no tiene un brand.js que
+   los centralice).
+   ============================================================ */
+
+.ptab{
+  background:none;border:none;border-radius:8px;padding:6px 12px;
+  font-size:13px;font-weight:500;cursor:pointer;color:var(--ct2);font-family:inherit;
+}
+.ptab:hover{background:var(--c0)}
+.ptab.on{background:var(--c1);color:var(--ct1);box-shadow:var(--sh1)}
+
+.mk{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.mk-apple{background:#e8f2fd;color:#0071e3}
+.mk-poly{background:#f1e9fd;color:#7c3aed}
+
+body[data-theme="dark"] .mk-apple, body.dark .mk-apple{background:rgba(0,113,227,.18);color:#5aa9f5}
+body[data-theme="dark"] .mk-poly, body.dark .mk-poly{background:rgba(124,58,237,.2);color:#b48cf2}

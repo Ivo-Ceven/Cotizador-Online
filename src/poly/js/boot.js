@@ -11,6 +11,7 @@ if(typeof refreshOpgDatalist === 'function') refreshOpgDatalist();
 // que un typo cree un cliente "nuevo" que aparece como grupo aparte en el
 // pipeline y con su propio nivel de precio. Ver shared/clientes.js.
 if(typeof cevenRefreshClienteDatalist === 'function') cevenRefreshClienteDatalist();
+if(typeof cevenClientesDbRefreshDatalist === 'function') cevenClientesDbRefreshDatalist();
 
 // ── EJECUTIVOS (#exec) ──────────────────────────────────────────────────
 // Dos defectos que se sumaban y dejaban el campo Ejecutivo inservible:

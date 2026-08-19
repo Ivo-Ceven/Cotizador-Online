@@ -38,10 +38,10 @@ window.CEVEN_BRAND = {
      existe.
 
      Sin familias Apple (qMac/qIph/...) ni margen: eso sigue siendo de Apple. */
-  pipeCols: ['id','fecha','fechaISO','qNum','cliente','proyecto','opg',
+  pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','opg',
     'ejecutivo','mesCierre','estado','monto','moneda','factura'],
 
-  numCols: ['id','qNum','monto'],
+  numCols: ['id','qNum','clienteId','monto'],
 
   // Columnas jsonb: ninguna desde que se fue `salas`.
   objCols: [],
@@ -62,7 +62,7 @@ window.CEVEN_BRAND = {
   // Es ademas el caso que motivo `nullableCols`: al vaciar el campo se seteaba null,
   // el upsert omitia la columna, PostgREST conservaba el numero viejo y el poll
   // lo revertia — re-renderizando la tabla cada 15s para siempre.
-  nullableCols: ['opg','factura','mesCierre','proyecto'],
+  nullableCols: ['opg','factura','mesCierre','proyecto','clienteId'],
 
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   localOnlyCols: [],

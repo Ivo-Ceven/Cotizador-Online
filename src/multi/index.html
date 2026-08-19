@@ -112,7 +112,7 @@
     <div class="g2">
       <div>
         <label class="lbl">Cliente</label>
-        <input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="aplicarTierDelCliente()" style="font-size:14px;font-weight:500">
+        <input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500">
         <datalist id="cliente-datalist"></datalist>
       </div>
       <!-- Proyecto es obligatorio para emitir: el pipeline de Poly lo exige. -->
@@ -316,6 +316,8 @@
 <!-- opciones.js define el estado A/B y lo lee todo lo que suma importes -->
 <script src="../shared/opciones.js"></script>
 <script src="../shared/clientes.js"></script>
+<!-- clientes-db.js: tabla real `clientes`, complementa a clientes.js -->
+<script src="../shared/clientes-db.js"></script>
 <!-- El equipo (RPC ceven_equipo): llena el selector de Ejecutivo -->
 <script src="../shared/equipo.js"></script>
 

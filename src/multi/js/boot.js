@@ -59,6 +59,7 @@
   }
 
   if(typeof cevenRefreshClienteDatalist === 'function') cevenRefreshClienteDatalist();
+  if(typeof cevenClientesDbRefreshDatalist === 'function') cevenClientesDbRefreshDatalist();
 
 })();
 
