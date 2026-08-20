@@ -76,6 +76,11 @@
      cambiarlo acá. */
   .mucard{width:100%;max-width:400px;--acc:#0f6b62}
   .tcard .mcard-mark{display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--c3);border-radius:10px}
+  /* Acceso al portal de clientes-canal, en vista cliente, para que un admin lo
+     pueda probar sin salir del shell a mano cada vez. Admin-only —lo esconde
+     cevenSyncUserUI() en auth.js, mismo criterio que el botón 👤 Usuarios—
+     porque es una herramienta de test, no algo que un vendedor necesite. */
+  .pcard{width:100%;max-width:400px;--acc:#a15c00}
   /* Pendientes: el único dato del tablero que sigue estando en el shell — para
      eso está la tarjeta, para no tener que entrar a ver si hay algo. */
   #tareas-badge{display:inline-block;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:#fff;background:var(--acc);border-radius:980px;padding:3px 9px;margin-top:6px}
@@ -185,6 +190,20 @@
         <b>Tareas del equipo</b>
         <span>To do · Doing · Done, con miembros delegados</span>
         <span id="tareas-badge" data-vacio="1">Al día</span>
+      </span>
+      <span class="mcard-go" aria-hidden="true">→</span>
+    </a>
+    <!-- Vista cliente del portal, solo para probarlo. Oculta hasta que
+         cevenSyncUserUI() (auth.js) confirme que sos admin. Abre en pestaña
+         nueva: el portal usa su propia clave de localStorage, así que no pisa
+         la sesión de staff, pero separar la pestaña evita cualquier confusión
+         de estar "en el cotizador de un cliente" mientras se sigue trabajando. -->
+    <a class="mcard pcard" id="ceven-portal-test-card" href="portal/" target="_blank" rel="noopener" title="Abrir el portal como lo ve un cliente-canal (para testear)" style="display:none">
+      <span class="mcard-mark" aria-hidden="true">🧪</span>
+      <span class="mcard-body">
+        <b>Portal · vista cliente</b>
+        <span>Probar el cotizador como lo ve un cliente-canal</span>
+        <span class="badge">Solo admin</span>
       </span>
       <span class="mcard-go" aria-hidden="true">→</span>
     </a>

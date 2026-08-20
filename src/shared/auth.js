@@ -177,6 +177,8 @@ function cevenShowApp(){
 function cevenSyncUserUI(){
   var ubtn = document.getElementById('ceven-users-btn');
   if(ubtn) ubtn.style.display = cevenIsAdmin() ? '' : 'none';
+  var ptcard = document.getElementById('ceven-portal-test-card');
+  if(ptcard) ptcard.style.display = cevenIsAdmin() ? '' : 'none';
   var pbtn = document.getElementById('btn-add-pipeline');
   if(pbtn) pbtn.style.display = cevenCanUsePipeline() ? '' : 'none';
   if(typeof cevenNavbarSync === 'function') cevenNavbarSync();
