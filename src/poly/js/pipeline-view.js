@@ -373,7 +373,14 @@ function _pipeTablaHTML(filas, scope, opts){
           // Pedido que un cliente-canal mandó él mismo desde el portal (Fase 1).
           // El cliente ya se agrupa arriba (ver comentario de más arriba), así
           // que acá es donde va: junto al proyecto, que es lo propio de la fila.
-          +(r.origenPortalId ? '<span style="background:#eef2ff;color:#4338ca;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Pedido enviado por el cliente desde el portal">portal</span>' : '')
+          // origenPortalEstado/origenPortalMotivo son espejo de solo lectura de
+          // lo que el cliente-canal carga sobre SU venta (trigger
+          // trg_portal_sync_estado_cliente) — nunca el motivo interno de Ceven.
+          +(r.origenPortalId ? '<span style="background:#eef2ff;color:#4338ca;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Pedido enviado por el cliente desde el portal">portal</span>'
+            +(r.origenPortalEstado ? ' <span style="background:#f0f0f3;color:#6e6e73;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:2px" title="Estado propio del cliente-canal frente a su cliente final">'+cevenEsc(r.origenPortalEstado)+'</span>' : '')
+            +(r.origenPortalEstado === 'Perdido' && r.origenPortalMotivo && r.origenPortalMotivo.motivo
+                ? ' <span title="Motivo del cliente-canal: '+cevenEsc(r.origenPortalMotivo.motivo + (r.origenPortalMotivo.detalle ? ': '+r.origenPortalMotivo.detalle : ''))+'" style="cursor:help">💬</span>'
+                : '') : '')
           +' <span style="color:#6e6e73;font-size:11px;white-space:nowrap">▸</span>'
         +'</div></td>'
         +'<td style="font-size:12px;white-space:nowrap">'+celdaMes+'</td>'

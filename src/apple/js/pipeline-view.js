@@ -781,7 +781,14 @@ function renderPipeline(){
     var virtualBadge = ((isVirtual && r._isPartial) || _hasArchived) ? '<span style="background:#f0f0f3;color:#6e6e73;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Facturación parcial: parte de esta cotización fue facturada en un mes anterior">parcial</span>' : '';
     // Pedido que un cliente-canal mandó él mismo desde el portal (Fase 1).
     // Solo lee el flag de la fila — no hace falta tocar shared/pipeline-status.js.
-    var portalBadge = r.origenPortalId ? '<span style="background:#eef2ff;color:#4338ca;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Pedido enviado por el cliente desde el portal">portal</span>' : '';
+    // origenPortalEstado/origenPortalMotivo son ESPEJO de solo lectura de lo
+    // que el cliente-canal carga sobre SU venta a su cliente final (trigger
+    // trg_portal_sync_estado_cliente) — nunca perdidoMotivo, que es de Ceven.
+    var portalBadge = r.origenPortalId ? '<span style="background:#eef2ff;color:#4338ca;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:6px" title="Pedido enviado por el cliente desde el portal">portal</span>'
+      + (r.origenPortalEstado ? ' <span style="background:#f0f0f3;color:#6e6e73;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:2px" title="Estado propio del cliente-canal frente a su cliente final">' + cevenEsc(r.origenPortalEstado) + '</span>' : '')
+      + (r.origenPortalEstado === 'Perdido' && r.origenPortalMotivo && r.origenPortalMotivo.motivo
+          ? ' <span title="Motivo del cliente-canal: ' + cevenEsc(r.origenPortalMotivo.motivo + (r.origenPortalMotivo.detalle ? ': ' + r.origenPortalMotivo.detalle : '')) + '" style="cursor:help">💬</span>'
+          : '') : '';
     // Tinte de fila según estado (mismo color de la pill)
     var rowTintInfo = cevenEstadoRow(estado);
     var rowTint = rowTintInfo.bg;

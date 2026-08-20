@@ -18,17 +18,13 @@ archivo contiene la arquitectura y las decisiones necesarias para continuar.
 
 ### Fase 1 — Portal de clientes-canal
 
-- **Estado: HECHA end-to-end** (19/08/2026): hook de JWT extendido, tablas
-  `portal_*` con RLS, bucket de Storage `portal-logos`, las tres Edge
-  Functions (`portal-admin`, `portal-catalogo`, `portal-emitir`) desplegadas,
-  y la app `src/portal/` completa (14 archivos) con el chat IA reutilizado
-  sin tocarlo.
-- **Pendiente: no se probó en un navegador ni con una llamada HTTP real.**
-  El usuario cortó la verificación en vivo a mitad de la sesión ("no
-  verifiques, hacelo bien de una"). Antes de dar el portal por productivo
-  falta como mínimo: dar de alta un cliente-canal de prueba (ahora se puede
-  desde el shell, 🧑‍💼 "Clientes del portal", en vez de `curl` a mano) y
-  recorrer el flujo completo.
+- **Estado: HECHA y probada con HTTP real** (20/08/2026). El 19/08 quedó
+  construida de punta a punta pero sin probar en un navegador; el 20/08 se
+  probó de verdad (con el card admin-only 🧪 "Portal · vista cliente") y
+  aparecieron dos bugs de producción reales — ver la entrada del 20/08 más
+  abajo: "Portal probado en vivo: catálogo 500, RLS de Mis clientes,
+  seguimiento propio del cliente-canal". Los dos quedaron arreglados y
+  deployados.
 - El portal no tiene PWA/offline (no carga `shared/pwa.js`, no está en
   `src/sw.js`) — decisión deliberada, sin verificar cómo interactuaría con el
   service worker ya activo en `/`.
@@ -83,8 +79,10 @@ marcha, HP pendiente. PWA instalable y funcional offline. Base Supabase
 Desde el 19/08/2026 hay además una tabla `clientes` real compartida por todas
 las marcas (con backfill aplicado) y un **portal de autoservicio para
 clientes-canal** (`src/portal/`, cuentas separadas del staff, nunca
-`@ceven.com`) construido de punta a punta pero **sin probar en un navegador
-todavía** — ver "Estado de avance" arriba y la entrada completa más abajo.
+`@ceven.com`), ya probado con HTTP real el 20/08/2026 (ver "Estado de avance"
+arriba y la entrada del 20/08 más abajo) — catálogo, alta de clientes finales,
+y un seguimiento propio del cliente-canal (estado + motivo de pérdida frente a
+SU cliente final) que se ve espejado en el pipeline interno de Ceven.
 
 ---
 
@@ -128,6 +126,89 @@ base** porque venía en ese archivo. Ver la entrada del 12/08 más abajo.
 
 Los signups públicos están cerrados: la única alta es la Edge Function
 `admin-users`.
+
+---
+
+## 20/08/2026 · Portal probado en vivo: catálogo 500, RLS de Mis clientes, seguimiento propio del cliente-canal
+
+Primera vez que el portal (construido el 19/08, ver entrada de abajo) se probó
+con un navegador y llamadas HTTP reales, usando el card admin-only 🧪
+"Portal · vista cliente" agregado en `9bb7fd2`. Aparecieron tres problemas
+reales, uno detrás del otro.
+
+### 1. Catálogo del portal: 500 siempre — `Deno.readTextFile` no funciona deployado
+
+`portal-catalogo`/`portal-emitir` cargaban `_shared/pricing/*.js` con
+`Deno.readTextFile` + eval indirecto (para colgar `var`/`function` en
+`globalThis` sin exports). Daba 500 con
+`NotFound: path not found: .../_shared/pricing/apple-pricing-core.js` en los
+logs, sin importar qué archivos se incluyeran en el deploy.
+
+Se confirmó con una función de diagnóstico temporal (`debug-fs`, deployada y
+borrada en la misma sesión) que **el runtime de Edge Functions de Supabase no
+da NINGÚN permiso de lectura de filesystem en producción** — ni siquiera puede
+leer su propio `index.ts` en ejecución. `Deno.readTextFile` ahí solo puede
+funcionar en `supabase functions serve` local; deployado, nunca.
+
+**Arreglo**: el código de `_shared/pricing/{apple,poly}-pricing-core.js` ahora
+va EMBEBIDO como string (`JSON.stringify`) dentro de
+`portal-catalogo/index.ts` y `portal-emitir/index.ts`, entre marcadores
+`BEGIN_PRICING_EMBED`/`END_PRICING_EMBED`. `_shared/pricing/*.js` sigue siendo
+la fuente de verdad (para el parity check contra `src/{apple,poly}/js/
+pricing-core.js`); `node scripts/build-portal-pricing-embeds.js` regenera los
+embeds después de tocarlo, y `scripts/check-portal-pricing-parity.js` ahora
+también falla si un embed queda desincronizado. Después de tocar el _shared,
+el flujo es: correr el build script → redeployar las dos funciones.
+
+### 2. "Mis clientes" del portal: RLS rechazaba el alta
+
+`clientes-finales.js` insertaba en `portal_clientes_finales` sin mandar
+`portal_client_id` — la columna es `NOT NULL` y la policy de INSERT exige
+`portal_client_id = ceven_portal_client_id()`, así que con NULL la fila
+siempre violaba RLS. `onboarding.js` sí lo hacía bien (mismo patrón, mandando
+el claim del JWT); se copió ese patrón. Ver commit `96fcec9`.
+
+### 3. Seguimiento propio del cliente-canal: pedido explícito del dueño de Ceven
+
+El pedido original ("hacé que el pipeline de los clientes sea completo") se
+aclaró en la conversación: **no** es exponerle al cliente-canal el pipeline
+interno de Ceven (`margenPond`, `perdidoMotivo` de Ceven nunca se tocan ni se
+exponen). Es lo opuesto en dos sentidos:
+
+- El cliente-canal necesita cargar **su propio** estado y motivo de pérdida
+  sobre la venta a SU cliente final — no existía ningún campo para eso.
+  Se agregó `portal_solicitudes.estado_cliente` (Cotizado/Negociación/
+  Ganado/Perdido) y `.motivo_perdida` (jsonb `{motivo, detalle}`, mismas 4
+  categorías fijas que ya usa el modal de Apple), editables por el cliente-
+  canal vía UPDATE con **grant restringido a columna** (no solo RLS de fila):
+  `authenticated` ya tenía UPDATE de tabla completa por default de Supabase,
+  así que sin el `revoke`+`grant (estado_cliente, motivo_perdida)` la policy
+  hubiera dejado tocar `portal_client_id` — o sea, "robarse" un pedido ajeno
+  cambiando el dueño.
+- El dueño de Ceven pidió expresamente **acceso total de lectura** sobre todo
+  lo que un cliente-canal carga (nunca al revés). Ninguna tabla `portal_*`
+  tenía policy de SELECT para staff — se agregó `ceven_is_staff()` en las 5
+  (mismo criterio que pipeline/clientes/app_settings/todos/equipos).
+- Y en vez de una pantalla nueva, el pedido fue verlo DENTRO del pipeline
+  interno existente: un trigger (`trg_portal_sync_estado_cliente`, espejo en
+  sentido inverso de `trg_portal_sync_estado`) copia
+  `estado_cliente`/`motivo_perdida` a dos columnas nuevas de `pipeline`
+  (`origenPortalEstado`/`origenPortalMotivo`) cada vez que el cliente-canal
+  las cambia. No hizo falta tocar `pipeCols`/`objCols` de `brand.js`: el pull
+  de `sync.js` ya hace `select=*` (igual que `origenPortalId`, que tampoco
+  está en `pipeCols` y ya se mostraba como badge) — son de solo lectura para
+  el staff, nunca se pushean de vuelta. El badge "portal" que ya existía en
+  `apple|poly/js/pipeline-view.js` ahora también muestra el estado propio del
+  cliente y, si es "Perdido", su motivo en un tooltip 💬.
+- **Pendiente, ofrecido y explícitamente pausado por el usuario**: una
+  sección/filtro aparte en el pipeline para "solo pedidos del portal"
+  (`origenPortalId IS NOT NULL`). Los filtros de pipeline (mes/cliente/pills)
+  viven en un archivo aparte de `pipeline-view.js` que no se llegó a leer
+  todavía — retomar ahí si se pide.
+
+Migraciones: `20260820193000_portal_solicitudes_estado_motivo_cliente`,
+`20260820200000_portal_lectura_staff`,
+`20260820203000_pipeline_espejo_estado_cliente_portal`.
 
 ---
 
