@@ -77,6 +77,39 @@ PARES.forEach(function(par){
      par.marca + ': el original no usa module.exports ni export');
 });
 
+// Las Edge Functions no pueden leer `copia` del disco en producción (ver
+// docs/HISTORIAL.md, 20/08/2026): la llevan embebida como string dentro de
+// index.ts, generada por scripts/build-portal-pricing-embeds.js. Si alguien
+// corrió ese generador después de tocar el _shared, el embed tiene que ser
+// igual al archivo — si no, el catálogo del portal calcula precios viejos.
+const EMBEBIDOS = [
+  { archivo: 'supabase/functions/portal-catalogo/index.ts', marca: 'portal-catalogo' },
+  { archivo: 'supabase/functions/portal-emitir/index.ts', marca: 'portal-emitir' },
+];
+const EMBED_RE = /const (APPLE|POLY)_PRICING_SRC: string = (".*?");/g;
+
+EMBEBIDOS.forEach(function(destino){
+  const p = path.join(ROOT, destino.archivo);
+  if (!fs.existsSync(p)) { ok(false, destino.marca + ': existe ' + destino.archivo); return; }
+  const contenido = fs.readFileSync(p, 'utf8');
+  const encontrados = {};
+  let m;
+  while ((m = EMBED_RE.exec(contenido)) !== null) {
+    try { encontrados[m[1]] = JSON.parse(m[2]); } catch { encontrados[m[1]] = null; }
+  }
+  PARES.forEach(function(par){
+    const clave = par.marca.toUpperCase();
+    if (!(clave in encontrados)) {
+      ok(false, destino.marca + ': tiene el embed de ' + par.marca,
+         'no se encontró const ' + clave + '_PRICING_SRC — corré node scripts/build-portal-pricing-embeds.js');
+      return;
+    }
+    const original = fs.readFileSync(path.join(ROOT, par.original), 'utf8');
+    ok(encontrados[clave] === original, destino.marca + ': el embed de ' + par.marca + ' está al día',
+       'desincronizado del original — corré node scripts/build-portal-pricing-embeds.js y redeployá ' + destino.marca);
+  });
+});
+
 console.log('\n' + (fallos
   ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
   : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
