@@ -54,6 +54,10 @@ function _portalPintarSelectClienteFinal(){
 }
 
 function _portalClienteFinalCrear(){
+  var claims = cevenPortalClaims();
+  var portalClientId = claims && claims.portal_client_id;
+  if(!portalClientId){ showToast('No se pudo identificar la cuenta. Volvé a entrar.'); return; }
+
   var nombre = (document.getElementById('pcf-nombre').value || '').trim();
   if(!nombre){ showToast('Cargá el nombre del cliente final.'); return; }
   var cuit = (document.getElementById('pcf-cuit').value || '').trim();
@@ -61,6 +65,7 @@ function _portalClienteFinalCrear(){
   var domicilio = (document.getElementById('pcf-domicilio').value || '').trim();
   var markupRaw = (document.getElementById('pcf-markup').value || '').trim();
   var body = {
+    portal_client_id: portalClientId,
     nombre: nombre, cuit: cuit || null, contacto: contacto || null, domicilio: domicilio || null,
     markup_pct: markupRaw === '' ? null : Number(markupRaw)
   };
