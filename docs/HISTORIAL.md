@@ -43,6 +43,25 @@ archivo contiene la arquitectura y las decisiones necesarias para continuar.
   funciona y que usan todas las páginas de staff — no vale el riesgo de
   regresión sin un motivo funcional que lo empuje.
 
+### Fase 5 — REGI (Deal Registration de Poly) en el portal
+
+- **Estado: construida y verificada por SQL directo, NO probada en un
+  navegador todavía** (21/08/2026). Ver la entrada de esa fecha más abajo
+  para el diseño completo. Cero Edge Functions nuevas — todo el matching
+  vive en dos funciones SQL `security definer` nuevas
+  (`portal_equipo_ceven()`, `portal_regi_solicitar()`), verificadas en vivo
+  contra la base real simulando el JWT de un cliente-canal real (pendiente,
+  aprobado automático, reintentos idempotentes, rechazo y su re-match
+  posterior, y que RLS bloquea un insert directo de `regi_solicitudes`) —
+  con limpieza de los datos de prueba al final. `portal-catalogo` y
+  `portal-emitir` se extendieron (no se tocó `_shared/pricing/*`) y se
+  redeployaron.
+- **Pendiente**: la prueba de punta a punta en navegador (cliente pide un
+  REGI real desde `src/portal/`, staff lo aprueba/rechaza desde el modal
+  🎯 del shell, se emite y se confirma el badge + ejecutivo real en el
+  pipeline de Poly) — no se hizo porque este agente no tiene credenciales
+  de ninguna cuenta de portal ni acceso a navegador en esta sesión.
+
 ### Fases siguientes
 
 | Fase | Alcance | Estado |
@@ -126,6 +145,145 @@ base** porque venía en ese archivo. Ver la entrada del 12/08 más abajo.
 
 Los signups públicos están cerrados: la única alta es la Edge Function
 `admin-users`.
+
+---
+
+## 21/08/2026 · REGI: código de Deal Registration de Poly, pedido desde el portal
+
+El pedido: durante la cotización, el cliente-canal tiene que poder cargar un
+número de REGI (el Deal Registration que Poly le aprueba a Ceven para un
+negocio puntual) + elegir a su ejecutivo Ceven de confianza + pedir
+aprobación. Si el código coincide con uno que Ceven ya cargó para ESE
+cliente y sigue vigente, se aprueba solo y la lista de precios de ese REGI
+se aplica al toque; si no, queda pendiente para que Ceven lo revise a mano.
+
+Alcance acordado con el usuario: **solo Poly** (Apple no tiene este
+mecanismo), **solo el portal** (el cotizador interno de Poly no se toca),
+precio **propio por SKU** (no un tier ni un % de descuento), un REGI **atado
+a un cliente/proyecto puntual** (el mismo código pedido por otro cliente-
+canal no matchea), aprobación **por cotización** (se re-verifica siempre
+fresco, nunca se asume vigente sin volver a pedirla), y el ejecutivo elegido
+**reemplaza** el `ejecutivo: '—'` que hasta ahora quedaba fijo en todo
+pedido del portal.
+
+### Decisión que ordenó todo el diseño: cero Edge Functions nuevas
+
+El matching de REGI (¿este código + este cliente existen y siguen vigentes?)
+es lógica SQL pura — no toca `auth.users`, no necesita la fórmula de pricing
+embebida. Va por el mismo camino que ya usa `ceven_equipo()`: una función
+`security definer`, auto-gateada, otorgada a `authenticated`. Evita repetir
+el riesgo que ya mordió al equipo el 20/08 (las Edge Functions de Supabase
+no pueden leer archivos en runtime) y evita tocar
+`scripts/build-portal-pricing-embeds.js`.
+
+Dos funciones nuevas (migración
+`20260821120000_regi_deal_registration.sql`, refinada por
+`20260821121500_regi_solicitar_informa_rechazo_previo.sql`):
+
+- **`portal_equipo_ceven()`** — la lista de ejecutivos (admin+ventas, nunca
+  lector) que puede leer un cliente-canal para elegir a quién dirigir su
+  solicitud. **No envuelve `ceven_equipo()`**: esa función filtra
+  `where ceven_is_staff()` adentro, y `ceven_is_staff()` lee el `auth.jwt()`
+  del llamador REAL de la sesión — no cambia por estar invocada desde otra
+  función SQL. Un cliente-canal jamás pasa ese filtro aunque la llame
+  indirecto. Se repitió la misma selección de `auth.users`+`user_roles`,
+  gateada con `ceven_is_portal_client()` en vez de `ceven_is_staff()`.
+  Verificado en vivo: sí devuelve el equipo completo bajo un JWT de portal
+  simulado.
+- **`portal_regi_solicitar(codigo, ejecutivo_email)`** — el matching. El
+  match se re-evalúa SIEMPRE fresco contra `regi_codigos` (nunca se reusa un
+  `aprobado` viejo: el REGI puede haber vencido entre una cotización y la
+  siguiente). La idempotencia es acotada a propósito: una solicitud
+  **pendiente** sin resolver no se duplica en cada reintento, y una
+  **rechazada** se devuelve tal cual (con su motivo) en vez de generar otro
+  pendiente — pero si Ceven carga el código DESPUÉS de haberlo rechazado, un
+  match nuevo siempre gana y aprueba. Las cuatro combinaciones (sin match →
+  pendiente; pendiente repetido → no duplica; match nuevo → aprueba; match
+  nuevo después de un rechazo → aprueba igual, sin quedar bloqueado por el
+  rechazo previo) se probaron en vivo contra la base real, simulando el JWT
+  de la única cuenta de portal que ya existe (`Ivo`/cliente 23) con
+  `set local role authenticated; set local "request.jwt.claims" = ...` — y
+  se confirmó además que un `insert` directo a `regi_solicitudes` con ese
+  mismo JWT lo rechaza RLS (`42501`): el único camino de escritura para el
+  cliente-canal es esta función. Los datos de prueba se borraron al terminar.
+
+### Las tablas nuevas y por qué el panel de staff no necesita Edge Function
+
+- **`regi_codigos`** — maestro cargado por Ceven: `codigo` (único),
+  `cliente_id`, `proyecto`, `vigente_desde/hasta`, `precios` (jsonb,
+  `{sku: precio}`), `notas`. RLS: `select` para `ceven_is_staff()`,
+  `insert/update/delete` para `ceven_is_writer()`. Sin ninguna policy para
+  el cliente-canal.
+- **`regi_solicitudes`** — una fila por pedido de aprobación desde el
+  portal: `codigo`, `ejecutivo_email/nombre`, `estado` (pendiente/aprobado/
+  rechazado), `regi_codigo_id`, `motivo_rechazo`, `resuelto_por/at`. RLS:
+  `select` propio + `select` staff, `update` para `ceven_is_writer()` (así
+  el panel de staff aprueba/rechaza con un `PATCH` directo), **sin policy de
+  `insert`** para `authenticated` — el único insert lo hace la función de
+  arriba.
+- `pipeline."regiCodigo"` (text, nullable, aditiva) — mismo criterio que
+  `origenPortalId`/`origenPortalEstado`: llega gratis al `select=*` de
+  `sync.js` sin tocar `pipeCols` de `poly/brand.js`, de solo lectura para el
+  staff.
+
+Ninguna de las dos tablas nuevas es del tipo "solo Edge Function puede
+tocarla": a diferencia de `portal_clientes` (que sí necesita `service_role`
+porque crea logins de Supabase Auth), cargar un código REGI o aprobar/
+rechazar una solicitud es lógica de negocio común, igual que ya pasa con
+`clientes`/`pipeline`/`todos` — el staff ya puede leer/escribir esas tablas
+directo por REST con su propio JWT, y `regi_codigos`/`regi_solicitudes`
+siguen el mismo patrón. Esto le ahorró al panel de staff (`shared/
+portal-regi-admin.js`, modal 🎯 "Códigos REGI" en el shell, calcado de
+`portal-clientes-admin.js`) tener que escribir y desplegar una función
+nueva.
+
+Gate de permiso del modal: **no admin-only** como "Clientes del portal"
+(que crea cuentas) — alcanza con no ser `lector`, mismo criterio que
+`ceven_is_writer()` en la base, porque cargar un REGI o aprobarlo es una
+acción de venta, no de administración de cuentas.
+
+### `portal-catalogo` y `portal-emitir`: extendidas, no reescritas
+
+Ambas Edge Functions aceptan ahora un `regiSolicitudId` opcional en el
+body. Si viene, se re-valida server-side que la solicitud sea `aprobado` y
+propia del que llama (nunca se confía en el id que manda el cliente sin
+re-chequear ownership — mismo criterio que ya usaba `portal-emitir` con
+`clienteFinalId`), y el precio de tier se pisa SKU por SKU con
+`regi_codigos.precios` — los SKU que el REGI no cubre siguen con el precio
+de tier normal, así que el cliente-canal sigue necesitando `poly_tier`
+asignado para cotizar en general (REGI pisa precios puntuales, no reemplaza
+el onboarding). `portal-emitir` además escribe el `ejecutivo` real (en vez
+de `"—"`) y el código REGI en `pipeline."regiCodigo"` y en un campo nuevo
+`cquotes["REGI"]` — **`"OPG"` no se tocó**, sigue siendo el texto libre de
+siempre del cotizador interno; mezclar los dos conceptos (uno histórico sin
+lógica de precio, uno nuevo que sí la dispara) hubiera sido confuso.
+
+No hizo falta tocar `_shared/pricing/*.js` ni
+`scripts/build-portal-pricing-embeds.js`: el pisado de precio por REGI es
+lógica nueva alrededor del cálculo existente, no un cambio a la fórmula.
+
+### Portal cliente
+
+Tarjeta nueva "🎯 ¿Tenés un código REGI para este pedido?" en la vista
+Catálogo, visible solo cuando `_portalMarca === 'poly'` (`src/portal/js/
+regi.js`, nuevo). El estado se resetea al cambiar de marca — "por
+cotización" significa que no persiste entre pedidos nuevos, aunque
+reingresar el mismo código ya aprobado antes lo vuelve a confirmar al
+toque (el match se re-evalúa, no hace falta que Ceven apruebe dos veces
+mientras el REGI siga vigente). Las filas del catálogo y del carrito
+cubiertas por el REGI llevan un badge 🎯; el resumen antes de emitir
+muestra qué ejecutivo y qué código van a quedar escritos.
+
+### Pendiente
+
+- La prueba de punta a punta en un navegador real (ver "Fase 5" en el
+  Estado de avance, arriba) — todo lo que se pudo probar por SQL directo
+  contra la base real quedó verificado, pero ni el flujo del portal
+  (`src/portal/`) ni el modal del shell (`shared/portal-regi-admin.js`) se
+  abrieron en un navegador todavía.
+- Badge de cantidad de solicitudes pendientes en el botón 🎯 de la navbar:
+  evaluado y descartado para esta pasada por tiempo, no por dificultad —
+  queda para cuando alguien lo pida.
 
 ---
 

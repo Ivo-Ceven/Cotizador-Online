@@ -107,6 +107,23 @@
         <input id="pcat-search" type="text" placeholder="Buscar por SKU o descripción…" style="max-width:260px">
       </div>
 
+      <!-- REGI (Deal Registration de Poly): solo Poly, ver js/regi.js -->
+      <div id="pregi-box" class="card" style="display:none;margin-bottom:14px">
+        <p class="h3" style="margin-bottom:8px">🎯 ¿Tenés un código REGI para este pedido?</p>
+        <div class="g2" style="margin-bottom:8px">
+          <div>
+            <label class="lbl">Código REGI</label>
+            <input id="pregi-codigo" type="text" placeholder="Ej. REGI-88213">
+          </div>
+          <div>
+            <label class="lbl">Tu ejecutivo Ceven</label>
+            <select id="pregi-ejecutivo"><option value="">Elegí uno…</option></select>
+          </div>
+        </div>
+        <button type="button" class="bo" id="pregi-solicitar">Solicitar aprobación</button>
+        <p id="pregi-estado" class="sub" style="margin-top:8px"></p>
+      </div>
+
       <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start">
         <div>
           <p id="pcat-count" class="sub" style="margin-bottom:6px"></p>
@@ -143,6 +160,7 @@
             <span>Total tu precio (<span id="pcarrito-markup">0%</span>)</span><span id="pcarrito-total-reventa">USD 0</span>
           </div>
 
+          <p id="pregi-resumen-emitir" class="sub" style="display:none;margin-top:8px"></p>
           <button type="button" class="bd" id="pbtn-emitir" style="width:100%;margin-top:12px" disabled>Enviar pedido a Ceven</button>
         </div>
       </div>
@@ -218,6 +236,7 @@
 <script src="js/clientes-finales.js"></script>
 <script src="js/logo.js"></script>
 <script src="js/catalog.js"></script>
+<script src="js/regi.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/emitir.js"></script>
 <script src="js/historial.js"></script>

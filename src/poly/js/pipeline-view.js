@@ -380,7 +380,12 @@ function _pipeTablaHTML(filas, scope, opts){
             +(r.origenPortalEstado ? ' <span style="background:#f0f0f3;color:#6e6e73;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:2px" title="Estado propio del cliente-canal frente a su cliente final">'+cevenEsc(r.origenPortalEstado)+'</span>' : '')
             +(r.origenPortalEstado === 'Perdido' && r.origenPortalMotivo && r.origenPortalMotivo.motivo
                 ? ' <span title="Motivo del cliente-canal: '+cevenEsc(r.origenPortalMotivo.motivo + (r.origenPortalMotivo.detalle ? ': '+r.origenPortalMotivo.detalle : ''))+'" style="cursor:help">💬</span>'
-                : '') : '')
+                : '')
+            // regiCodigo: el pedido vino con un REGI (Deal Registration de
+            // Poly) aprobado — es lo que puso el ejecutivo real en la fila
+            // en vez del "—" de siempre. Solo Poly.
+            +(r.regiCodigo ? ' <span style="background:#fef3c7;color:#92400e;font-size:9px;font-weight:600;padding:1px 5px;border-radius:5px;margin-left:2px" title="Código REGI aplicado a este pedido">🎯 '+cevenEsc(r.regiCodigo)+'</span>' : '')
+            : '')
           +' <span style="color:#6e6e73;font-size:11px;white-space:nowrap">▸</span>'
         +'</div></td>'
         +'<td style="font-size:12px;white-space:nowrap">'+celdaMes+'</td>'

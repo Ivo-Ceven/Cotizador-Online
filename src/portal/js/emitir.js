@@ -24,9 +24,11 @@ function _portalEmitir(){
   if(!_portalMarca){ showToast('Elegí una marca primero.'); return; }
 
   var clienteFinalId = document.getElementById('pemitir-cliente-final').value || null;
+  var regiSolicitudId = (typeof _portalRegiSolicitudIdSiAprobado === 'function') ? _portalRegiSolicitudIdSiAprobado() : null;
   var body = {
     brand: _portalMarca,
     clienteFinalId: clienteFinalId,
+    regiSolicitudId: regiSolicitudId,
     items: _portalCarrito.map(function(it){ return {sku: it.sku, qty: it.qty}; })
   };
   if(!clienteFinalId){
@@ -44,6 +46,7 @@ function _portalEmitir(){
     showToast('✓ Pedido enviado a Ceven — cotización #' + resp.qNum + '.');
     _portalPdfGenerarYAbrir(resp);
     _portalCarrito = [];
+    if(typeof _portalRegiReset === 'function') _portalRegiReset();
     _portalCatRender();
     _portalCarritoRender();
     if(resp.noEncontrados && resp.noEncontrados.length){

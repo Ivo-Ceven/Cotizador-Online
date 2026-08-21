@@ -78,6 +78,7 @@
     var vuelve  = !!(B || P);
     var hayUsuarios = !!document.getElementById('ceven-users-modal');
     var hayPortal = !!document.getElementById('ceven-portal-modal');
+    var hayRegi = !!document.getElementById('ceven-regi-modal');
 
     var h = '<header class="cvnav"><div class="cvnav-in">';
 
@@ -117,6 +118,9 @@
     if(hayPortal){
       h += '<button class="cvnav-btn" id="ceven-portal-btn" title="Clientes del portal">🧑‍💼</button>';
     }
+    if(hayRegi){
+      h += '<button class="cvnav-btn" id="ceven-regi-btn" title="Códigos REGI">🎯</button>';
+    }
     h += '<div class="cvnav-user" id="cvnav-user">' +
            '<span class="cvnav-ava" id="cvnav-ava">–</span>' +
            '<span class="cvnav-who"><b id="cvnav-nombre"></b><span id="cvnav-rol"></span></span>' +
@@ -148,6 +152,9 @@
 
     var pc = document.getElementById('ceven-portal-btn');
     if(pc) pc.addEventListener('click', function(){ if(typeof cevenOpenPortalClientes === 'function') cevenOpenPortalClientes(); });
+
+    var rg = document.getElementById('ceven-regi-btn');
+    if(rg) rg.addEventListener('click', function(){ if(typeof cevenOpenRegi === 'function') cevenOpenRegi(); });
 
     var pw = document.getElementById('cvnav-pass');
     if(pw) pw.addEventListener('click', function(){ if(typeof cevenChangeMyPassword === 'function') cevenChangeMyPassword(); });

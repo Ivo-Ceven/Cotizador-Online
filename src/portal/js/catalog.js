@@ -40,6 +40,9 @@ var CEVEN_PORTAL_CAT_TOPE = 200;
 function _portalCatRowHTML(p){
   var enCarrito = _portalCarritoBuscar(p.sku);
   var pid = cevenEsc(p.sku);
+  var precioHTML = p.regi
+    ? '🎯 ' + cevenEsc(_portalFmt(p.price))
+    : cevenEsc(_portalFmt(p.price));
   return '<tr class="crow' + (enCarrito ? ' enq' : '') + '">'
     + '<td style="text-align:center">'
       + (enCarrito
@@ -48,7 +51,7 @@ function _portalCatRowHTML(p){
     + '</td>'
     + '<td style="font-weight:500;font-size:12px;font-family:monospace">' + pid + '</td>'
     + '<td class="wrap">' + cevenEsc(p.description) + (p.category ? ' <span class="sub">· ' + cevenEsc(p.category) + '</span>' : '') + '</td>'
-    + '<td style="text-align:right;white-space:nowrap">' + cevenEsc(_portalFmt(p.price)) + '</td>'
+    + '<td style="text-align:right;white-space:nowrap">' + precioHTML + '</td>'
     + '</tr>';
 }
 
@@ -73,7 +76,7 @@ function _portalCatAgregar(sku){
   if(!p) return;
   var linea = _portalCarritoBuscar(sku);
   if(linea){ linea.qty += 1; } else {
-    _portalCarrito.push({sku: p.sku, description: p.description, qty: 1, precioCeven: p.price});
+    _portalCarrito.push({sku: p.sku, description: p.description, qty: 1, precioCeven: p.price, regi: !!p.regi});
   }
   _portalCatRender();
   _portalCarritoRender();
@@ -102,8 +105,9 @@ function _portalCarritoRender(){
   } else {
     cuerpo.innerHTML = _portalCarrito.map(function(it){
       var reventa = cevenPortalPrecioReventa(it.precioCeven, markup);
+      var badgeRegi = it.regi ? ' <span title="Precio de tu REGI">🎯</span>' : '';
       return '<tr>'
-        + '<td class="wrap">' + cevenEsc(it.description) + '<div class="sub" style="font-family:monospace">' + cevenEsc(it.sku) + '</div></td>'
+        + '<td class="wrap">' + cevenEsc(it.description) + badgeRegi + '<div class="sub" style="font-family:monospace">' + cevenEsc(it.sku) + '</div></td>'
         + '<td style="text-align:center"><input type="number" min="1" max="500" value="' + it.qty + '" data-sku="' + cevenEsc(it.sku) + '" class="pcarrito-qty" style="width:56px;text-align:center"></td>'
         + '<td style="text-align:right;white-space:nowrap">' + cevenEsc(_portalFmt(it.precioCeven)) + '</td>'
         + '<td style="text-align:right;white-space:nowrap;font-weight:600">' + cevenEsc(_portalFmt(reventa * it.qty)) + '</td>'
@@ -132,8 +136,10 @@ function _portalElegirMarca(brand){
   }
   _portalMarca = brand;
   _portalCarrito = [];
+  if(typeof _portalRegiReset === 'function') _portalRegiReset();
   var titulo = document.getElementById('pcat-marca-actual');
   if(titulo) titulo.textContent = brand === 'apple' ? 'Apple' : 'Poly';
+  if(typeof _portalRegiMostrar === 'function') _portalRegiMostrar();
   _portalGoTo('catalogo');
   _portalCatCargar();
 }
@@ -141,9 +147,10 @@ function _portalElegirMarca(brand){
 function _portalCatCargar(){
   var cuerpo = document.getElementById('pcat-body');
   if(cuerpo) cuerpo.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--ct3);padding:22px">Cargando catálogo…</td></tr>';
+  var regiSolicitudId = (typeof _portalRegiSolicitudIdSiAprobado === 'function') ? _portalRegiSolicitudIdSiAprobado() : null;
   cevenAuthedFetch(SUPABASE_URL + '/functions/v1/portal-catalogo', {
     method: 'POST',
-    body: JSON.stringify({brand: _portalMarca})
+    body: JSON.stringify({brand: _portalMarca, regiSolicitudId: regiSolicitudId})
   }).then(function(resp){
     _portalCatalogo = (resp && resp.products) || [];
     _portalCatRender();

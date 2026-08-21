@@ -31,6 +31,12 @@ const admin = createClient(
    ver docs/HISTORIAL.md). Si tocás _shared/pricing/*.js, corré ese script y
    redeployá esta función y portal-emitir — scripts/check-portal-pricing-
    parity.js falla si te olvidás.
+
+   REGI (Deal Registration de Poly, 21/08/2026): si el body trae
+   `regiSolicitudId` y es una solicitud APROBADA y propia (re-chequeado acá,
+   nunca confiado del cliente), el precio de tier se pisa SKU por SKU con
+   `regi_codigos.precios` para los SKU que ese REGI cubre — el resto sigue
+   con el precio de tier normal. Solo Poly; Apple ignora el campo.
    --------------------------------------------------------------------------- */
 
 // BEGIN_PRICING_EMBED (auto-generado — no editar a mano, ver scripts/build-portal-pricing-embeds.js)
@@ -69,7 +75,7 @@ Deno.serve(async (req) => {
   if (!portalCliente || portalCliente.status !== "activo")
     return json({ message: "Esta cuenta no tiene acceso al portal." }, 403);
 
-  const { brand } = await req.json();
+  const { brand, regiSolicitudId } = await req.json();
   if (brand !== "apple" && brand !== "poly")
     return json({ message: "Marca inválida." }, 400);
 
@@ -79,6 +85,34 @@ Deno.serve(async (req) => {
     .eq("id", portalCliente.cliente_id)
     .single();
   if (clienteErr) return json({ message: "No se pudo leer la ficha del cliente." }, 500);
+
+  // REGI (Deal Registration de Poly): pisa el precio de tier SKU por SKU
+  // cuando la solicitud es realmente APROBADA y es del que llama — nunca se
+  // confía en el id que manda el cliente sin re-chequear ownership, mismo
+  // criterio que portal-emitir con clienteFinalId. Solo Poly.
+  let regiPrecios: Record<string, number> = {};
+  let regiCodigoAplicado: string | null = null;
+  if (brand === "poly" && regiSolicitudId) {
+    const { data: solicitud } = await admin
+      .from("regi_solicitudes")
+      .select("id, portal_client_id, estado, regi_codigo_id, codigo")
+      .eq("id", regiSolicitudId)
+      .maybeSingle();
+    if (
+      solicitud && solicitud.portal_client_id === portalCliente.id &&
+      solicitud.estado === "aprobado" && solicitud.regi_codigo_id
+    ) {
+      const { data: regiRow } = await admin
+        .from("regi_codigos")
+        .select("precios")
+        .eq("id", solicitud.regi_codigo_id)
+        .maybeSingle();
+      if (regiRow?.precios && typeof regiRow.precios === "object") {
+        regiPrecios = regiRow.precios as Record<string, number>;
+        regiCodigoAplicado = solicitud.codigo;
+      }
+    }
+  }
 
   const catalogKey = brand === "apple" ? "cpl" : "poly_cpl";
   const { data: catRow } = await admin
@@ -106,15 +140,27 @@ Deno.serve(async (req) => {
       // deno-lint-ignore no-explicit-any
       const g = globalThis as any;
       const salida = products
-        .map((p) => ({
-          sku: String(p.sku ?? ""),
-          description: String(p.description ?? ""),
-          category: String(p.rubro ?? ""),
-          price: g.cevenPolyPrecioDe(p, cliente.poly_tier),
-        }))
+        .map((p) => {
+          const sku = String(p.sku ?? "");
+          const precioRegi = regiPrecios[sku];
+          const regi = precioRegi != null;
+          return {
+            sku,
+            description: String(p.description ?? ""),
+            category: String(p.rubro ?? ""),
+            price: regi ? precioRegi : g.cevenPolyPrecioDe(p, cliente.poly_tier),
+            regi,
+          };
+        })
         .filter((p) => p.sku && p.price !== null);
 
-      return json({ ok: true, products: salida });
+      return json({
+        ok: true,
+        products: salida,
+        regiAplicado: regiCodigoAplicado
+          ? { codigo: regiCodigoAplicado, skusCubiertos: Object.keys(regiPrecios).length }
+          : null,
+      });
     }
 
     // apple

@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   _portalOnboardingBind();
   _portalCatBind();
+  _portalRegiBind();
   _portalClientesFinalesBind();
   _portalLogoBind();
   _portalEmitirBind();

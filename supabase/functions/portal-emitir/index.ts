@@ -24,7 +24,9 @@ const admin = createClient(
    La fila de pipeline se marca con "origenPortalId" (el badge de "pedido de
    cliente" lo lee de ahí) y lleva ejecutivo:'—' a propósito: no hay un
    vendedor real todavía, y con eso solo un admin puede tocarla hasta que
-   alguien la reasigne (cevenCanEditPipelineRow ya hace esa cuenta).
+   alguien la reasigne (cevenCanEditPipelineRow ya hace esa cuenta). Único
+   caso en que ESO cambia: un REGI aprobado con ejecutivo elegido (ver más
+   abajo) — ahí el pedido sí nace con dueño real.
 
    Apple: la fila de pipeline NUNCA incluye "esFOB" — esa columna no existe en
    la base real (ver docs/HISTORIAL.md, "🔴 falta esFOB") y cualquier insert
@@ -37,6 +39,14 @@ const admin = createClient(
    runtime de Edge Functions de Supabase no da permiso de lectura de
    filesystem en producción — ver el mismo comentario en
    portal-catalogo/index.ts y docs/HISTORIAL.md (20/08/2026).
+
+   REGI (Deal Registration de Poly, 21/08/2026): si el body trae
+   `regiSolicitudId` y es una solicitud APROBADA y propia (re-chequeado acá,
+   nunca confiado del cliente), el precio de cada línea de Poly se pisa con
+   `regi_codigos.precios` cuando el SKU está cubierto, el `ejecutivo`
+   elegido reemplaza el "—" de siempre, y el código queda escrito en
+   `cquotes["REGI"]` y en `pipeline."regiCodigo"` para trazabilidad — nunca
+   se toca el campo `opg`, que sigue siendo el texto libre de siempre.
    --------------------------------------------------------------------------- */
 
 function qNumFmt(n: number) {
@@ -82,7 +92,7 @@ Deno.serve(async (req) => {
     return json({ message: "Esta cuenta no tiene acceso al portal." }, 403);
 
   const body = await req.json();
-  const { brand, clienteFinalId, proyecto: proyectoLibre, markupPct: markupLibre } = body;
+  const { brand, clienteFinalId, proyecto: proyectoLibre, markupPct: markupLibre, regiSolicitudId } = body;
   const itemsPedidos: Array<{ sku: string; qty: number }> = Array.isArray(body.items) ? body.items : [];
 
   if (brand !== "apple" && brand !== "poly") return json({ message: "Marca inválida." }, 400);
@@ -92,6 +102,34 @@ Deno.serve(async (req) => {
   const { data: cliente, error: clienteErr } = await admin
     .from("clientes").select("id, nombre, poly_tier, apple_margen").eq("id", portalCliente.cliente_id).single();
   if (clienteErr || !cliente) return json({ message: "No se pudo leer la ficha del cliente." }, 500);
+
+  // REGI (Deal Registration de Poly): mismo re-chequeo de ownership+estado
+  // que portal-catalogo, nunca se confía en lo que manda el cliente.
+  let regiPrecios: Record<string, number> = {};
+  let regiCodigoAplicado: string | null = null;
+  let ejecutivoNombre = "";
+  if (brand === "poly" && regiSolicitudId) {
+    const { data: solicitud } = await admin
+      .from("regi_solicitudes")
+      .select("id, portal_client_id, estado, regi_codigo_id, codigo, ejecutivo_nombre")
+      .eq("id", regiSolicitudId)
+      .maybeSingle();
+    if (
+      solicitud && solicitud.portal_client_id === portalCliente.id &&
+      solicitud.estado === "aprobado" && solicitud.regi_codigo_id
+    ) {
+      const { data: regiRow } = await admin
+        .from("regi_codigos")
+        .select("precios")
+        .eq("id", solicitud.regi_codigo_id)
+        .maybeSingle();
+      if (regiRow?.precios && typeof regiRow.precios === "object") {
+        regiPrecios = regiRow.precios as Record<string, number>;
+        regiCodigoAplicado = solicitud.codigo;
+        ejecutivoNombre = solicitud.ejecutivo_nombre || "";
+      }
+    }
+  }
 
   // El cliente final y su markup: si se pasó un id, TIENE que ser de este
   // mismo cliente-canal (RLS ya lo filtraría en una query normal, pero acá
@@ -152,7 +190,8 @@ Deno.serve(async (req) => {
     let precioCeven: number | null;
     let itemNac = 0, lob = "";
     if (brand === "poly") {
-      precioCeven = g.cevenPolyPrecioDe(p, cliente.poly_tier);
+      const precioRegi = regiPrecios[sku];
+      precioCeven = precioRegi != null ? precioRegi : g.cevenPolyPrecioDe(p, cliente.poly_tier);
     } else {
       lob = String(p.lob ?? "");
       itemNac = p.nacIncluded ? 0 : g.cevenAppleNac({ lob: p.lob, modelCol: p.modelCol, description: p.description }, nacRates, {});
@@ -182,9 +221,10 @@ Deno.serve(async (req) => {
     brand, id: nuevoIdFila(),
     fecha: now.toLocaleDateString("es-AR"), fechaISO: now.toISOString(),
     qNum: qNumNum, cliente: cliente.nombre, clienteId: cliente.id,
-    proyecto: nombreProyecto, ejecutivo: "—", mesCierre: "",
+    proyecto: nombreProyecto, ejecutivo: ejecutivoNombre || "—", mesCierre: "",
     estado: "Cotizado", moneda: "USD",
     origenPortalId: portalCliente.id,
+    regiCodigo: regiCodigoAplicado,
   };
   if (brand === "poly") {
     Object.assign(pipeRow, { monto: Math.round(totalCeven), opg: null, factura: null });
@@ -213,7 +253,7 @@ Deno.serve(async (req) => {
     const base: Record<string, unknown> = {
       "N° Cotización": qn, "Fecha": now.toLocaleDateString("es-AR"),
       "Hora": now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }),
-      "Cliente": cliente.nombre, "Proyecto": nombreProyecto, "Ejecutivo": "—",
+      "Cliente": cliente.nombre, "Proyecto": nombreProyecto, "Ejecutivo": ejecutivoNombre || "—",
       "Observaciones": "Generado desde el portal de clientes.", "Mes Cierre": "",
       "Condición de pago": "", "Propuesta efectiva hasta": "", "Entrega": "",
       "Opción": 1, "_opcEf": 1,
@@ -228,7 +268,10 @@ Deno.serve(async (req) => {
         "_taxes": "", "_nacIncluded": !!bySku.get(l.sku)?.nacIncluded, "_manualMg": false,
       });
     } else {
-      Object.assign(base, { "OPG": "—", "Nivel de precio": cliente.poly_tier, "Nota": "—", "IVA": "" });
+      Object.assign(base, {
+        "OPG": "—", "Nivel de precio": cliente.poly_tier, "Nota": "—", "IVA": "",
+        "REGI": regiCodigoAplicado || "—",
+      });
     }
     return base;
   });
@@ -267,6 +310,8 @@ Deno.serve(async (req) => {
   return json({
     ok: true, qNum: qn, brand, proyecto: nombreProyecto,
     totalCeven: Math.round(totalCeven), totalReventa, markupPct,
+    ejecutivo: ejecutivoNombre || null,
+    regiAplicado: regiCodigoAplicado,
     items: lineas.map((l) => ({
       sku: l.sku, description: l.description, qty: l.qty,
       precioCeven: l.precioCeven, precioReventa: Math.round(l.precioCeven * (1 + markupPct / 100)),

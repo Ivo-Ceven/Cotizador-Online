@@ -266,6 +266,44 @@
   </div>
 </div>
 
+<!-- Modal: códigos REGI (Deal Registration de Poly) + solicitudes del
+     portal. navbar.js solo pinta el botón 🎯 si este modal existe en la
+     página — mismo criterio que el de Clientes del portal. No admin-only:
+     alcanza con no ser lector (ver cabecera de portal-regi-admin.js). -->
+<div id="ceven-regi-modal" class="modal" onclick="if(event.target===this)cevenCloseRegi()" style="z-index:99998">
+  <div class="modal-card" style="width:460px">
+    <div class="modal-hd">
+      <div class="h3">🎯 Códigos REGI</div>
+      <button onclick="cevenCloseRegi()" class="modal-x" title="Cerrar">×</button>
+    </div>
+
+    <div class="lbl" style="margin-bottom:6px">Cargar / editar un código</div>
+    <form onsubmit="return cevenGuardarRegiCodigo(event)" style="border:0.5px solid #d2d2d7;border-radius:12px;padding:14px;margin-bottom:16px">
+      <input id="crg-id" type="hidden">
+      <input id="crg-cliente" type="text" list="crg-cliente-datalist" placeholder="Cliente, ej: Newtech" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
+      <datalist id="crg-cliente-datalist"></datalist>
+      <input id="crg-codigo" type="text" placeholder="Código REGI, ej: REGI-88213" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
+      <input id="crg-proyecto" type="text" placeholder="Proyecto (opcional)" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
+      <div class="g2" style="margin-bottom:8px">
+        <div><label class="sub" style="display:block;margin-bottom:2px">Vigente desde</label><input id="crg-desde" type="date" class="inp" style="font-size:13px;padding:8px 10px"></div>
+        <div><label class="sub" style="display:block;margin-bottom:2px">Vigente hasta</label><input id="crg-hasta" type="date" class="inp" style="font-size:13px;padding:8px 10px"></div>
+      </div>
+      <label class="sub" style="display:block;margin-bottom:4px">Precios por SKU — una línea "SKU,precio" por producto</label>
+      <textarea id="crg-precios" rows="4" placeholder="POLY-SKU-1,235&#10;POLY-SKU-2,410" class="inp" style="font-size:12px;font-family:monospace;padding:8px 10px;margin-bottom:8px;width:100%;resize:vertical"></textarea>
+      <input id="crg-notas" type="text" placeholder="Notas (opcional)" class="inp" style="font-size:13px;padding:8px 10px;margin-bottom:10px">
+      <div id="ceven-regi-codigo-err" class="err" style="font-size:12px;padding:7px 10px;margin-bottom:10px"></div>
+      <button type="submit" id="crg-submit" class="btn-dark" style="padding:8px 16px;font-size:13px">Guardar</button>
+      <button type="button" id="crg-cancelar" onclick="cevenCancelarEdicionRegiCodigo()" style="display:none;margin-left:8px;background:none;border:0;color:#6e6e73;font-size:13px;cursor:pointer;font-family:inherit">Cancelar edición</button>
+    </form>
+
+    <div class="lbl" style="margin-bottom:6px">Códigos cargados</div>
+    <div id="ceven-regi-codigos-list" style="max-height:200px;overflow-y:auto;margin-bottom:16px"></div>
+
+    <div class="lbl" style="margin-bottom:6px">Solicitudes pendientes</div>
+    <div id="ceven-regi-pend-list" style="max-height:220px;overflow-y:auto"></div>
+  </div>
+</div>
+
 <!-- Modal: editar perfil (nombre + rol) de un usuario existente -->
 <div id="ceven-edit-profile-modal" class="modal" onclick="if(event.target===this)cevenCloseEditProfile()" style="z-index:99999">
   <div class="modal-card" style="width:360px">
@@ -295,6 +333,17 @@
      cevenIsAdmin) y antes de navbar.js (que busca #ceven-portal-modal, ya
      definido arriba, para decidir si pinta el botón 🧑‍💼). -->
 <script src="shared/portal-clientes-admin.js"></script>
+<!-- clientes-db.js: el shell no cotiza, pero portal-regi-admin.js reusa
+     cevenClienteDbResolver()/cevenClientesDbListar() para no duplicar el
+     upsert-por-nombre_norm que ya usan los cotizadores internos. No carga
+     shared/clientes.js: acá no se usa cevenClientesDbRefreshDatalist(), que
+     es la única función que lo necesita. -->
+<script src="shared/clientes-db.js"></script>
+<!-- Códigos REGI (21/08/2026): después de clientes-db.js (usa
+     cevenClienteDbResolver/cevenClientesDbListar) y antes de navbar.js (que
+     busca #ceven-regi-modal, ya definido arriba, para decidir si pinta el
+     botón 🎯). -->
+<script src="shared/portal-regi-admin.js"></script>
 <!-- navbar.js después de auth.js: lee el rol para decidir qué botones pinta.
      Acá no hay CEVEN_BRAND, así que sale sin ítems de navegación. -->
 <script src="shared/navbar.js"></script>

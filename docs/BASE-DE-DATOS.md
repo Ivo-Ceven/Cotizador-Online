@@ -261,7 +261,66 @@ calcado del modal de Usuarios existente.
 |---|---|
 | `portal-admin` | Alta/gestión de cuentas (solo `admin@ceven.com`). Resuelve o crea la fila de `clientes`, fija tier/margen, crea el usuario de auth y la fila de `portal_clientes` en la misma pasada — si el alta de `portal_clientes` falla, deshace el usuario recién creado en vez de dejarlo huérfano |
 | `portal-catalogo` | Catálogo de una marca con el precio YA calculado para ese cliente (tier de Poly / margen de Apple). Nunca expone costo ni margen interno — el cliente-canal no puede leer `app_settings` con su propio JWT |
-| `portal-emitir` | Recibe solo `{brand, items:[{sku,qty}], ...}` (intención) y RECALCULA el precio server-side con una copia byte a byte de `apple\|poly/js/pricing-core.js` (`supabase/functions/_shared/pricing/`, verificada por `scripts/check-portal-pricing-parity.js`). Escribe la fila real en `pipeline` + `cquotes`/`cqc` de la marca y el historial propio del portal |
+| `portal-emitir` | Recibe solo `{brand, items:[{sku,qty}], ...}` (intención) y RECALCULA el precio server-side con una copia byte a byte de `apple\|poly/js/pricing-core.js` (`supabase/functions/_shared/pricing/`, verificada por `scripts/check-portal-pricing-parity.js`). Escribe la fila real en `pipeline` + `cquotes`/`cqc` de la marca y el historial propio del portal. Si el body trae `regiSolicitudId` (REGI aprobado y propio, re-chequeado server-side), pisa el precio por SKU y escribe el `ejecutivo` real en vez de `"—"` |
+
+### REGI — Deal Registration de Poly (21/08/2026, solo Poly)
+
+Un cliente-canal puede pedir, durante la cotización, que se le aplique la
+lista de precios de un negocio registrado ante Poly. Migración
+`20260821120000_regi_deal_registration.sql` (refinada por
+`20260821121500_regi_solicitar_informa_rechazo_previo.sql`). Detalle
+completo y el porqué de cada decisión en `docs/HISTORIAL.md` (21/08/2026).
+
+```sql
+create table public.regi_codigos (
+  id bigint generated always as identity primary key,
+  codigo text not null unique,
+  cliente_id bigint not null references public.clientes(id),
+  proyecto text, vigente_desde date, vigente_hasta date,
+  precios jsonb not null default '{}',   -- {sku: precio}, negociado por Poly
+  notas text, created_by text, created_at timestamptz, updated_at timestamptz
+);
+
+create table public.regi_solicitudes (
+  id bigint generated always as identity primary key,
+  portal_client_id uuid not null references public.portal_clientes(id),
+  codigo text not null,
+  ejecutivo_email text not null, ejecutivo_nombre text not null,
+  estado text not null default 'pendiente'   -- pendiente | aprobado | rechazado
+    check (estado in ('pendiente','aprobado','rechazado')),
+  regi_codigo_id bigint references public.regi_codigos(id),
+  motivo_rechazo text, resuelto_por text, resuelto_at timestamptz,
+  created_at timestamptz
+);
+```
+
+`pipeline."regiCodigo"` (text, nullable, aditiva) — mismo criterio que
+`origenPortalId`: llega gratis al `select=*` de `sync.js`, sin entrar en
+`pipeCols`.
+
+**A diferencia del resto del portal, esto NO pasa por ninguna Edge
+Function.** El matching es lógica SQL pura (¿el código+cliente existen y
+siguen vigentes?), así que va por dos funciones `security definer` nuevas
+en vez de `service_role`:
+
+- `portal_equipo_ceven()` — lista de ejecutivos (admin+ventas) legible por
+  un cliente-canal, gateada con `ceven_is_portal_client()`. **No envuelve
+  `ceven_equipo()`**: esa función filtra por `ceven_is_staff()` adentro, que
+  evalúa el JWT del llamador real de la sesión — invocarla desde otra
+  función SQL no cambia ese contexto, así que un cliente-canal siempre
+  vería `[]` a través de un simple wrapper.
+- `portal_regi_solicitar(codigo, ejecutivo_email)` — el matching, siempre
+  re-evaluado fresco (nunca se asume vigente un `aprobado` viejo). Solo
+  cachea para no duplicar una solicitud `pendiente` en curso; un `rechazado`
+  se devuelve tal cual salvo que un match nuevo aparezca después.
+
+RLS: `regi_codigos` — `select` staff (`ceven_is_staff()`), `insert/update/
+delete` staff-writer (`ceven_is_writer()`), **sin policy para el
+cliente-canal** (nunca lee esta tabla directo). `regi_solicitudes` —
+`select` propio + `select` staff, `update` staff-writer (así el panel
+🎯 "Códigos REGI" del shell aprueba/rechaza con un `PATCH` directo, sin
+Edge Function), **sin policy de `insert` para `authenticated`** — el único
+insert lo hace `portal_regi_solicitar()`.
 
 ## 2. Autenticación (GoTrue)
 

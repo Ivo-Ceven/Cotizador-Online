@@ -18,6 +18,11 @@ var _portalClienteFinalId = '';   // '' = sin elegir (usa proyecto libre + marku
 var _portalProyectoLibre = '';
 var _portalPerfil = null;         // fila de portal_perfiles, o null hasta que se carga
 
+/* REGI (Deal Registration de Poly, ver js/regi.js): {id, codigo, estado,
+   ejecutivo} o null. "Por cotización" — se resetea al cambiar de marca,
+   nunca persiste entre pedidos (a propósito, ver plan de diseño). */
+var _portalRegi = null;
+
 /* Delegación de eventos, copiadas tal cual de shared/ui-core.js (no se carga
    ese archivo acá: sus IIFEs de arranque dependen de brand.js/state.js de los
    cotizadores internos, que el portal no tiene). Genéricas, sin nada de
