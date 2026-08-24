@@ -155,85 +155,37 @@ function renderPipeline(){
   var hayFiltroEstado = _stFilters.length > 0;
   var monthFilter = window._pipeMonthFilter || '';
 
-  // Poblar el dropdown de meses dinámicamente con todos los meses presentes
-  // Considera tanto el mesCierre de la cotización como los skuMesCierre por SKU
-  var allMonthValues = {};
+  /* Pastillas de Cierre estimado. Los meses salen tanto del `mesCierre` de la
+     cotización como de los `skuMesCierre` por SKU, y "Sin fecha" solo se pinta
+     si hay alguna fila que no tenga NINGUNO de los dos — que es exactamente lo
+     que el filtro de más abajo entiende por "sin fecha".
+
+     Devuelve el filtro ya resuelto (vuelve a '' si lo que estaba filtrado dejó
+     de existir), y hay que filtrar con ESE valor. Vive en
+     shared/pipeline-ui.js: era el mismo código que en Poly. */
+  var mesesPresentes = {}, haySinFecha = false;
   pipe.forEach(function(r){
-    if(r.mesCierre) allMonthValues[r.mesCierre] = true;
     if(r.skuMesCierre){
       Object.keys(r.skuMesCierre).forEach(function(k){
-        if(r.skuMesCierre[k]) allMonthValues[r.skuMesCierre[k]] = true;
+        if(r.skuMesCierre[k]) mesesPresentes[r.skuMesCierre[k]] = true;
       });
     }
+    if(r.mesCierre) mesesPresentes[r.mesCierre] = true;
+    /* La condición tiene que ser LETRA POR LETRA la del filtro de más abajo
+       (mira `.length`, no si los valores son verdaderos): si acá se usara otra,
+       la pastilla podría aparecer para filas que el filtro después descarta —
+       que es justo el bug que se está arreglando, por otro camino. */
+    else if(!r.skuMesCierre || !Object.keys(r.skuMesCierre).length) haySinFecha = true;
   });
-  // Pastillas de Cierre estimado (reemplazan al dropdown)
-  var monthPills = document.getElementById('pipe-month-pills');
-  if(monthPills){
-    var sortedMonths = Object.keys(allMonthValues).sort();
-    var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    var cur = monthFilter;
-    function _mPill(val, label){
-      var active = (cur === val) || (val==='' && !cur);
-      var bg = active ? '#1d1d1f' : '#fff';
-      var fg = active ? '#fff' : '#1d1d1f';
-      var bd = active ? '#1d1d1f' : '#d2d2d7';
-      return '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-pill="month" data-val="'+cevenEsc(val)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap;transition:transform .1s">'+cevenEsc(label)+'</div>';
-    }
-    var pillsH = _mPill('', 'Todos') + _mPill('sin-fecha', 'Sin fecha');
-    sortedMonths.forEach(function(m){
-      var p = m.split('-');
-      var lbl = p.length===2 ? (meses[parseInt(p[1])-1]+' '+p[0]) : m;
-      pillsH += _mPill(m, lbl);
-    });
-    monthPills.innerHTML = pillsH;
-  }
+  monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha);
 
-  // ── Top 3 clientes por cantidad de cotizaciones (siempre desde TODO el pipeline) ──
-  var topClientsBox = document.getElementById('pipe-topclients-pills');
-  if(topClientsBox){
-    var cliCount = {};
-    pipe.forEach(function(r){
-      var cl = (r.cliente||'').trim();
-      if(!cl || cl==='—') return;
-      cliCount[cl] = (cliCount[cl]||0) + 1;
-    });
-    var topCli = Object.keys(cliCount).map(function(c){ return {cli:c, n:cliCount[c]}; });
-    topCli.sort(function(a,b){ return b.n - a.n; });
-    topCli = topCli.slice(0,5);
-    var medals = ['🥇','🥈','🥉','4°','5°'];
-    var curSearch = (document.getElementById('pipe-search').value||'').trim().toLowerCase();
-    var tcH = '';
-    topCli.forEach(function(t, i){
-      var active = curSearch === t.cli.toLowerCase();
-      var bg = active ? '#1d1d1f' : '#fff';
-      var fg = active ? '#fff' : '#1d1d1f';
-      var bd = active ? '#1d1d1f' : '#d2d2d7';
-      // El nombre del cliente iba dentro de un string JS de un onclick, escapado
-      // sólo con replace(/'/g,"\\'"). Ese escape no cubre la barra invertida: un
-      // cliente llamado  \');alert(1);//  cerraba el string y ejecutaba lo que
-      // siguiera. Ahora viaja en data-cli y lo lee el listener delegado.
-      tcH += '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-pill="client" data-cli="'+cevenEsc(t.cli)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap;transition:transform .1s">'
-        +medals[i]+' '+cevenEsc(t.cli)+' <span style="opacity:.7;font-weight:400">· '+cevenEsc(t.n)+' cot.</span></div>';
-    });
-    topClientsBox.innerHTML = tcH || '<span style="font-size:12px;color:#aeaeb2">Sin cotizaciones</span>';
-    // Ajustar a UNA sola fila: quitar clientes sobrantes si no entran (mínimo 3)
-    (function fitTopClients(){
-      var row = document.getElementById('pipe-pills-row');
-      if(!row) return;
-      var guard = 0;
-      while(row.scrollWidth > row.clientWidth + 1 && topClientsBox.children.length > 3 && guard < 8){
-        topClientsBox.removeChild(topClientsBox.lastElementChild);
-        guard++;
-      }
-    })();
-  }
-
-  var filtered = pipe.filter(function(r){
+  /* El filtro se aplica en DOS pasos, y el intermedio no es cosmético: las
+     pastillas de "Top clientes" salen de `sinBuscar` —todo menos el texto del
+     buscador— porque tocar una pastilla ESCRIBE el nombre del cliente en ese
+     buscador. Si también respetaran la búsqueda, el primer clic dejaría una
+     sola pastilla en pantalla y no habría forma de saltar a otro cliente. */
+  var sinBuscar = pipe.filter(function(r){
     if(ex && r.ejecutivo !== ex) return false;
-    if(q){
-      var hay = ((r.cliente||'')+' '+(r.proyecto||'')+' '+(r.qNum||'')).toLowerCase();
-      if(hay.indexOf(q) === -1) return false;
-    }
     if(fam === 'mac'    && !(r.qMac>0))  return false;
     if(fam === 'iphone' && !(r.qIph>0))  return false;
     if(fam === 'ipad'   && !(r.qIpad>0)) return false;
@@ -263,6 +215,18 @@ function renderPipeline(){
       if(!hasMatchingMonth) return false;
     }
     return true;
+  });
+
+  // Top clientes por monto. Vive en shared/pipeline-ui.js: era el mismo código
+  // que en Poly, con los mismos errores. Ver el comentario largo de allá.
+  cevenPintarTopClientes(sinBuscar);
+
+  /* `.slice()` y no `sinBuscar` a secas: unas lineas mas abajo se hace
+     `filtered.sort()`, que ordena EN EL LUGAR — sin la copia, ordenar la
+     tabla reordenaria tambien el array del que salen las pastillas. */
+  var filtered = !q ? sinBuscar.slice() : sinBuscar.filter(function(r){
+    var hay = ((r.cliente||'')+' '+(r.proyecto||'')+' '+(r.qNum||'')).toLowerCase();
+    return hay.indexOf(q) !== -1;
   });
   // Aplicar ordenamiento dinámico
   var sortCol = window._pipeSort.col;
@@ -853,8 +817,12 @@ function renderPipeline(){
   // cotización" cuando el pipeline tiene 40 filas y el filtro no matchea ninguna
   // manda a buscar el problema donde no está.
   var _hayFiltros = !!(q || ex || fam || monthFilter || _stFilters.length || st);
+  /* La cita tiene que coincidir LETRA POR LETRA con el botón real: mandar a
+     buscar uno que no existe con ese nombre es peor que no nombrarlo. Desde el
+     24/08 el botón está en la tarjeta de filtros y se llama "✕ Limpiar
+     filtros", igual que en Poly. */
   var _vacio = _hayFiltros
-    ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Filtros" para limpiarlos.'
+    ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Limpiar filtros".'
     : 'El pipeline está vacío. Cargá una cotización y tocá "Agregar al pipeline".';
   document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="15" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();

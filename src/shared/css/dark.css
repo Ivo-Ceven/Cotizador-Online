@@ -76,6 +76,13 @@ body.dark .mpk{background:var(--c3)!important;color:var(--ct1)!important;border-
 body.dark .mpk:hover{background:#48484a!important}
 body.dark .mpk-inherit{background:var(--c1)!important;color:var(--ct2)!important}
 body.dark .mpk-pop{background:var(--c1)!important;border-color:var(--cb)!important}
+/* Combo de cliente (shared/clientes.js). Solo el fondo y el borde: el resto de
+   los colores ya son tokens y se dan vuelta solos. La fila resaltada invierte
+   —fondo claro, texto oscuro— porque en modo oscuro "encendido" es lo claro. */
+body.dark .cbo-pop{background:var(--c1)!important;border-color:var(--cb)!important}
+body.dark .cbo-op:hover{background:var(--c3)!important}
+body.dark .cbo-op.on{background:var(--ct1)!important;color:var(--c0)!important}
+body.dark .cbo-op.on .cbo-t{background:rgba(0,0,0,.18)!important;color:var(--c0)!important}
 body.dark .mpk-nav:hover,body.dark .mpk-m:hover{background:rgba(255,255,255,.09)!important}
 body.dark .mpk-ft-btn{background:var(--c3)!important;color:var(--ct2)!important;border-color:var(--cb)!important}
 body.dark .mpk-ft-btn:hover{color:var(--ct1)!important}
@@ -84,6 +91,12 @@ body.dark .bd{background:var(--ct1)!important;color:var(--c0)!important}
 body.dark .bd:hover{background:#e5e5e5!important}
 body.dark .bo{background:var(--c1)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark .bo:hover{background:var(--c3)!important}
+/* `.bo.red` (Limpiar filtros, Eliminar, Vaciar papelera, Eliminar Opción B) se
+   quedaba SIN rojo en modo oscuro: la regla de arriba pisa color y borde con
+   !important y gana por especificidad al `.bo.red` de base.css. Va acá y no
+   allá porque el rojo tiene que ser el del token (`--cred` aclara a #ff453a
+   sobre el fondo #1c1c1e; el #d70015 de modo claro queda casi negro). */
+body.dark .bo.red{color:var(--cred)!important;border-color:var(--cred)!important}
 body.dark .bi{background:var(--c1)!important;color:var(--ct1)!important;border-color:var(--cb)!important}
 body.dark .bi:hover{background:var(--c3)!important}
 body.dark .bs{background:transparent!important;color:var(--ct1)!important;border-color:var(--cb)!important}

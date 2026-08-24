@@ -108,7 +108,7 @@
     <div class="g2">
       <!-- Al salir del campo se propone el nivel de precio con el que se le
            cotizó la última vez a ese cliente (shared/clientes.js). -->
-      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
+      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Buscar o escribir un cliente" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
       <div><label class="lbl">OPG <span style="color:#6e6e73;font-weight:400">— opcional, solo si la marca asignó precio especial</span></label><input id="opg" type="text" placeholder="Dejar vacío si no aplica" list="opg-datalist"><datalist id="opg-datalist"></datalist></div>
       <!-- Sin datalist a propósito, al revés que OPG: dos proyectos distintos
            pueden llamarse parecido y autocompletar invitaría a pisar uno con
@@ -233,17 +233,75 @@
     <button class="bo" onclick="clearCatalogFilters()" title="Limpiar búsqueda y categoría">✕ Filtros</button>
     <button class="bo" onclick="goTo('addprod')">+ Nuevo artículo</button>
   </div>
+  <!-- Los DOS archivos del catálogo. Son botones distintos porque son fuentes
+       distintas (NetSuite / HP), pero el importador decide por el CONTENIDO del
+       archivo, no por el botón: cargar el de deals por el camino del catálogo
+       borraba los 77 SKU reales sin ningún error. Ver poly/js/catalog.js. -->
   <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <div id="plbadge" class="bk bkw">Sin catálogo</div>
+    <div id="dealbadge" class="bk bkok" style="display:none"></div>
     <div style="flex:1;min-width:8px"></div>
-    <button class="bo" onclick="document.getElementById('plup').click()" title="Reemplaza todo el catálogo de SKU/Descripción">📂 Cargar Excel/CSV</button>
-    <input type="file" id="plup" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handlePL(this.files[0])">
+    <button class="bo" onclick="document.getElementById('plup').click()" title="Excel de NetSuite: reemplaza el catálogo, los precios por nivel, el stock y el IVA">📂 Catálogo NetSuite</button>
+    <button class="bo" onclick="document.getElementById('dealup').click()" title="BOM Calculator de HP/Poly, hoja Promos: precios de deal por SKU, con su número y vencimiento">🎯 Deals (BOM Calculator)</button>
+    <!-- `this.value=''` después de leer: sin eso, volver a elegir EL MISMO
+         archivo no dispara `change` y no pasa nada — sin error y sin aviso.
+         Con dos archivos que se cargan uno atrás del otro es fácil caer ahí.
+         El File ya está en manos del FileReader, así que limpiar el input no
+         cancela la lectura. -->
+    <input type="file" id="plup" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handlePL(this.files[0]);this.value=''">
+    <input type="file" id="dealup" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handlePL(this.files[0]);this.value=''">
   </div>
+
+  <!-- Qué archivo va en cada botón, de dónde sale y qué columnas se leen. Vive
+       acá y no en la documentación del repo porque el que carga el Excel es un
+       vendedor, no alguien que vaya a abrir docs/. Cerrado por defecto;
+       _ayudaExcelAuto() (poly/js/catalog.js) lo abre solo cuando todavía no hay
+       catálogo, que es cuando hace falta leerlo entero. -->
+  <details id="excel-ayuda" class="card" style="margin:0 0 13px">
+    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--ct1)">📄 Qué Excel se pueden cargar acá</summary>
+    <div style="font-size:12px;color:var(--ct2);line-height:1.55;margin-top:10px">
+
+      <div style="margin-bottom:14px">
+        <div style="font-weight:600;color:var(--ct1);margin-bottom:2px">📂 1 · Catálogo y precios por nivel</div>
+        <div><b>De dónde sale:</b> NetSuite → búsqueda guardada <i>ResultadosPreviewCatalogDistri</i>, exportada a Excel (el <i>ingresoPoly.xls</i> de siempre).</div>
+        <div><b>Formato:</b> una fila por <i>SKU × depósito × nivel de precio</i> — cada SKU aparece 4 veces por depósito, una por nivel. El importador lo pliega a un producto por SKU.</div>
+        <div style="margin-top:4px"><b>Columnas que se leen:</b></div>
+        <ul style="margin:2px 0 0 16px;padding:0">
+          <li><code>Nombre</code> — el SKU</li>
+          <li><code>Nombre para mostrar</code> — la descripción que sale impresa en la cotización</li>
+          <li><code>Nivel de precio</code> — <i>Ceven - Tier 1 / 2 / 3</i> o <i>Negocios Especiales</i></li>
+          <li><code>Precio unitario</code> — el precio de ese nivel, en USD</li>
+          <li><code>Ubicacion del inventario</code> + <code>LocAvailable</code> — el stock, sumado entre depósitos</li>
+          <li><code>Programa fiscal</code> — <i>IVA GENERAL</i> (21 %) o <i>IVA REDUCIDO</i> (10,5 %)</li>
+          <li><code>RUBRO</code> — la categoría de los globitos del filtro</li>
+        </ul>
+        <div style="margin-top:4px"><b>Qué hace:</b> <b>reemplaza</b> el catálogo entero. Conserva los artículos cargados a mano y los precios de deal que ya estaban.</div>
+      </div>
+
+      <div>
+        <div style="font-weight:600;color:var(--ct1);margin-bottom:2px">🎯 2 · Precios de deal (número de deal + vigencia)</div>
+        <div><b>De dónde sale:</b> el <i>BOM Calculator</i> que manda HP/Poly cada mes (<i>BOM-Calculator-ARG-&lt;mes&gt;-HP-Poly*.xlsx</i>). Se usa <b>solo la hoja «Promos»</b>; las otras 20 y pico se ignoran.</div>
+        <div><b>Formato:</b> una fila por SKU en promoción.</div>
+        <div style="margin-top:4px"><b>Columnas que se leen:</b></div>
+        <ul style="margin:2px 0 0 16px;padding:0">
+          <li><code>Base SKU</code> — el SKU, el mismo que el <code>Nombre</code> de NetSuite</li>
+          <li><code>Description</code> — <b>solo si el SKU no estaba</b> en el catálogo; si ya estaba, se respeta la descripción de NetSuite</li>
+          <li><code>BDNet</code> — el precio del deal, en USD</li>
+          <li><code>Deal</code> — el número de deal, que es lo que se pide para comprar</li>
+          <li><code>End Date</code> — hasta cuándo vale ese precio</li>
+        </ul>
+        <div style="margin-top:4px">El resto (<code>List Price</code>, <code>NDP</code>, <code>Contractual Discount</code>, <code>FDA</code>, <code>Remaining Qty</code>…) es la cuenta interna de HP para llegar al BDNet y no se usa.</div>
+        <div style="margin-top:4px"><b>Qué hace:</b> <b>no reemplaza el catálogo</b>: agrega el precio <i>Deal</i> como un nivel más —se elige igual que Tier 1/2/3— sobre los SKU que ya están, y da de alta los que no estaban. <b>Reemplaza todos los deals anteriores</b>: el archivo nuevo es la verdad sobre qué está en promoción. Un deal vencido se sigue viendo, en rojo y tachado.</div>
+      </div>
+
+    </div>
+  </details>
+
   <div id="errbox" style="display:none;background:#fff2f2;color:#d70015;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px"></div>
   <div id="nopl" style="text-align:center;padding:36px;background:#fff;border-radius:12px;border:1.5px dashed #d2d2d7;cursor:pointer;margin-bottom:12px" onclick="document.getElementById('plup').click()">
     <div style="font-size:26px;margin-bottom:6px">📂</div>
-    <strong>Subí el catálogo del ERP</strong>
-    <p style="color:#6e6e73;font-size:12px;margin-top:4px">Se guarda solo para la próxima vez. Del archivo salen los precios de los cuatro niveles, la categoría, el stock y el IVA.<br>También podés cargar artículos de a uno con <b>+ Nuevo artículo</b>.</p>
+    <strong>Subí el catálogo de NetSuite</strong>
+    <p style="color:#6e6e73;font-size:12px;margin-top:4px">Se guarda solo para la próxima vez. Del archivo salen los precios de los cuatro niveles, la categoría, el stock y el IVA.<br>Los precios de deal van por el otro botón, <b>🎯 Deals</b> — arriba está el detalle de cada archivo.<br>También podés cargar artículos de a uno con <b>+ Nuevo artículo</b>.</p>
   </div>
   <div id="catui" style="display:none">
     <label class="lbl">Buscar / Pegar SKUs <span style="color:#6e6e73;font-weight:400">— pegá varios SKUs separados por enter, tab o coma</span></label>
@@ -363,7 +421,9 @@
          así que perdió su <th> ordenable. Este botón lo repone: ordena los
          GRUPOS alfabéticamente, y volver a tocarlo invierte. -->
     <button class="bo" id="pipe-sort-cli" onclick="setPipeSort('cliente')" title="Ordenar los clientes de la A a la Z">A–Z Clientes</button>
-    <button class="bo" onclick="clearPipelineFilters()">✕ Limpiar filtros</button>
+    <!-- "✕ Limpiar filtros" se fue de acá a la tarjeta de filtros de abajo
+         (24/08/2026): perdido entre Excel, backup y deshacer, no se encontraba
+         cuando hacía falta — que es siempre mirando los filtros, no la barra. -->
     <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer el último cambio en el pipeline" disabled>↩</button>
     <button class="bo" id="pipe-backup-btn" onclick="pickBackupFolder()" title="Elegí una carpeta donde guardar backups automáticos">📂 Elegir carpeta backup</button>
     <button class="bo" onclick="exportPipeline()">⬇ Excel</button>
@@ -387,6 +447,15 @@
           <option value="Facturado">Facturado</option>
           <option value="Perdido">Perdido</option>
         </select>
+      </div>
+      <!-- Una celda más de la misma grilla, así el botón queda alineado con los
+           campos que limpia. El <label> vacío es lo que lo baja hasta la línea
+           de los inputs (los otros tres tienen rótulo arriba). Limpia también
+           las pastillas de mes y de estado, que están más abajo. -->
+      <div>
+        <label class="lbl" aria-hidden="true">&nbsp;</label>
+        <button class="bo red" style="width:100%" onclick="clearPipelineFilters()"
+                title="Limpia la búsqueda, el ejecutivo, el estado y las pastillas de mes">✕ Limpiar filtros</button>
       </div>
     </div>
   </div>

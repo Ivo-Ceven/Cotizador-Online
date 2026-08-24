@@ -129,19 +129,39 @@ function aplicarTierDelCliente(){
 
 /* Los niveles salen del brand.js de POLY, no de una lista escrita aca: son de
    esa marca. Como el multimarca no carga ese archivo, se leen del catalogo —
-   las claves de `precios` de cualquier producto son exactamente los niveles. */
+   las claves de `precios` de cualquier producto son exactamente los niveles.
+
+   Se recorre TODO el catalogo y se unen las claves, en vez de quedarse con las
+   del primer producto que tenga precios. Ese atajo alcanzaba mientras los
+   cuatro niveles del ERP estuvieran en todos los SKU, pero desde que existe el
+   nivel DEAL (poly/js/catalog.js) hay niveles que solo tienen ALGUNOS
+   productos: si el primero de la lista no estaba en un deal, "Deal" no
+   aparecia en el selector aunque el catalogo tuviera 600 SKU con deal. */
 function nivelesPoly(){
-  var lista = catalogos.poly || [];
+  var lista = catalogos.poly || [], vistos = {}, out = [];
   for(var i=0;i<lista.length;i++){
     var p = lista[i].precios;
-    if(p && Object.keys(p).length) return Object.keys(p);
+    if(!p) continue;
+    var ks = Object.keys(p);
+    for(var k=0;k<ks.length;k++){
+      if(vistos[ks[k]]) continue;
+      vistos[ks[k]] = 1;
+      out.push(ks[k]);
+    }
   }
-  return [];
+  /* DEAL siempre ultimo: es el nivel excepcional (solo algunos SKU, y con
+     vencimiento), no uno mas de la lista del ERP. El orden de los otros cuatro
+     es el del archivo, igual que antes. */
+  out.sort(function(a,b){ return (a === 'DEAL') - (b === 'DEAL'); });
+  return out;
 }
 
 // La etiqueta corta de un nivel: 'Ceven - Tier 2' se lee 'Tier 2'.
 function cevenTierLabelMulti(v){
   if(v === CEVEN_TIER_MANUAL) return CEVEN_TIER_MANUAL_LBL;
+  // El nivel DEAL se guarda en mayusculas (es la clave de `precios`); en
+  // pantalla se lee como en el cotizador de Poly.
+  if(v === 'DEAL') return 'Deal';
   return String(v || '').replace(/^Ceven\s*-\s*/, '');
 }
 

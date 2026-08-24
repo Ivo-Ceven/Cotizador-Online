@@ -91,12 +91,24 @@ window.CEVEN_BRAND = {
      que se lee en pantalla. El ORDEN de esta lista es el de presentacion, NO
      implica que uno sea mas caro que otro: hay 16 SKUs donde Tier 2 sale mas
      que Tier 1, o donde Negocios Especiales no es el mas barato. Por eso el
-     selector muestra el precio al lado de cada nivel. */
+     selector muestra el precio al lado de cada nivel.
+
+     El QUINTO nivel, `DEAL`, NO viene del ERP: lo carga el segundo Excel del
+     catalogo (hoja "Promos" del BOM Calculator de HP/Poly, ver
+     poly/js/catalog.js). Es el precio BDNet de un numero de deal, valido hasta
+     una fecha; solo lo tienen los SKU que estan en ese archivo. Se modela como
+     un nivel mas —y no como un mecanismo aparte— para que use el mismo selector
+     global, el mismo selector por linea y el mismo repricear que los otros
+     cuatro. `deal: true` es la marca para los pocos lugares donde SI hay que
+     distinguirlo: el alta de un articulo a mano no lo ofrece (un precio de deal
+     sin numero ni vencimiento no significa nada) y el catalogo lo pinta aparte,
+     con su numero y su fecha. */
   priceTiers: [
     { v: 'Ceven - Tier 1',      lbl: 'Tier 1' },
     { v: 'Ceven - Tier 2',      lbl: 'Tier 2' },
     { v: 'Ceven - Tier 3',      lbl: 'Tier 3' },
-    { v: 'Negocios Especiales', lbl: 'Neg. Especiales' }
+    { v: 'Negocios Especiales', lbl: 'Neg. Especiales' },
+    { v: 'DEAL',                lbl: 'Deal', deal: true }
   ],
 
   /* --- Condiciones comerciales (shared/pdf-core.js) ----------------- */

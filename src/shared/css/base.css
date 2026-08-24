@@ -173,6 +173,47 @@ input::placeholder,textarea::placeholder{color:#aeaeb2}
   background:#fff;border:0.5px solid var(--cb);border-radius:14px;
   box-shadow:var(--sh3);padding:10px;
 }
+
+/* ═══════════════════ COMBO DE CLIENTE ═══════════════════
+   shared/clientes.js. Reemplaza al <datalist> nativo, que no es estilable y se
+   veía como un menú del sistema en medio del formulario. Mismo lenguaje que
+   .mpk-pop (fixed, radio 14, la misma sombra) porque son el mismo gesto:
+   apretar un campo y elegir de una lista flotante. */
+.cbo-pop{
+  position:fixed;z-index:9999;
+  background:#fff;border:0.5px solid var(--cb);border-radius:14px;
+  box-shadow:var(--sh3);padding:5px;
+  max-height:min(340px,52vh);overflow-y:auto;overscroll-behavior:contain;
+}
+.cbo-op{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding:7px 10px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--ct1);
+}
+/* Sin transition a propósito: recorriendo con ↑/↓ el fundido va siempre atrás
+   del cursor y se ven dos filas encendidas a la vez. */
+.cbo-op:hover{background:var(--c0)}
+.cbo-op.on{background:var(--ct1);color:var(--c1)}
+/* Lo que matchea con lo tipeado. En la fila resaltada el fondo ya es oscuro,
+   así que el <b> se distingue por peso y no por color. */
+.cbo-op b{font-weight:600;color:var(--acc)}
+.cbo-op.on b{color:inherit}
+.cbo-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* El nivel de precio del cliente. Es exactamente el que se va a aplicar al
+   elegirlo, así que no puede competir con el nombre pero tiene que leerse. */
+.cbo-t{
+  flex-shrink:0;font-size:10.5px;font-weight:600;color:var(--ct2);
+  background:var(--c3);padding:1px 7px;border-radius:980px;white-space:nowrap;
+}
+.cbo-op.on .cbo-t{background:rgba(255,255,255,.22);color:#fff}
+/* El cliente que ya está escrito en el campo: un filete al costado, para
+   encontrarlo de reojo al reabrir la lista. */
+.cbo-ya{box-shadow:inset 2px 0 0 var(--acc)}
+.cbo-vacio{padding:11px 10px;font-size:12px;color:var(--ct2);line-height:1.5}
+.cbo-vacio b{color:var(--ct1)}
+.cbo-mas{
+  padding:7px 10px 4px;font-size:10.5px;color:var(--ct3);line-height:1.4;
+  border-top:0.5px solid var(--c3);margin-top:4px;
+}
 .mpk-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .mpk-year{font-family:var(--f-disp);font-size:14px;font-weight:600;letter-spacing:-.012em}
 .mpk-nav{border:none;background:none;font-family:inherit;font-size:16px;color:var(--ct1);width:26px;height:26px;border-radius:50%;cursor:pointer;line-height:1}
@@ -267,6 +308,11 @@ input::placeholder,textarea::placeholder{color:#aeaeb2}
 .bk{display:inline-block;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:600;letter-spacing:-.002em}
 .bkok{background:#e8f8ef;color:#1a7f4b}
 .bkw{background:#fff8e1;color:#a05c00}
+/* Nombres de columna de un Excel, en la ayuda de "Qué Excel se pueden cargar"
+   (poly/index.html). Monoespaciada para que se lean como lo que son: el texto
+   EXACTO del encabezado que el importador busca en el archivo. */
+code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  font-size:.92em;background:var(--c3);color:var(--ct1);padding:0 4px;border-radius:4px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .gf{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .kpi{box-shadow:var(--sh1)}
@@ -293,6 +339,19 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 .cat-tier{display:flex;justify-content:space-between;gap:6px;font-size:11px;line-height:1.55;white-space:nowrap}
 .cat-tier i{font-style:normal;color:var(--ct3)}
 .cat-tier b{font-weight:600;color:var(--ct1);font-variant-numeric:tabular-nums}
+/* El precio de DEAL (hoja "Promos" del BOM Calculator, ver poly/js/catalog.js).
+   Renglón propio debajo de la grilla de tiers y no una celda más de ella:
+   además del precio lleva el número de deal y la vigencia, que no entran en
+   dos columnas, y es el dato que hay que ver primero. Verde porque es el
+   precio bueno; rojo y tachado cuando venció, para que no se cotice de
+   memoria un deal que ya no existe. */
+.cat-deal{display:flex;justify-content:flex-end;align-items:baseline;gap:6px;
+  font-size:11px;line-height:1.55;white-space:nowrap;margin-top:2px}
+.cat-deal i{font-style:normal;font-weight:600;color:var(--cgreen)}
+.cat-deal b{font-weight:700;color:var(--cgreen);font-variant-numeric:tabular-nums}
+.cat-deal u{text-decoration:none;font-size:10px;color:var(--ct3)}
+.cat-deal.venc i,.cat-deal.venc b{color:var(--cred);text-decoration:line-through}
+.cat-deal.venc u{color:var(--cred)}
 .crow.sel td{background:#e8f0fe}
 /* Ya está en la cotización. Verde tenue y un filete a la izquierda: se lee de
    reojo mientras se recorre la lista, que es cuando importa. Va DESPUÉS de

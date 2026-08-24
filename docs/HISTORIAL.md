@@ -148,6 +148,385 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 24/08/2026 · "Sin fecha" solo aparece si hay algo sin fecha
+
+Las pastillas de **Cierre estimado** salen de los datos desde siempre: se pinta
+un mes por cada `mesCierre` que exista en el pipeline. La excepción era **"Sin
+fecha"**, que estaba escrita a mano y se pintaba siempre — así que en la mayoría
+de los pipelines era un filtro que no podía dar más que la tabla vacía, ocupando
+lugar en una fila que además se recorta cuando no entra (`overflow:hidden`) y
+empujando afuera a los meses reales.
+
+### El agujero que abre arreglarlo
+
+Sacar la pastilla cuando no corresponde deja un caso peor que el original: con
+"Sin fecha" **activo**, ponerle mes a la última fila sin fecha hace desaparecer
+la pastilla pero **no el filtro**. La tabla queda vacía, ninguna pastilla
+marcada explica por qué, y la única salida es "Limpiar filtros".
+
+Eso ya pasaba con los meses —mover la última fila de Agosto hacía desaparecer la
+pastilla de Agosto con el filtro puesto— solo que nadie lo había pisado.
+
+`cevenPintarPillsMes()` resuelve las dos cosas juntas: si el filtro activo apunta
+a algo que ya no existe, vuelve a "Todos", y **devuelve el filtro resuelto** para
+que el llamador filtre con ese valor. Si devolviera nada y el llamador siguiera
+usando el `window._pipeMonthFilter` que leyó antes, pintaría una cosa y filtraría
+otra — el mismo problema por otro camino.
+
+### Tercera cosa que se fue duplicada
+
+Era el mismo bloque en `apple/js/pipeline-view.js` y en
+`poly/js/pipeline-view.js`, como pasó con "Top clientes" hace un rato. Ahora vive
+en `shared/pipeline-ui.js` y emite `data-act` **y** `data-pill` con el mismo
+valor, porque cada marca delega los clicks por uno distinto.
+
+Lo que **no** se pudo compartir es qué significa "sin fecha": en Poly es
+`!r.mesCierre`; en Apple, además, que la fila no tenga ningún `skuMesCierre`. Va
+por parámetro. Y en Apple la detección tiene que usar **letra por letra** la
+misma condición que el filtro (que mira `Object.keys(...).length`, no si los
+valores son verdaderos): con otra, la pastilla volvería a aparecer para filas que
+el filtro descarta.
+
+### Verificación
+
+18 chequeos nuevos en `scripts/check-pipe-pills.js` (que pasó a llamarse así:
+antes era `check-pipe-topclientes.js` y ahora cubre las dos filas de pastillas).
+Cubren que "Sin fecha" aparezca solo cuando corresponde, las etiquetas y el orden
+de los meses, un valor con forma rara que se muestra crudo en vez de
+"undefined NaN", los tres casos de filtro-que-dejó-de-existir, el caso inverso
+—un filtro vigente no se toca— y que las dos marcas se queden con el valor que
+devuelve la función.
+
+---
+
+## 24/08/2026 · El campo Cliente deja de usar el desplegable del navegador
+
+"Sale una lista pero el formato es horrendo". La lista era el `<datalist>`
+nativo (`list="cliente-datalist"` en el `<input>`), y el formato no se podía
+arreglar: **ese desplegable no es estilable**. No hay CSS que lo alcance. Pero
+al mirarlo de cerca el problema no era solo estético — eran cuatro:
+
+1. Se ve como un menú del sistema en medio de una app que no se ve así, y en
+   Chrome ignora la tipografía y el tamaño del resto del formulario.
+2. **El matching lo decide el navegador, y Chrome arranca por PREFIJO.** Tipear
+   "galicia" no encontraba "Banco Galicia". Con 200 clientes en la base eso
+   significa scrollear, o saber de memoria cómo empieza el nombre.
+3. No muestra nada más que el texto. El nivel de precio que se aplica solo al
+   elegir el cliente (`aplicarTierDelCliente`) quedaba invisible hasta **después**
+   de haberlo elegido y de que los precios ya se hubieran movido.
+4. Sin coincidencias no dice nada: la lista simplemente no se abre. No hay forma
+   de distinguir "no existe ese cliente" de "el desplegable no anduvo" — y ese es
+   justo el momento en que hay que avisar que se está por crear un cliente nuevo,
+   que después arma su propio grupo en el pipeline.
+
+### El `<datalist>` no se borró: cambió de rol
+
+Se le sacó el `list=` al input (y se le puso `autocomplete="off"`, que si no el
+autocompletado del navegador ocupa el mismo lugar), pero **el `<datalist>` sigue
+en el HTML de las tres marcas**: pasó de ser el desplegable a ser la fuente de
+datos.
+
+Eso fue lo que mantuvo el cambio chico. Las dos funciones que lo llenan ya
+existían y no se tocaron: `cevenRefreshClienteDatalist()` (el blob local, al
+instante) y `cevenClientesDbRefreshDatalist()` (la tabla `clientes` de Supabase,
+por red y más tarde). El combo lee las `<option>` en cada apertura, así que no
+tiene que saber nada de Supabase, ni de en qué orden llegan las dos listas, ni
+cuál de las dos ganó.
+
+### Qué hace el nuevo
+
+Vive en `shared/clientes.js` (no un archivo nuevo: es el módulo del cliente, y
+así no hubo que tocar `sw.js` ni los `<script>` de tres páginas). Popover en
+`<body>` con `position:fixed`, mismo patrón y mismo lenguaje visual que
+`monthpicker.js` — adentro de la tarjeta, cualquier cosa absoluta se recorta.
+
+- matchea **en el medio** de la palabra y **sin acentos**: "galicia" encuentra
+  "Banco Galicia", "penaflor" encuentra "Grupo Peñaflor";
+- ordena primero los que **empiezan** con lo tipeado, después los que lo
+  contienen — sin eso, buscar por una palabra del medio devuelve todo alfabético
+  y el que buscabas queda 40°;
+- resalta la coincidencia;
+- muestra el **nivel de precio** de cada cliente, que es exactamente el que se le
+  va a aplicar al elegirlo;
+- teclado completo (↑ ↓ Enter Esc Tab), y Enter sin nada resaltado deja lo
+  tipeado — que es cómo se carga un cliente nuevo sin pelearse con la lista;
+- sin coincidencias dice **"Se va a crear como cliente nuevo"**;
+- corta en 60 y avisa que cortó, en vez de pintar 500 filas y trabar el teclado.
+
+### Dos detalles del código que parecen de más
+
+**`_plegar()` y `_fold()` son dos funciones.** `_plegar()` saca acentos y baja a
+minúsculas **conservando el largo**; `_fold()` es eso más colapsar espacios, y se
+usa solo para buscar. Están separadas porque `_resaltar()` busca sobre el texto
+plegado y **corta sobre el original**: si el plegado cambiara el largo, el `<b>`
+caería corrido en cualquier nombre con acento. `_resaltar()` compara los largos
+antes de cortar y, si no cuadran, muestra el nombre sin resaltar — peor que no
+resaltar es resaltar la mitad de otra palabra.
+
+Al separarlas apareció una regresión de una sola barra invertida: un `/s+/g` en
+vez de `/\s+/g` no colapsa espacios, **se come la letra "s"**. "Sysmex" quedaba
+"yxme" y no matcheaba con nada. Quedó como chequeo.
+
+**Al elegir se dispara un `change` que burbujea.** Es el contrato con el resto de
+la app: de ese `onchange` cuelgan `aplicarTierDelCliente()` y
+`cevenClienteCambio()` (que resuelve el id contra Supabase). Un input escrito por
+JS no lo dispara solo. Mismo contrato que `monthpicker.js` con el `<select>` que
+reemplazó.
+
+`Escape` cierra el desplegable y **corta la propagación**: `shared/nav.js` también
+escucha Escape para salir de la vista, y cerrar una lista no puede además sacarte
+de la pantalla.
+
+### Verificación
+
+`scripts/check-combo-cliente.js`, nuevo: 39 chequeos sobre las funciones reales
+—el plegado y su invariante de largo, el colapso de espacios que no se come la
+"s", el resaltado en la posición correcta con y sin acentos, el orden
+prefijo-antes-que-medio, el nivel de precio por cliente, el escapado del nombre
+(es texto libre que se sincroniza con todo el equipo) y que las tres marcas
+hayan soltado el desplegable nativo pero conservado el `<datalist>`.
+
+El render se verificó con Chrome headless corriendo el `clientes.js` real:
+lista completa, búsqueda por el medio, búsqueda sin acento, sin resultados y modo
+oscuro. **Falta probarlo con el teclado en un navegador de verdad** — ↑/↓/Enter y
+la convivencia del Escape con `nav.js` están escritos pero no ejercitados a mano.
+
+---
+
+## 24/08/2026 · Pipeline: "Limpiar filtros" donde se lo busca, y "Top clientes" que decía cualquier cosa
+
+Dos pedidos sobre la misma pantalla.
+
+### El botón de limpiar filtros
+
+Estaba en la barra de acciones de arriba, entre "A–Z Clientes", el ↩ de
+deshacer, "Elegir carpeta backup" y "⬇ Excel" — o sea, perdido en una fila de
+botones que no tienen nada que ver con filtrar. Se movió **adentro de la tarjeta
+de filtros**, como una celda más de la misma grilla `.gf`, alineado con los
+campos que limpia, y en rojo (`.bo.red`). Es exactamente donde ya vivía el
+"Limpiar" del Historial, así que no inventa un patrón nuevo.
+
+Se hizo en las dos marcas. Apple además lo tenía con otro nombre ("✕ Filtros");
+ahora las dos dicen "✕ Limpiar filtros", y el cartel de "ningún proyecto
+coincide" —que **cita el botón letra por letra** a propósito— se actualizó.
+
+De paso, un bug que salió al mirar: **`.bo.red` no era rojo en modo oscuro.**
+`body.dark .bo` pisa `color` y `border-color` con `!important` y le ganaba por
+especificidad al `.bo.red` de `base.css`. Afectaba también a "Eliminar" del
+historial, "Vaciar papelera" y "Eliminar Opción B". La regla nueva usa `--cred`
+(que en oscuro aclara a `#ff453a`) y no el `#d70015` de modo claro, que sobre
+`#1c1c1e` queda casi negro.
+
+### "Top clientes": cuatro errores en la misma pastilla
+
+Estaba escrito **dos veces**, en `apple/js/pipeline-view.js` y en
+`poly/js/pipeline-view.js`, casi idéntico, y las dos copias tenían los mismos
+cuatro problemas. Ninguno rompía nada: el widget siempre mostraba cinco clientes
+con medalla y números que parecían razonables. Para darse cuenta había que
+comparar con la tabla de abajo.
+
+1. **Ordenaba por cantidad de filas, no por plata.** Un cliente con cuatro
+   proyectitos de USD 500 le ganaba a uno con un solo negocio de USD 200.000. En
+   un pipeline "top clientes" es por monto: es la pregunta que viene contestando
+   el resto del dashboard, que son todas tarjetas en USD. Ahora la pastilla dice
+   el monto y deja la cantidad de proyectos entre paréntesis, como dato
+   secundario.
+2. **Contaba lo perdido.** Un cliente al que se le perdieron los cinco negocios
+   salía primero, con 🥇. Se excluye `Perdido`. Lo `Facturado` **sí** cuenta —es
+   plata que entró, y quien la trajo es un cliente top—, que es una pregunta
+   distinta de la de la tarjeta "Total pipeline" (esa saca Facturado porque
+   pregunta qué queda abierto).
+3. **Ignoraba los filtros.** Se calculaba sobre el pipeline ENTERO mientras las
+   tarjetas de al lado y la tabla de abajo respetaban mes/ejecutivo/estado.
+   Filtrando por un mes, la pastilla podía decir "5 proyectos" de un cliente que
+   abajo mostraba uno solo. Es el que más se nota y probablemente el que motivó
+   el pedido.
+4. **No normalizaba el nombre.** "ACME" y "acme " eran dos clientes distintos
+   acá, y uno solo en el KPI "Clientes" justo arriba y en el agrupado de la
+   tabla justo abajo.
+
+### El detalle que ordenó el arreglo del punto 3
+
+No alcanza con pasarle `filtered`. Tocar una pastilla **escribe el nombre del
+cliente en el buscador**, así que si las pastillas también respetaran la
+búsqueda, el primer clic dejaría UNA sola pastilla y no habría forma de saltar a
+otro cliente — el widget se autodestruiría al usarlo.
+
+El filtro pasó a aplicarse en dos pasos: `sinBuscar` (ejecutivo + estado + mes,
++ familia en Apple) y después la búsqueda de texto. Las pastillas salen del
+intermedio. Es el comportamiento normal de un faceteado, y de paso `filtered`
+quedó más simple en las dos marcas.
+
+Para el punto 4 se reusó `cevenPipeGroupBy()` —el MISMO agrupador que usa la
+tabla— en vez de escribir otra normalización: así las pastillas y los
+encabezados de grupo no pueden volver a discrepar, y de yapa muestra la grafía
+más usada del nombre.
+
+La función quedó una sola, `cevenPintarTopClientes()` en
+`shared/pipeline-ui.js`. Emite `data-pill` **y** `data-act` con el mismo valor
+porque Apple delega los clicks por uno y Poly por el otro; unificar las dos
+delegaciones (que además difieren en el hover) era tocar más de lo que hacía
+falta.
+
+### Verificación
+
+`scripts/check-pipe-pills.js`, nuevo: chequeos sobre la función real —
+el orden por monto, la exclusión de Perdido (y la NO exclusión de Facturado), el
+merge de grafías, el tope de 5, el desempate alfabético (para que el orden no
+baile entre renders), un cliente sin monto, el escapado del nombre (el pipeline
+se sincroniza con todo el equipo) y que ninguna de las dos marcas se haya
+quedado con su copia local. El resto de la suite pasa; `check-precache.js` sigue
+fallando por lo del portal, como antes.
+
+Falta abrirlo en un navegador con datos reales: el render se verificó con Chrome
+headless sobre el markup real, claro y oscuro.
+
+---
+
+## 24/08/2026 · El catálogo de Poly pasa a tener DOS Excel: el de NetSuite y el de deals
+
+El pedido tenía dos partes. Una: que donde se carga el Excel **diga qué Excel
+se puede cargar**, con qué columnas y de dónde sale — hasta ahora eso era
+conocimiento oral, y el único cartel decía "Subí el catálogo del ERP". La otra:
+sumar un **segundo archivo**, el BOM Calculator que manda HP/Poly, del que
+interesan la hoja `Promos` y cinco columnas (`Base SKU`, `Description`,
+`BDNet`, `Deal`, `End Date`), para tener el precio de deal con su número y su
+vencimiento. Y que ese precio se agregue **"tal como se agregan los tiers"**.
+
+### La decisión que ordenó todo: el deal ES un nivel de precio
+
+Se podía haber hecho un mecanismo aparte —un campo `dealPrecio` con su propia
+lógica de aplicación— y era lo que pedía menos código en el importador. Se
+descartó: el cotizador ya tiene un selector global de nivel, uno por línea,
+`repricearLinea()`, el recuerdo del nivel por cliente, la columna `Nivel de
+precio` de `cquotes` y la reapertura de una cotización vieja deduciendo con qué
+nivel se armó. Un mecanismo paralelo hubiera obligado a tocar las seis cosas y
+a mantenerlas de acuerdo para siempre.
+
+El deal entra entonces como `precios['DEAL']`, un quinto item de `priceTiers` en
+`poly/brand.js` marcado con `deal: true`. Lo que un tier no tiene —número de
+deal y fecha de vencimiento— va aparte, en `p.deal = {nro, fin}`. **El precio no
+se duplica ahí**: si estuviera en los dos lados, un día uno quedaría viejo y no
+habría forma de saber cuál manda.
+
+Consecuencia buena y buscada: **no hubo que tocar `pricing-core.js`**, que es
+byte a byte igual a la copia que corre en las Edge Functions del portal
+(`check-portal-pricing-parity.js`). Nada que regenerar con
+`build-portal-pricing-embeds.js`, nada que redesplegar. `deal: true` se usa solo
+en los tres lugares donde el deal **sí** es distinto de un tier: el alta de un
+artículo a mano no lo ofrece (un precio de deal sin número ni vencimiento no es
+nada), el catálogo lo pinta en un renglón propio con su número y su fecha, y el
+selector de la línea no lo lista para los 600 y pico de SKU que no están en
+ningún deal.
+
+### La detección es por contenido, no por el botón
+
+Hay dos botones (`📂 Catálogo NetSuite` y `🎯 Deals (BOM Calculator)`) pero
+`handlePL()` decide mirando el archivo: si hay una hoja `Promos`, o si las
+columnas incluyen `BDNet` + `Deal` + un SKU, va por `processDeals()`.
+
+No es paranoia: el BOM Calculator trae **24 hojas** y la primera se llama `BOM`.
+Cargarlo por el camino de siempre no daba ningún error — daba un catálogo de
+basura, con los 77 SKU reales y sus cuatro precios **borrados**. El costo de
+equivocarse de botón era demasiado alto para dejarlo librado al botón. Los
+botones siguen existiendo porque son donde se explica qué archivo va en cada
+uno.
+
+De paso, los dos `<input type="file">` ahora hacen `this.value=''` después de
+leer: sin eso, volver a elegir el mismo archivo no dispara `change` y no pasa
+nada, sin error y sin aviso. Con dos archivos que se cargan uno atrás del otro
+era fácil caer ahí.
+
+### Las tres reglas de convivencia entre los dos archivos
+
+1. **Reimportar NetSuite no borra los deals.** `processRows()` ya conservaba los
+   artículos `manual`; ahora conserva igual todo lo que tenga `p.deal`, y le
+   vuelve a poner el deal a los SKU que sí vienen en el archivo nuevo. Sin esto
+   el feature era inútil en la práctica: el archivo de NetSuite se reimporta
+   seguido porque cambia el stock, así que un deal habría durado horas.
+2. **Un archivo de deals nuevo reemplaza TODOS los deals**, no los acumula. Si
+   se fueran sumando, un SKU que salió de la promoción se seguiría cotizando al
+   precio viejo para siempre y nadie se enteraría hasta que Poly rechace la
+   orden. Los SKU que existían **solo** por un deal que ya no está se van del
+   catálogo, porque sin deal no les queda ningún precio; el aviso final dice
+   cuántos.
+3. **La descripción de NetSuite manda.** Del archivo de HP se toma la
+   descripción solo si el SKU es nuevo. La de NetSuite es la que el equipo
+   conoce y la que sale impresa ("ALTAVOZ MANOS LIBRES POLY SYNC 20+ CON
+   USB-C"); la de HP es su abreviatura interna ("Poly Sync 40 -M SPKPHN").
+
+### Qué trae el archivo real (07/2026) y qué significa para el catálogo
+
+673 filas útiles, **2 números de deal** (47981658 con 67 SKU "Up Front" y
+48107903 con 606 SKU de servicios), todas con `End Date` 31/07/2026. De esos 673
+SKU, **47 estaban en el catálogo de NetSuite y 626 no**: el catálogo pasa de 77 a
+703 productos y el `poly_cpl` de localStorage a ~148 KB. Los 626 nuevos no
+llegan al portal de clientes-canal: `portal-catalogo` cotiza con el `poly_tier`
+del cliente y los filtra el `price !== null` que ya existía.
+
+Dos detalles del archivo que había que tratar y no avisan: la última fila trae
+en la columna del SKU el texto `Applied filters: Country is ARGENTINA…` (se
+descarta por no tener número de deal ni BDNet > 0), y `End Date` viene como
+**serial de Excel con hora** (46234,409), que se normaliza a `AAAA-MM-DD`.
+
+### Un deal vencido se ve, no se esconde
+
+Al 24/08 los dos deals del archivo ya vencieron. La decisión fue mostrarlos
+igual —en rojo y tachado en el catálogo, con `⚠ venció` en el selector de la
+línea, y una chapita amarilla `🎯 … todos vencidos` en la barra— en vez de
+ocultarlos: el vendedor tiene que poder ver a cuánto estuvo y pedir la
+renovación, y una chapita amarilla es la única forma de enterarse de que hay que
+pedir el BOM Calculator del mes. El día del vencimiento **todavía vale**
+(`End Date 31/07` = hasta el 31/07 inclusive) y se compara contra la fecha
+**local**: con `toISOString()` un deal que vence hoy se veía vencido desde las
+21:00 hora argentina.
+
+### Un bug que salió al pasar
+
+`nivelesPoly()` en `multi/js/quote.js` leía los niveles de las claves de
+`precios` **del primer producto que tuviera precios**. Alcanzaba mientras los
+cuatro niveles del ERP estuvieran en todos los SKU; con `DEAL`, que lo tienen
+solo algunos, el nivel aparecía o no en el selector del multimarca según qué
+producto estuviera primero en la lista. Ahora une las claves de todo el catálogo
+y deja `DEAL` último.
+
+### Qué NO es esto
+
+`DEAL` **no** es un REGI (entrada del 21/08). El REGI es un precio por SKU que
+*Ceven* le habilita a un cliente-canal puntual y vive en el portal; el `DEAL` es
+el precio que *HP/Poly* le habilita a Ceven, vive en el catálogo interno y no
+llega al portal. Se mantuvieron separados a propósito, por la misma razón por la
+que el REGI no se metió en `OPG`.
+
+### Verificación
+
+`scripts/check-poly-deals.js`, nuevo: 52 chequeos contra un banco que imita la
+forma del archivo (incluido el pie `Applied filters:`, con las vigencias
+calculadas relativas a hoy para que no empiece a fallar solo el mes que viene) y
+8 más contra el `.xlsx` real si se lo pasa por línea de comandos. Cubre el merge,
+la preservación en la reimportación, el reemplazo de deals viejos, el SKU que
+está en dos deals a la vez (gana el que vence más tarde), la lectura de fechas
+en cuatro formatos y la detección de qué archivo es cuál. Corrió también el
+flujo completo con los dos archivos reales: 77 → 703 productos, y los 673 deals
+sobreviven a reimportar NetSuite.
+
+El resto de la suite pasa sin cambios. **`check-precache.js` ya venía fallando**
+desde el trabajo del portal (16 rutas de `portal/` y `shared/portal-regi-admin.js`
+que faltan en la lista `ASSETS` de `sw.js`): no es de esta entrada y sigue
+pendiente.
+
+### Pendiente
+
+- Abrirlo en un navegador real con sesión. Se verificó el render con Chrome
+  headless sobre el markup real (claro y oscuro), pero no el flujo de cargar el
+  archivo desde la pantalla.
+- El asistente IA le manda al modelo el catálogo entero (`_asisCatalogoCompacto`),
+  que ahora son 703 productos en vez de 77 — unos 16k tokens de contexto por
+  consulta. Anda igual; si molesta, el recorte natural es mandar solo los que
+  tengan algún precio en el nivel vigente.
+
+---
+
 ## 21/08/2026 · REGI: código de Deal Registration de Poly, pedido desde el portal
 
 El pedido: durante la cotización, el cliente-canal tiene que poder cargar un

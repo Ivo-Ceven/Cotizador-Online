@@ -13,13 +13,19 @@
 
 /* Un input por nivel de precio. Se rearman en cada entrada al formulario porque
    el juego de niveles sale de brand.js y la pantalla no puede quedar pegada a
-   un layout de cuatro. */
+   un layout de cuatro.
+
+   El nivel DEAL queda afuera (`tiers[i].deal`): un precio de deal sin número de
+   deal ni fecha de vencimiento no es nada que se pueda cotizar, y esos dos
+   datos solo salen del Excel de promos. Editar a mano un SKU que tiene deal no
+   se lo saca: saveNewProd() lo vuelve a poner después de reemplazar `precios`. */
 function _npPintarPrecios(precios){
   var cont = document.getElementById('np-precios');
   if(!cont) return;
   var tiers = (typeof cevenTiers === 'function') ? cevenTiers() : [];
   var h = '';
   for(var i=0;i<tiers.length;i++){
+    if(tiers[i].deal) continue;
     var v = precios && typeof precios[tiers[i].v] === 'number' ? precios[tiers[i].v] : '';
     h += '<div>'
        + '<label class="lbl" style="text-transform:none;letter-spacing:0;font-size:11px">'+cevenEsc(tiers[i].lbl)+'</label>'
@@ -178,7 +184,14 @@ function saveNewProd(){
         // agregue el importador más adelante) y reemplazarla las perdería.
         products[i].sku=sku; products[i].description=datos.description;
         products[i].rubro=datos.rubro; products[i].stock=datos.stock;
+        /* `precios` SÍ se reemplaza entero (así se borra un nivel dejando el
+           campo vacío), y el formulario no muestra el nivel DEAL — así que el
+           precio de deal hay que volver a ponerlo a mano o se perdería al
+           corregirle una coma a la descripción. `p.deal` (número y vigencia)
+           no se toca: no es un campo de `precios`. */
+        var dealPrevio = products[i].precios && products[i].precios[CEVEN_TIER_DEAL];
         products[i].precios=datos.precios;
+        if(typeof dealPrevio === 'number') products[i].precios[CEVEN_TIER_DEAL] = dealPrevio;
         products[i].iva=datos.iva; products[i].ivaPct=datos.ivaPct;
         break;
       }

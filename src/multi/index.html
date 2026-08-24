@@ -112,7 +112,7 @@
     <div class="g2">
       <div>
         <label class="lbl">Cliente</label>
-        <input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500">
+        <input id="client" type="text" placeholder="Buscar o escribir un cliente" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500">
         <datalist id="cliente-datalist"></datalist>
       </div>
       <!-- Proyecto es obligatorio para emitir: el pipeline de Poly lo exige. -->

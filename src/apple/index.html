@@ -85,7 +85,7 @@
   </div>
   <div class="card">
     <div class="g2">
-      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Nombre del cliente" list="cliente-datalist" onchange="cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
+      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Buscar o escribir un cliente" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
       <div><label class="lbl">Ejecutivo</label>
         <select id="exec">
           <option value="">Seleccionar ejecutivo</option>
@@ -428,7 +428,10 @@
     </select>
     <button class="bo" onclick="openTargetAnual()" title="Ver y configurar objetivo anual de facturación" style="font-weight:600">📈 Target Anual</button>
     <button class="bo" onclick="openSkuDashboard()" title="Análisis por SKU: unidades por estado y clientes" style="font-weight:600">📦 Por SKU</button>
-    <button class="bo" onclick="clearPipelineFilters()" title="Limpiar todos los filtros">✕ Filtros</button>
+    <!-- "✕ Filtros" se fue de acá a la tarjeta de filtros de abajo, y pasó a
+         llamarse "✕ Limpiar filtros" (24/08/2026): perdido entre Target, SKU,
+         Excel y backup, no se encontraba cuando hacía falta — que es siempre
+         mirando los filtros, no la barra. -->
     <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer último cambio de estado o fecha" disabled>↩</button>
     <button class="bo" id="pipe-backup-btn" onclick="pickBackupFolder()" title="Elegí una carpeta donde guardar backups automáticos">📂 Elegir carpeta backup</button>
     <button class="bo" onclick="exportPipeline()">⬇ Excel</button>
@@ -459,6 +462,15 @@
           <option value="Facturado">Facturado</option>
           <option value="Perdido">Perdido</option>
         </select>
+      </div>
+      <!-- Una celda más de la misma grilla, así el botón queda alineado con los
+           campos que limpia. El <label> vacío es lo que lo baja hasta la línea
+           de los inputs (los otros tienen rótulo arriba). Limpia también las
+           pastillas de mes y de estado, que están más abajo. -->
+      <div>
+        <label class="lbl" aria-hidden="true">&nbsp;</label>
+        <button class="bo red" style="width:100%" onclick="clearPipelineFilters()"
+                title="Limpia la búsqueda, el ejecutivo, la familia, el estado y las pastillas de mes">✕ Limpiar filtros</button>
       </div>
     </div>
   </div>

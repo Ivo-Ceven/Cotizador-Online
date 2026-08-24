@@ -6,7 +6,8 @@
   var raw = null;
   try{ raw = localStorage.getItem(cevenK('cpl')); }catch(e){}
   var s = cevenLsJSON(cevenK('cpl'), null);
-  if(s && s.length){ products = s; initCat(); return; }
+  if(s && s.length){ products = s; initCat(); _ayudaExcelAuto(); return; }
+  _ayudaExcelAuto();
   if(raw){
     // Había algo guardado y no se pudo usar (JSON inválido o forma inesperada).
     var aviso = '⚠ El catálogo guardado está corrupto y no se pudo leer. Volvé a importar el Excel.';
@@ -14,6 +15,49 @@
     if(typeof showToast === 'function') setTimeout(function(){ showToast(aviso); }, 400);
   }
 })();
+
+/* La ayuda de "Qué Excel se pueden cargar" (#excel-ayuda) arranca ABIERTA solo
+   si todavía no hay catálogo: es el único momento en que alguien necesita
+   leerla entera. Después estorba, y el <details> se abre con un clic. Se llama
+   desde la IIFE de arriba (declarada abajo pero hoisteada) y desde initCat().  */
+function _ayudaExcelAuto(){
+  var d = document.getElementById('excel-ayuda');
+  if(d) d.open = !(products && products.length);
+}
+
+/* ── LOS DOS EXCEL DEL CATÁLOGO ───────────────────────────────────────────────
+   Acá entran DOS archivos distintos, y cuál es cuál se decide por el CONTENIDO,
+   no por el botón que lo abrió:
+
+   1. Catálogo y precios por nivel — sale de NetSuite (búsqueda guardada
+      "ResultadosPreviewCatalogDistri", el `ingresoPoly.xls`). Formato largo: una
+      fila por (SKU × depósito × nivel de precio). REEMPLAZA el catálogo.
+   2. Precios de deal — hoja "Promos" del BOM Calculator que manda HP/Poly
+      (`BOM-Calculator-ARG-<mes>-HP-Poly*.xlsx`). Una fila por SKU en promoción,
+      con su precio BDNet, su número de deal y hasta cuándo vale. NO reemplaza
+      nada: se monta sobre el catálogo que ya está cargado.
+
+   Por qué se detecta por contenido: el archivo de deals trae 24 hojas y la
+   primera se llama "BOM". Cargarlo por el camino del catálogo no daba un error
+   —daba un catálogo de basura, con los 77 SKU reales y sus cuatro precios
+   borrados—. El costo de equivocarse era demasiado alto para dejarlo librado a
+   qué botón apretó el usuario. El botón sigue existiendo porque es donde se
+   explica qué archivo va en cada uno; si no coinciden, manda el archivo y el
+   cartel del final dice qué se hizo de verdad. */
+
+// La hoja de deals: la que se llama "Promos", si el archivo la trae.
+function _hojaPromos(wb){
+  return (wb.SheetNames || []).find(function(n){ return n.trim().toLowerCase() === 'promos'; }) || null;
+}
+
+/* ¿Estas filas son las de un archivo de deals? Se mira el juego de columnas y
+   no solo el nombre de la hoja, para que un export recortado a mano —o pegado
+   en un CSV— entre igual por el camino correcto. */
+function _pareceDeals(rows){
+  if(!rows || !rows.length) return false;
+  var f = rows[0];
+  return !!(fk(f,'BDNet') && fk(f,'Deal') && (fk(f,'Base SKU') || fk(f,'SKU')));
+}
 
 function handlePL(f) {
   if(!f) return;
@@ -23,17 +67,32 @@ function handlePL(f) {
     r.onload = function(e) {
       try {
         var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        // El archivo de deals se reconoce por su hoja "Promos": las otras 23
+        // hojas del BOM Calculator no se miran.
+        var promos = _hojaPromos(wb);
+        if(promos){
+          var fp = XLSX.utils.sheet_to_json(wb.Sheets[promos],{defval:''});
+          if(_pareceDeals(fp)){ processDeals(fp); return; }
+        }
         // Archivos como "LP y Stock" traen una hoja por marca (POLY/HP/HUAWEI...):
         // preferir la hoja llamada "POLY" si existe, si no, la primera del archivo.
         var sheetName = wb.SheetNames.find(function(n){ return n.trim().toLowerCase()==='poly'; }) || wb.SheetNames[0];
-        processRows(XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:''}));
+        var filas = XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:''});
+        if(_pareceDeals(filas)) processDeals(filas);
+        else processRows(filas);
       }
       catch(er){ showErr('Error Excel: '+er.message); }
     };
     r.readAsArrayBuffer(f);
   } else {
     var r2 = new FileReader();
-    r2.onload = function(e){ try{ processRows(parseCSV(e.target.result)); }catch(er){ showErr('Error: '+er.message); } };
+    r2.onload = function(e){
+      try{
+        var filas = parseCSV(e.target.result);
+        if(_pareceDeals(filas)) processDeals(filas);
+        else processRows(filas);
+      }catch(er){ showErr('Error: '+er.message); }
+    };
     r2.readAsText(f,'UTF-8');
   }
 }
@@ -42,6 +101,80 @@ function handlePL(f) {
 
 function _num(v){
   return parseFloat(String(v==null?'':v).replace(/[^0-9,\.]/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.')) || 0;
+}
+
+/* ── DEALS ───────────────────────────────────────────────────────────────────
+   Un deal es un precio (BDNet) que HP/Poly le habilita a Ceven para un SKU,
+   bajo un número de deal y hasta una fecha. Vive en el producto como un nivel
+   de precio más —`precios['DEAL']`, ver el comentario de `priceTiers` en
+   brand.js— porque así lo cotizan sin cambios el selector global, el selector
+   por línea y `repricearLinea()`. Lo que un tier NO tiene, el número y el
+   vencimiento, va aparte en `p.deal`.
+
+   El precio NO se duplica en `p.deal`: si estuviera en los dos lados, un día
+   uno de los dos quedaría viejo y no habría forma de saber cuál manda.        */
+var CEVEN_TIER_DEAL = 'DEAL';
+
+/* La fecha de "End Date" tal como la deja XLSX: un serial de Excel (46234,409
+   = 31/07/2026 a las 09:49) porque `sheet_to_json` lee los valores crudos. Se
+   normaliza a 'AAAA-MM-DD' —sin hora— porque una vigencia es una fecha de
+   calendario, y porque así se compara y se ordena como string.
+
+   El texto se acepta igual (dd/mm/aaaa, aaaa-mm-dd) por si alguna exportación
+   viene con la columna formateada como texto o el archivo llega en CSV. */
+function cevenDealFechaISO(v){
+  if(v === null || v === undefined || v === '') return '';
+  if(typeof v === 'number' && isFinite(v)){
+    // Epoch de Excel: el día 1 es el 01/01/1900, y Excel cree que 1900 fue
+    // bisiesto — por eso el origen es el 30/12/1899. Vale para toda fecha
+    // posterior al 01/03/1900, que es cualquier vencimiento real.
+    var d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000);
+    if(isNaN(d.getTime())) return '';
+    return d.toISOString().slice(0, 10);
+  }
+  var s = String(v).trim();
+  var iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+  var dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if(dmy){
+    var yy = dmy[3].length === 2 ? ('20' + dmy[3]) : dmy[3];
+    return yy + '-' + String(dmy[2]).padStart(2,'0') + '-' + String(dmy[1]).padStart(2,'0');
+  }
+  var libre = new Date(s);                     // "31-Jul-26" y compañía
+  return isNaN(libre.getTime()) ? '' : libre.toISOString().slice(0, 10);
+}
+
+/* Hoy en 'AAAA-MM-DD' con la fecha LOCAL. Con `toISOString()` un deal que vence
+   hoy se vería vencido desde las 21:00 hora argentina, que es medianoche UTC. */
+function cevenHoyISO(){
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')
+       + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+/* ¿El deal ya venció? El día del vencimiento TODAVÍA vale (`<`, no `<=`): "End
+   Date 31/07" se lee como "hasta el 31/07 inclusive". Un deal sin fecha nunca
+   se da por vencido: no saber cuándo termina no es lo mismo que saber que
+   terminó, y esconder un precio por una columna vacía sería peor. */
+function cevenDealVencido(deal){
+  return !!(deal && deal.fin && deal.fin < cevenHoyISO());
+}
+
+// 'AAAA-MM-DD' → '31/07/26', que es como se lee la vigencia en pantalla.
+function cevenDealFechaTxt(fin){
+  var m = String(fin||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? (m[3] + '/' + m[2] + '/' + m[1].slice(2)) : String(fin||'');
+}
+
+/* El texto que acompaña al precio de deal en todos lados (catálogo y selector
+   de la línea): número + vigencia, y si venció lo dice. Una sola función porque
+   si la pantalla y el selector dijeran cosas distintas sobre el mismo deal, el
+   vendedor no sabría a cuál creerle. */
+function cevenDealTxt(deal){
+  if(!deal) return '';
+  var t = 'Deal ' + (deal.nro || 's/n');
+  if(deal.fin) t += ' · ' + (cevenDealVencido(deal) ? 'venció el ' : 'vence ') + cevenDealFechaTxt(deal.fin);
+  return t;
 }
 
 /* ── IVA ────────────────────────────────────────────────────────────────────
@@ -141,6 +274,152 @@ function _processRowsTiers(rows, sK, dK, nivelK){
   return orden.map(function(k){ return seen[k]; });
 }
 
+/* ── IMPORTADOR DE DEALS (hoja "Promos" del BOM Calculator) ───────────────────
+   Del archivo se usan CINCO columnas y el resto se ignora a propósito: `List
+   Price`, `NDP`, `Contractual Discount`, `FDA`, `Remaining Qty`… son la
+   contabilidad de HP para llegar al BDNet, no un precio que Ceven cotice.
+
+     Base SKU     → el SKU, el mismo que el `Nombre` del archivo de NetSuite
+     Description  → la descripción, y SOLO si el SKU es nuevo (ver abajo)
+     BDNet        → el precio del deal, en USD
+     Deal         → el número de deal, que es lo que se pide para comprar
+     End Date     → hasta cuándo vale
+
+   Por qué la descripción no pisa a la existente: la de NetSuite es la que el
+   equipo ya conoce y la que sale impresa en las cotizaciones ("ALTAVOZ MANOS
+   LIBRES POLY SYNC 20+ CON USB-C"); la del BOM Calculator es la abreviatura
+   interna de HP ("Poly Sync 40 -M SPKPHN"). Para un SKU que no está en el
+   catálogo es lo único que hay, y es mejor que nada.
+
+   Devuelve {sku: {precio, nro, fin, desc}} o null si faltan columnas.        */
+function _leerFilasDeals(rows){
+  var f = rows[0];
+  var skuK  = fk(f,'Base SKU','SKU','Codigo','Código');
+  var bdK   = fk(f,'BDNet','BD Net');
+  var dealK = fk(f,'Deal','Deal Number','Nro Deal');
+  var descK = fk(f,'Description','Descripcion','Descripción');
+  var endK  = fk(f,'End Date','EndDate','Vencimiento','Vigencia');
+  if(!skuK || !bdK || !dealK){
+    showErr('El archivo parece de deals pero le falta alguna columna: se necesitan '
+      + '"Base SKU", "BDNet" y "Deal". Columnas encontradas: ' + Object.keys(f).join(', '));
+    return null;
+  }
+
+  var porSku = {};
+  for(var i=0;i<rows.length;i++){
+    var r = rows[i];
+    var sku = String(r[skuK]||'').trim();
+    if(!sku) continue;
+    var nro = String(r[dealK]||'').trim();
+    var precio = _num(r[bdK]);
+    /* Sin número de deal o sin precio no hay deal que cargar. Esto es además lo
+       que descarta el pie del archivo: la última fila trae en "Base SKU" el
+       texto "Applied filters: Country is ARGENTINA…" y el resto vacío. */
+    if(!nro || !(precio > 0)) continue;
+
+    var fin = endK ? cevenDealFechaISO(r[endK]) : '';
+    /* Un SKU puede estar en más de un deal. Gana el que vence MÁS TARDE: es el
+       que va a seguir estando cuando el otro caduque. A igual fecha gana la
+       última fila, que es el criterio del resto del importador. */
+    var previo = porSku[sku];
+    if(previo && previo.fin > fin) continue;
+
+    porSku[sku] = {
+      precio: precio,
+      nro: nro,
+      fin: fin,
+      desc: descK ? String(r[descK]||'').trim() : ''
+    };
+  }
+  return porSku;
+}
+
+/* Monta los deals del archivo sobre el catálogo que ya está cargado.
+
+   REEMPLAZA todos los deals, no los acumula: el archivo nuevo es la verdad
+   sobre qué está en promoción hoy. Si se fueran sumando, un SKU que salió de
+   la promoción se seguiría cotizando al precio viejo para siempre, y nadie se
+   enteraría hasta que Poly rechace la orden.
+
+   Los SKU que existen SOLO por un deal (no están en NetSuite) y que el archivo
+   nuevo ya no trae se van del catálogo: sin deal no les queda ningún precio, y
+   una fila con "—" en todos los niveles no sirve para cotizar. Las cotizaciones
+   ya guardadas no se tocan — llevan su propio sku/descripción/precio. */
+function processDeals(rows){
+  if(!rows.length){ showErr('Archivo vacío.'); return; }
+  var porSku = _leerFilasDeals(rows);
+  if(!porSku) return;
+
+  var skus = Object.keys(porSku);
+  if(!skus.length){
+    showErr('La hoja "Promos" no tiene ninguna fila con SKU, número de deal y BDNet.');
+    return;
+  }
+
+  // 1) Borrón: se van los deals anteriores, y con ellos los SKU que solo existían por un deal.
+  var perdieron = 0, descartados = 0;
+  products = (products||[]).filter(function(p){
+    if(!p.deal) return true;
+    if(porSku[p.sku]) return true;
+    // Tenía deal y ya no lo tiene: se queda solo si le sobra algún otro precio.
+    delete p.deal;
+    if(p.precios) delete p.precios[CEVEN_TIER_DEAL];
+    perdieron++;
+    var leQueda = (p.precios && Object.keys(p.precios).length) || p.listPrice || p.manual;
+    if(!leQueda) descartados++;
+    return !!leQueda;
+  });
+
+  // 2) Los deals del archivo.
+  var idx = {};
+  for(var i=0;i<products.length;i++) idx[products[i].sku] = products[i];
+
+  var nuevos = 0, sobreCatalogo = 0, vencidos = 0, dealsVistos = {}, finVencMax = '';
+  for(var j=0;j<skus.length;j++){
+    var sku = skus[j], d = porSku[sku], p = idx[sku];
+    if(!p){
+      /* Alta de un SKU que no está en NetSuite. No es `manual` —no lo cargó
+         nadie a mano, lo trajo un archivo— pero se conserva igual cuando se
+         reimporta el catálogo, porque `processRows()` respeta todo lo que tenga
+         deal. Sin IVA ni rubro: el archivo de HP no los trae, y `cevenIvaPct('')`
+         da la alícuota general, que es la regla del negocio. */
+      p = {
+        id: sku, sku: sku, description: d.desc, precios: {}, stock: null,
+        iva: '', ivaPct: cevenIvaPct(''), rubro: ''
+      };
+      products.push(p);
+      idx[sku] = p;
+      nuevos++;
+    } else {
+      // La descripción de NetSuite no se pisa; la del archivo solo completa si falta.
+      if(!p.description && d.desc) p.description = d.desc;
+      sobreCatalogo++;
+    }
+    p.precios = p.precios || {};
+    p.precios[CEVEN_TIER_DEAL] = d.precio;
+    p.deal = {nro: d.nro, fin: d.fin};
+    dealsVistos[d.nro] = 1;
+    if(cevenDealVencido(p.deal)){
+      vencidos++;
+      if(d.fin > finVencMax) finVencMax = d.fin;
+    }
+  }
+
+  var okPL = cevenLsSet(cevenK('cpl'), JSON.stringify(products));
+  showErr(okPL ? '' : '⚠ Los deals se cargaron en pantalla pero NO se pudieron guardar: se pierden al recargar.');
+  initCat();
+
+  var nDeals = Object.keys(dealsVistos).length;
+  var msg = '✓ ' + skus.length + ' precios de deal · ' + nDeals
+          + (nDeals === 1 ? ' número de deal' : ' números de deal')
+          + ' · ' + sobreCatalogo + ' sobre SKU del catálogo, ' + nuevos + ' SKU nuevos';
+  if(perdieron) msg += ' · ' + perdieron + ' quedaron sin deal'
+    + (descartados ? (', ' + descartados + ' se fueron del catálogo') : '');
+  if(vencidos) msg += ' · ⚠ ' + vencidos + ' ya vencidos'
+    + (finVencMax ? ' (el último, el ' + cevenDealFechaTxt(finVencMax) + ')' : '');
+  showToast(msg);
+}
+
 /* Detección genérica por nombre de columna: no asume un layout fijo. Si el
    archivo trae "Nivel de precio" se pliega el formato largo; si no, sigue el
    camino de siempre (una fila por SKU, sin tiers), que es el que necesitan los
@@ -175,11 +454,29 @@ function processRows(rows) {
   }
 
   /* Los SKUs cargados a mano (p.manual) NO están en el archivo del ERP: si se
-     pisara la lista entera con lo importado, cada importación los borraría. */
-  var manuales = (products||[]).filter(function(p){ return p.manual; });
+     pisara la lista entera con lo importado, cada importación los borraría.
+
+     Lo mismo vale para los deals, que vienen del OTRO Excel (ver processDeals):
+     un SKU que está en los dos archivos se queda con su precio de deal, y uno
+     que existe solo por un deal sigue en el catálogo. Sin esto, reimportar el
+     catálogo de NetSuite borraba todos los deals sin decir nada — y el archivo
+     de NetSuite se reimporta seguido, así que el precio de deal habría durado
+     hasta la próxima actualización de stock. */
+  var conservar = (products||[]).filter(function(p){ return p.manual || p.deal; });
+  var dealPrevio = {};
+  conservar.forEach(function(p){ if(p.deal) dealPrevio[p.sku] = p; });
+
   var enArchivo = {};
-  nuevos.forEach(function(p){ enArchivo[p.sku] = 1; });
-  products = nuevos.concat(manuales.filter(function(p){ return !enArchivo[p.sku]; }));
+  nuevos.forEach(function(p){
+    enArchivo[p.sku] = 1;
+    var viejo = dealPrevio[p.sku];
+    var precioDeal = viejo && viejo.precios && viejo.precios[CEVEN_TIER_DEAL];
+    if(typeof precioDeal !== 'number') return;
+    p.precios = p.precios || {};
+    p.precios[CEVEN_TIER_DEAL] = precioDeal;
+    p.deal = viejo.deal;
+  });
+  products = nuevos.concat(conservar.filter(function(p){ return !enArchivo[p.sku]; }));
 
   // El catálogo ya está en memoria: se muestra igual, pero si no se pudo persistir
   // hay que decirlo en vez de dejar el cartel de "OK".
@@ -187,8 +484,13 @@ function processRows(rows) {
   showErr(okPL ? '' : '⚠ El catálogo se cargó en pantalla pero NO se pudo guardar: se pierde al recargar.');
   initCat();
   if(nivelK){
-    var conTier = nuevos.filter(function(p){ return Object.keys(p.precios).length; }).length;
-    showToast('✓ ' + nuevos.length + ' productos · ' + conTier + ' con precios por nivel');
+    // Sin contar el DEAL, que no es un nivel del ERP y se acaba de reinyectar.
+    var conTier = nuevos.filter(function(p){
+      return Object.keys(p.precios).some(function(t){ return t !== CEVEN_TIER_DEAL; });
+    }).length;
+    var conDeal = products.filter(function(p){ return !!p.deal; }).length;
+    showToast('✓ ' + nuevos.length + ' productos · ' + conTier + ' con precios por nivel'
+      + (conDeal ? (' · ' + conDeal + ' con precio de deal, conservados') : ''));
   }
 }
 
@@ -197,8 +499,39 @@ function initCat() {
   document.getElementById('nopl').style.display='none';
   document.getElementById('catui').style.display='block';
   var b=document.getElementById('plbadge'); b.className='bk bkok'; b.textContent='✓ '+products.length+' productos';
+  _ayudaExcelAuto();          // hay catálogo: la ayuda se pliega sola
   selIds={};
   renderCat();
+}
+
+/* Resumen de los deals cargados, al lado del contador de productos. Sin esto,
+   saber si el archivo de promos está al día obligaba a recorrer el catálogo
+   buscando renglones verdes. Dice cuántos SKU tienen deal, bajo cuántos números
+   y hasta cuándo; si TODOS vencieron, la chapita se pone en amarillo — que es
+   la única forma de enterarse de que hay que pedir el archivo nuevo. */
+function _pintarBadgeDeals(){
+  var el = document.getElementById('dealbadge');
+  if(!el) return;
+  var conDeal = 0, vigentes = 0, nros = {}, finMax = '';
+  for(var i=0;i<products.length;i++){
+    var d = products[i].deal;
+    if(!d) continue;
+    conDeal++;
+    if(d.nro) nros[d.nro] = 1;
+    if(!cevenDealVencido(d)){
+      vigentes++;
+      if(d.fin > finMax) finMax = d.fin;
+    }
+  }
+  if(!conDeal){ el.style.display = 'none'; return; }
+  var nDeals = Object.keys(nros).length;
+  el.style.display = '';
+  el.className = 'bk ' + (vigentes ? 'bkok' : 'bkw');
+  el.textContent = '🎯 ' + conDeal + ' con deal · ' + nDeals + (nDeals === 1 ? ' número' : ' números')
+    + (vigentes ? (finMax ? ' · hasta ' + cevenDealFechaTxt(finMax) : '') : ' · todos vencidos');
+  el.title = vigentes && vigentes < conDeal
+    ? (vigentes + ' vigentes y ' + (conDeal - vigentes) + ' vencidos')
+    : (vigentes ? 'Precios de deal vigentes' : 'Ningún deal sigue vigente: pedí el BOM Calculator del mes');
 }
 
 // _pendingNewSKUs, handleSearchInput/Paste, processMultiSKUs y
@@ -326,18 +659,42 @@ function _catRowAt(i){
 function _catPreciosHTML(p){
   var tiers = (window.CEVEN_BRAND && window.CEVEN_BRAND.priceTiers) || [];
   var pr = p.precios || {};
-  var h = '';
+  var h = '', deal = '';
   for(var i=0;i<tiers.length;i++){
     var v = pr[tiers[i].v];
     if(typeof v !== 'number') continue;
+    /* El deal NO entra en la grilla de dos columnas: va en un renglón propio
+       abajo, porque es lo único que además de un precio tiene un número y una
+       fecha, y porque es el que hay que ver primero (es siempre el más barato
+       y el que caduca). */
+    if(tiers[i].deal){ deal = _catDealHTML(p, v); continue; }
     // Dos columnas (.cat-tiers en base.css): apilados verticalmente, los cuatro
     // niveles hacían una fila de ~83px y el catálogo no se podía recorrer.
     h += '<span class="cat-tier"><i>'+cevenEsc(tiers[i].lbl)+'</i><b>'+cevenEsc(fD(v))+'</b></span>';
   }
-  if(h) return '<div class="cat-tiers">'+h+'</div>';
+  if(h) h = '<div class="cat-tiers">'+h+'</div>';
   // fD() sobre un listPrice que llegó como string lo devuelve tal cual
   // (String.prototype.toLocaleString ignora los argumentos) → también escapa.
-  return p.listPrice ? cevenEsc('USD '+fD(p.listPrice)) : '—';
+  else if(p.listPrice) h = cevenEsc('USD '+fD(p.listPrice));
+  else if(!deal) h = '—';
+  return h + deal;
+}
+
+/* El renglón del precio de deal: precio + número + vigencia. Un deal vencido no
+   se esconde —el vendedor tiene que poder ver a cuánto estuvo y pedir la
+   renovación— pero se pinta en rojo y tachado, para que nadie lo cotice de
+   memoria creyendo que sigue vivo. */
+function _catDealHTML(p, precio){
+  var vencido = cevenDealVencido(p.deal);
+  return '<div class="cat-deal'+(vencido?' venc':'')+'" title="'+cevenEsc(cevenDealTxt(p.deal))+'">'
+    + '<i>Deal</i>'
+    + '<b>'+cevenEsc(fD(precio))+'</b>'
+    /* El separador va DENTRO del renglón gris y no como gap: con el precio
+       tachado (deal vencido), "144,88" y el número de deal se leían pegados
+       como si fueran un solo número. */
+    + '<u>· '+cevenEsc((p.deal && p.deal.nro) || 's/n')
+      + (p.deal && p.deal.fin ? (' · ' + (vencido ? '✕ ' : '') + cevenDealFechaTxt(p.deal.fin)) : '')
+    + '</u></div>';
 }
 
 /* ¿Este SKU ya está en la cotización? Se compara por SKU y no por id de ítem
@@ -421,6 +778,7 @@ function _catRowHTML(p, idx, idAttr, opts){
 
 function renderCat() {
   _pintarFiltroRubro();
+  _pintarBadgeDeals();
   var filtered=getFiltered(), html='';
   _catRendered = filtered;
   for(var i=0;i<filtered.length;i++) html += _catRowHTML(filtered[i], i, 'data-i', {admin:true});

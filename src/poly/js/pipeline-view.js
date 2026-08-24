@@ -78,74 +78,43 @@ function renderPipeline(){
   var _stFilters = window._pipeStatusFilters || [];
   var monthFilter = window._pipeMonthFilter || '';
 
-  // Pastillas de Cierre estimado
-  var allMonthValues = {};
-  pipe.forEach(function(r){ if(r.mesCierre) allMonthValues[r.mesCierre] = true; });
-  var monthPills = document.getElementById('pipe-month-pills');
-  if(monthPills){
-    var sortedMonths = Object.keys(allMonthValues).sort();
-    var meses2 = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    var cur = monthFilter;
-    function _mPill(val, label){
-      var active = (cur === val) || (val==='' && !cur);
-      var bg = active ? '#1d1d1f' : '#fff';
-      var fg = active ? '#fff' : '#1d1d1f';
-      var bd = active ? '#1d1d1f' : '#d2d2d7';
-      return '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-act="month" data-val="'+cevenEsc(val)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap">'+cevenEsc(label)+'</div>';
-    }
-    var pillsH = _mPill('', 'Todos') + _mPill('sin-fecha', 'Sin fecha');
-    sortedMonths.forEach(function(m){
-      var p = m.split('-');
-      var lbl = p.length===2 ? (meses2[parseInt(p[1])-1]+' '+p[0]) : m;
-      pillsH += _mPill(m, lbl);
-    });
-    monthPills.innerHTML = pillsH;
-  }
+  /* Pastillas de Cierre estimado. Los meses y el "Sin fecha" salen de los datos:
+     una pastilla que no puede dar ninguna fila no se pinta. Devuelve el filtro
+     ya resuelto —vuelve a '' si lo que estaba filtrado dejó de existir—, y hay
+     que filtrar con ESE valor y no con `window._pipeMonthFilter` leído antes.
+     Vive en shared/pipeline-ui.js: era el mismo código que en Apple. */
+  var mesesPresentes = {}, haySinFecha = false;
+  pipe.forEach(function(r){
+    if(r.mesCierre) mesesPresentes[r.mesCierre] = true;
+    else haySinFecha = true;
+  });
+  monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha);
 
-  // Top 3-5 clientes
-  var topClientsBox = document.getElementById('pipe-topclients-pills');
-  if(topClientsBox){
-    /* Cuenta PROYECTOS. La pastilla decía "3 OPG" contando filas, incluidas
-       las que no tienen ningún OPG (el campo es opcional), y dos líneas más
-       abajo el estado vacío las llamaba "cotizaciones". Ahora cada fila ES un
-       proyecto, así que la cuenta es directa. */
-    var cliCount = {};
-    pipe.forEach(function(r){
-      var cl=(r.cliente||'').trim(); if(!cl || cl==='—') return;
-      cliCount[cl]=(cliCount[cl]||0)+1;
-    });
-    var topCli = Object.keys(cliCount).map(function(c){ return {cli:c, n:cliCount[c]}; });
-    topCli.sort(function(a,b){ return b.n - a.n; });
-    topCli = topCli.slice(0,5);
-    var medals = ['🥇','🥈','🥉','4°','5°'];
-    var curSearch = (document.getElementById('pipe-search').value||'').trim().toLowerCase();
-    var tcH = '';
-    topCli.forEach(function(t, i){
-      var active = curSearch === t.cli.toLowerCase();
-      var bg = active ? '#1d1d1f' : '#fff';
-      var fg = active ? '#fff' : '#1d1d1f';
-      var bd = active ? '#1d1d1f' : '#d2d2d7';
-      // El escapado viejo (`\'` + &quot;) no cubría la barra invertida: un cliente
-      // llamado  \');alert(1);//  cerraba el string del onclick y ejecutaba código
-      // en la pantalla de todo el que abriera el pipeline.
-      tcH += '<div class="pipe-mpill'+(active?' pipe-mpill-on':'')+'" data-act="client" data-cli="'+cevenEsc(t.cli)+'" style="cursor:pointer;border:0.5px solid '+bd+';background:'+bg+';color:'+fg+';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:'+(active?'600':'500')+';white-space:nowrap">'
-        +medals[i]+' '+cevenEsc(t.cli)+' <span style="opacity:.7;font-weight:400">· '+cevenEsc(t.n)+(t.n===1?' proyecto':' proyectos')+'</span></div>';
-    });
-    topClientsBox.innerHTML = tcH || '<span style="font-size:12px;color:#aeaeb2">Sin clientes cargados</span>';
-  }
-
-  var filtered = pipe.filter(function(r){
+  /* El filtro se aplica en DOS pasos, y el intermedio no es cosmético: las
+     pastillas de "Top clientes" salen de `sinBuscar` —todo menos el texto del
+     buscador— porque tocar una pastilla ESCRIBE el nombre del cliente en ese
+     buscador. Si también respetaran la búsqueda, el primer clic dejaría una
+     sola pastilla en pantalla y no habría forma de saltar a otro cliente. */
+  var sinBuscar = pipe.filter(function(r){
     if(ex && r.ejecutivo !== ex) return false;
-    if(q){
-      var hay = ((r.cliente||'')+' '+(r.opg||'')+' '+(r.proyecto||'')+' '+(r.qNum||'')).toLowerCase();
-      if(hay.indexOf(q) === -1) return false;
-    }
     if(_stFilters.length > 0 && _stFilters.indexOf(r.estado||'Cotizado') === -1) return false;
     if(monthFilter){
       if(monthFilter === 'sin-fecha'){ if(r.mesCierre) return false; }
       else if(r.mesCierre !== monthFilter) return false;
     }
     return true;
+  });
+
+  // Top clientes por monto. Vive en shared/pipeline-ui.js: era el mismo código
+  // que en Apple, con los mismos errores. Ver el comentario largo de allá.
+  cevenPintarTopClientes(sinBuscar);
+
+  /* `.slice()` y no `sinBuscar` a secas: unas lineas mas abajo se hace
+     `filtered.sort()`, que ordena EN EL LUGAR — sin la copia, ordenar la
+     tabla reordenaria tambien el array del que salen las pastillas. */
+  var filtered = !q ? sinBuscar.slice() : sinBuscar.filter(function(r){
+    var hay = ((r.cliente||'')+' '+(r.opg||'')+' '+(r.proyecto||'')+' '+(r.qNum||'')).toLowerCase();
+    return hay.indexOf(q) !== -1;
   });
 
   var sortCol = window._pipeSort.col, sortDir = window._pipeSort.dir;

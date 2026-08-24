@@ -62,10 +62,16 @@ function precioDeCatalogo(sku, tier){
   return cevenPolyPrecioEnLista(products, sku, tier);
 }
 
-// Los 4 precios de un SKU, para poder mostrarlos en el selector.
+// Los precios de un SKU, para poder mostrarlos en el selector.
 function preciosDeCatalogo(sku){
   var p = cevenPolyProducto(products, sku);
   return (p && p.precios) || {};
+}
+
+// El deal de un SKU ({nro, fin}) o null. Lo carga el importador de promos.
+function dealDeCatalogo(sku){
+  var p = cevenPolyProducto(products, sku);
+  return (p && p.deal) || null;
 }
 
 /* Recalcula el precio de una linea segun su nivel efectivo. No toca las
@@ -125,6 +131,7 @@ function tierSelectHTML(it){
   var tiers = cevenTiers();
   if(!tiers.length) return '';
   var pr = preciosDeCatalogo(it.sku);
+  var deal = dealDeCatalogo(it.sku);
   var actual = tierDeLinea(it);
   var propio = !!it.tier && it.tier !== TIER_MANUAL;
   var h = '<select class="si" data-act="tier" data-id="'+cevenEsc(it.id)+'" '
@@ -132,7 +139,19 @@ function tierSelectHTML(it){
         + (propio ? ';border-color:var(--acc,#0071e3);font-weight:600' : '') + '">';
   for(var i=0;i<tiers.length;i++){
     var v = tiers[i].v, p = pr[v];
+    /* El nivel DEAL solo existe para los SKU que estan en un deal: ofrecerlo
+       vacio en los otros 600 y pico seria una opcion que nunca hace nada. La
+       excepcion es cuando ESA linea ya esta en DEAL (porque lo esta el selector
+       global): sacarla dejaria al <select> mostrando "Tier 1" seleccionado y
+       mintiendo sobre en que nivel esta la linea. */
+    if(tiers[i].deal && typeof p !== 'number' && v !== actual) continue;
     var txt = tiers[i].lbl + (typeof p === 'number' ? ' · ' + fD(p) : ' · —');
+    /* La vigencia va en la propia opcion, no en un tooltip: elegir "Deal" sin
+       ver que vencio la semana pasada es cotizar un precio que Poly no va a
+       tomar, y en el <select> abierto un title no se lee. */
+    if(tiers[i].deal && deal && deal.fin){
+      txt += ' · ' + (cevenDealVencido(deal) ? '⚠ venció ' : 'hasta ') + cevenDealFechaTxt(deal.fin);
+    }
     h += '<option value="'+cevenEsc(v)+'"'+(v===actual?' selected':'')+'>'+cevenEsc(txt)+'</option>';
   }
   h += '<option value="'+TIER_MANUAL+'"'+(actual===TIER_MANUAL?' selected':'')+'>'+cevenEsc(TIER_MANUAL_LBL)+'</option>';

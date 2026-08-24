@@ -21,7 +21,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `opciones.js` | Opciones **A/B** de una cotización: dos propuestas alternativas guardadas como una sola. Ver "Opciones A/B" más abajo |
 | `catalog-core.js` | `parseCSV`, `fk`, búsqueda y pegado masivo de SKUs, selección de filas, limpieza de filtros |
 | `pipeline-store.js` | `getPipeline`/`savePipeline`/`getArchive`/`saveArchive`/`currentMonthKey` |
-| `pipeline-ui.js` | Filtros de mes/cliente/pills y orden de la tabla del pipeline |
+| `pipeline-ui.js` | Filtros de mes/cliente/pills, orden de la tabla del pipeline y las pastillas de **Top clientes** (`cevenPintarTopClientes`, compartida por las dos marcas desde el 24/08 — ver abajo) |
 | `pdf-core.js` | `downloadQuotePDF()` (html2canvas + jsPDF), las hojas de estilo del documento, el bloque **Condiciones Comerciales** (`cevenCondiciones`/`cevenCondicionesHTML`, único para los tres documentos) y `cevenDescargarYAbrir()`, que baja el archivo y lo abre en otra pestaña |
 | `undo.js` | Deshacer cambios del pipeline, incluidas inserciones y borrados de fila |
 | `nav.js` | `window.cevenNav`: integra el botón Atrás del navegador/celular y la tecla Escape (una sola pila de overlays, un solo listener `popstate`) |
@@ -30,7 +30,7 @@ Módulos de `src/shared/` (los comparten shell y cotizadores; mismo origin ⇒ m
 | `navbar.js` | Barra superior de todas las páginas: chip de marca, un ítem por vista (leídos de `CEVEN_BRAND.navItems`) y el bloque de cuenta (dark mode, usuarios, quién sos + rol, contraseña, salir). `cevenNavbarSync()` marca la vista activa y esconde lo que el rol no puede usar |
 | `notify.js` | Carteles, deshacer y modales genéricos — reemplazan `alert`/`confirm`/`prompt` nativos. **No quedan diálogos nativos en ninguna marca** (desde 10/08/2026 en Apple): un error o una validación se avisa con `showToast()`, y una acción destructiva se **aplica** y se ofrece `notifyUndo()` en vez de preguntar antes. `confirmModal()` queda reservado para lo irreversible que además recarga la página (restaurar un backup). El motivo no es estético: `alert()` congela el renderer —y con él cualquier driver de test— y en la PWA se ve como un cartel del navegador, no de la app |
 | `todos.js` | Tareas del equipo: **store y sincronización**, no UI (tablas `todos` y `equipos` + RPC `ceven_equipo`, poll cada 15 s). Expone `window.cevenTareas`. Lo usan el shell (solo para la pastilla de pendientes) y `tareas/js/board.js`. Ojo con los nombres: `personas()` es la **gente**, `equipos()` son los **tableros** |
-| `clientes.js` | Ficha por cliente (hoy: el nivel de precio con el que se le cotiza) y el `<datalist>` del campo Cliente. Define **`cevenNormClient()`**, la forma canónica de un nombre de cliente — vive acá y no en `pipeline-group.js` desde el 12/08/2026: el pipeline **agrupa** por cliente, no lo define, y con la dependencia al revés una página con clientes pero sin pipeline (el multimarca) reventaba al guardar. Va **antes** de `pipeline-group.js` |
+| `clientes.js` | Ficha por cliente (hoy: el nivel de precio con el que se le cotiza), el `<datalist>` del campo Cliente y —desde el 24/08— el **desplegable propio** que lo reemplaza en pantalla (ver "El campo Cliente" abajo). Define **`cevenNormClient()`**, la forma canónica de un nombre de cliente — vive acá y no en `pipeline-group.js` desde el 12/08/2026: el pipeline **agrupa** por cliente, no lo define, y con la dependencia al revés una página con clientes pero sin pipeline (el multimarca) reventaba al guardar. Va **antes** de `pipeline-group.js` |
 | `clientes-db.js` | Complementa a `clientes.js` con la tabla real `clientes` de Supabase (Fase 0 del portal, agosto 2026): resuelve-o-crea por `nombre_norm` al cambiar el campo Cliente (`cevenClienteCambio()`), sin bloquear el guardado si la red tarda — `cevenClienteIdParaNombre()` devuelve `null` en vez de un id viejo si el nombre cambió mientras se esperaba la respuesta. El `id` resuelto viaja como `pipeline."clienteId"` (aditiva, nunca pisa el texto libre `cliente`) |
 | `equipo.js` | **Quiénes son las personas de Ceven**, para poder elegir una en un campo (hoy: el Ejecutivo del multimarca). Sale de la RPC `ceven_equipo()`, que es la única fuente legible por un no-admin: `admin-users` responde 403 a todo el que no sea `admin@ceven.com`. `cevenEquipoVendedores()` filtra a los roles que cotizan (**admin** y **ventas**) y `cevenLlenarExec()` llena el `<select>` sin deshabilitarlo nunca. Comparte la caché (`ceven_equipo_cache`) con `todos.js`: mismo dato, misma RPC |
 | `comprobante.js` | Comprobante de una cotización (botón 🧾 en cada tarjeta del historial, en las dos marcas). **Se descarga como PDF y se abre solo.** Se dibuja con jsPDF + autotable, no con html2canvas: el texto se selecciona y se busca, a diferencia de `pdf-core.js`, que rasteriza. Al ser todo sincrónico el `window.open` cae dentro del gesto del click y el navegador no lo bloquea. Los datos del emisor salen de `CEVEN_EMISOR` en `config.js`. Ojo con `cevenCompSan()`: las fuentes estándar del PDF no dibujan `– — “ ” …`, hay que pasar por ahí todo lo que se imprima |
@@ -411,6 +411,130 @@ lo que no apareció y conserva los manuales. Los dos caminos comparten
 es justo lo que pasaba antes: la carga completa guardaba el código interno y la
 actualización buscaba por `Model #`, así que "actualizar" duplicaba el catálogo.
 
+## Los dos Excel del catálogo de Poly
+
+En `p-catalog` entran **dos archivos distintos**, con dos botones y una ayuda
+desplegable (`#excel-ayuda`) que explica cuál es cuál — la ayuda está en la
+pantalla y no acá porque el que carga el Excel es un vendedor. Los dos pasan
+por `handlePL()`, que **decide por el CONTENIDO, no por el botón**.
+
+| | `📂 Catálogo NetSuite` | `🎯 Deals (BOM Calculator)` |
+|---|---|---|
+| Origen | NetSuite, búsqueda guardada `ResultadosPreviewCatalogDistri` (`ingresoPoly.xls`) | el BOM Calculator mensual de HP/Poly, **hoja `Promos`** |
+| Forma | una fila por (SKU × depósito × nivel): 77 SKU = 564 filas | una fila por SKU en promoción (673 en el archivo de 07/2026) |
+| Columnas | `Nombre`, `Nombre para mostrar`, `Nivel de precio`, `Precio unitario`, `Ubicacion del inventario`+`LocAvailable`, `Programa fiscal`, `RUBRO` | `Base SKU`, `Description`, `BDNet`, `Deal`, `End Date` |
+| Efecto | **reemplaza** el catálogo | **mergea**: agrega el nivel `DEAL` y da de alta los SKU que no estaban |
+| Función | `processRows()` → `_processRowsTiers()` | `processDeals()` → `_leerFilasDeals()` |
+
+Cuatro cosas cableadas en `poly/js/catalog.js`:
+
+- **La detección es por contenido** (`_hojaPromos()` + `_pareceDeals()`). El
+  archivo de deals trae 24 hojas y la primera se llama `BOM`: cargarlo por el
+  camino del catálogo no daba ningún error, daba un catálogo de basura con los
+  77 SKU reales y sus cuatro precios borrados. Los botones existen porque son
+  donde se explica qué archivo va en cada uno, pero manda el archivo.
+- **El deal es un nivel de precio más** — `precios['DEAL']`, declarado en
+  `priceTiers` de `poly/brand.js` con `deal: true`. Por eso lo cotizan sin
+  cambios el selector global, el de línea y `repricearLinea()`, y por eso **no
+  hizo falta tocar `pricing-core.js`** (que es byte a byte igual al de las Edge
+  Functions del portal). Lo que un tier no tiene —número y vencimiento— va en
+  `p.deal = {nro, fin}`; el precio **no** se duplica ahí.
+- **Reimportar NetSuite conserva los deals.** `processRows()` guarda el
+  `p.deal`/`precios.DEAL` de lo que ya había y se lo vuelve a poner a los SKU
+  del archivo nuevo, y conserva los SKU que existen solo por un deal — igual
+  que hace con los `manual`. Sin eso, un deal duraba hasta la próxima
+  actualización de stock, que es cosa de horas.
+- **Un archivo de deals nuevo reemplaza TODOS los deals**, no los acumula: si
+  se fueran sumando, un SKU que salió de la promoción se seguiría cotizando al
+  precio viejo hasta que Poly rechazara la orden. Los SKU que existían solo por
+  un deal que ya no está se van del catálogo (sin deal no les queda ningún
+  precio); el aviso del final dice cuántos.
+
+El nivel `DEAL` también aparece en el multimarca, que lee los niveles de las
+claves de `precios` del catálogo (`nivelesPoly()` en `multi/js/quote.js`). Esa
+función **une las claves de todo el catálogo** en vez de tomar las del primer
+producto con precios: `DEAL` lo tienen solo algunos SKU, así que el atajo viejo
+lo mostraba o no según qué producto estuviera primero.
+
+Un deal vencido **se sigue viendo** —en rojo y tachado en el catálogo, con
+`⚠ venció` en el selector de la línea— en vez de esconderse: el vendedor tiene
+que poder ver a cuánto estuvo y pedir la renovación. El día del vencimiento
+todavía vale (`End Date 31/07` = hasta el 31/07 inclusive).
+
+> **`DEAL` no es lo mismo que un REGI.** El REGI (`regi_codigos`, ver
+> `HISTORIAL.md` del 21/08) es un precio por SKU que **Ceven** le habilita a un
+> cliente-canal puntual, y vive en el portal. El `DEAL` es el precio que
+> **HP/Poly** le habilita a Ceven, vive en el catálogo interno y no llega al
+> portal: `portal-catalogo` cotiza con el `poly_tier` del cliente, que nunca es
+> `DEAL` (el `<select>` de esa pantalla tiene los cuatro niveles escritos a
+> mano), y los SKU que solo tienen deal quedan afuera por el filtro
+> `price !== null` que ya existía.
+
+## El campo Cliente
+
+Usaba `list="cliente-datalist"`, el desplegable nativo del navegador. Desde el
+24/08 el `<input>` ya no lo abre (`autocomplete="off"`, sin `list=`) y lo
+reemplaza un popover propio que vive en `shared/clientes.js`, al final del
+archivo. El desplegable nativo no es estilable, y en Chrome además matchea por
+**prefijo**: tipear "galicia" no encontraba "Banco Galicia".
+
+**El `<datalist>` sigue en el HTML de las tres marcas y tiene que seguir**: dejó
+de ser el desplegable y pasó a ser la fuente de datos. Lo llenan las dos
+funciones que ya existían —`cevenRefreshClienteDatalist()` (local, instantánea)
+y `cevenClientesDbRefreshDatalist()` (`clientes-db.js`, la tabla `clientes`, por
+red y más tarde)— y el combo lo lee en cada apertura. Por eso el combo no sabe
+nada de Supabase ni de en qué orden llegan las dos listas.
+
+Lo que aporta sobre el nativo: matchea en el medio de la palabra y sin acentos
+("penaflor" → Peñaflor), ordena los que **empiezan** con lo tipeado primero,
+resalta la coincidencia, muestra el **nivel de precio** de cada cliente —que es
+justo el que `aplicarTierDelCliente()` va a aplicar al elegirlo— y cuando no hay
+coincidencias dice que se va a crear un cliente nuevo, en vez de no abrirse.
+
+Dos detalles del código que parecen de más y no lo son:
+
+- **`_plegar()` y `_fold()` son dos funciones.** `_plegar()` saca acentos y baja
+  a minúsculas conservando el largo; `_fold()` es eso más colapsar espacios,
+  para buscar. Están separadas porque `_resaltar()` busca sobre el texto plegado
+  y **corta sobre el original**: si el plegado cambiara el largo, el `<b>` caería
+  corrido. `_resaltar()` compara los largos antes de cortar y, si no cuadran,
+  muestra el nombre sin resaltar.
+- **Al elegir se dispara un `change` que burbujea.** Es el contrato con el resto
+  de la app: de ese `onchange` cuelgan `aplicarTierDelCliente()` y
+  `cevenClienteCambio()`. Un input escrito por JS no lo dispara solo. Mismo
+  contrato que `monthpicker.js`.
+
+`Escape` cierra el desplegable y **corta la propagación**, porque `shared/nav.js`
+también escucha Escape para salir de la vista.
+
+## Filtros del pipeline y "Top clientes"
+
+`renderPipeline()` filtra en **dos pasos** en las dos marcas, y el intermedio no
+es cosmético:
+
+```js
+var sinBuscar = pipe.filter(/* ejecutivo + estado + mes (+ familia en Apple) */);
+cevenPintarTopClientes(sinBuscar);          // shared/pipeline-ui.js
+var filtered = !q ? sinBuscar.slice() : sinBuscar.filter(/* búsqueda de texto */);
+```
+
+Tocar una pastilla de Top clientes **escribe el nombre del cliente en el
+buscador** (`setPipeClientFilter`). Si las pastillas salieran de `filtered`, el
+primer clic dejaría una sola pastilla y no habría forma de saltar a otro
+cliente; si salieran de `pipe` —que es lo que hacían hasta el 24/08— dirían
+números que la tabla de abajo contradice. `sinBuscar` es el punto medio correcto.
+El `.slice()` tampoco sobra: `filtered.sort()` ordena en el lugar.
+
+`cevenPintarTopClientes()` ordena **por monto**, excluye `Perdido` (no `Facturado`)
+y agrupa con `cevenPipeGroupBy()`, el mismo agrupador que la tabla — así las
+pastillas y los encabezados de grupo no pueden discrepar sobre quién es quién.
+El detalle de los cuatro errores que tenía la versión duplicada está en el
+comentario de cabecera de la función y en `HISTORIAL.md` (24/08).
+
+El botón **"✕ Limpiar filtros"** vive dentro de la tarjeta de filtros (una celda
+más de la grilla `.gf`), en rojo (`.bo.red`), no en la barra de acciones. Es el
+mismo lugar donde ya estaba el "Limpiar" del Historial.
+
 ## Fórmula de precio
 
 `calcP(base, nac, mg) = round( base · (1 + nac/100) / (1 − mg/100) )` — costo base + % nacionalización según modelo (tabla NAC con overrides por cotización), dividido por (1 − margen). Cotizaciones "FOB" (observaciones que empiezan con `FOB`) fuerzan NAC = 0.
@@ -437,7 +561,10 @@ node scripts/check-emitir.js         # emisión: reparto, numeración y re-emisi
 node scripts/check-apple-catalogo.js # importador de Apple: encabezado corrido, Model # y los dos archivos
 node scripts/check-apple-picker.js   # la flotante de Apple y la fila compartida con el catálogo
 node scripts/check-apple-manual.js   # alta/edición/baja de un artículo a mano en Apple
+node scripts/check-combo-cliente.js  # el desplegable del campo Cliente
+node scripts/check-pipe-pills.js     # pastillas del pipeline: "Top clientes" y "Cierre estimado"
 node scripts/check-poly-catalogo.js  # importador de Poly: tiers, stock e IVA
+node scripts/check-poly-deals.js     # importador de deals (hoja Promos) y su convivencia con el catálogo
 node scripts/check-poly-tiers.js     # niveles de precio de Poly
 node scripts/check-poly-manual.js    # alta/edición de un artículo a mano
 node scripts/check-poly-netsuite.js  # el link de Netsuite del pipeline
@@ -456,6 +583,12 @@ forma** de los dos price list (avisos antes del encabezado, `SKU` interno junto 
 datos de trabajo y están en `.gitignore`. Si los tenés a mano se le pasan por
 línea de comandos y corre los chequeos genéricos contra ellos:
 `node scripts/check-apple-catalogo.js "APPLE Price list A ….xlsx" "APPLE Price list FTZ A ….xlsx"`.
+
+`check-poly-deals.js` sigue el mismo criterio: banco propio por defecto (con la
+fila de pie `Applied filters:` que trae el archivo real, y con las vigencias
+calculadas **relativas a hoy** para que no empiece a fallar solo el mes que
+viene), y los chequeos genéricos contra el archivo real si se lo pasás:
+`node scripts/check-poly-deals.js "BOM-Calculator-ARG-….xlsx"`.
 
 `check-globals.js` existe porque acá todos los `<script>` comparten scope: si dos archivos definen la misma función, **el que carga después pisa al anterior sin ningún error**. Pasó con `openSkuOvLink`/`editSkuOvLink`, duplicadas en `pipeline-detail.js` desde el corte del monolito hasta que un review las encontró; la que corría era la de abajo y la otra era código muerto que alguien podía leer y creer vigente. El riesgo creció con `shared/`: una función movida a compartido puede chocar con una copia que quedó en la marca.
 
