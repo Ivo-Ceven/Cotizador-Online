@@ -150,5 +150,45 @@ ok(payload.model === 'modelo-de-prueba', 'usa el modelo que se le pasa, no uno h
 ok(payload.tool_choice && payload.tool_choice.function.name === 'proponer_items', 'tool_choice fuerza proponer_items siempre — nunca texto libre');
 ok(JSON.stringify(payload).indexOf('235') !== -1, 'el price_ref SÍ viaja hacia el modelo (es contexto de presupuesto para él)');
 
+/* ====== 7) el recorte del catalogo: los dos topes y el aviso ================ */
+console.log('\nRecorte del catálogo · el tope del cliente y el del server\n');
+
+{
+  const fsx = require('fs');
+  const pathx = require('path');
+  const ROOTx = pathx.resolve(__dirname, '..');
+  const cliente = fsx.readFileSync(pathx.join(ROOTx, 'src/shared/asistente.js'), 'utf8');
+  const m = /var CEVEN_ASIS_CATALOGO_MAX = (\d+);/.exec(cliente);
+  ok(!!m, 'el cliente declara CEVEN_ASIS_CATALOGO_MAX');
+  /* Duplicado a proposito (un modulo de navegador no puede require() uno de
+     Node), asi que lo unico que lo sostiene es este chequeo: si se desfasan, el
+     cliente manda de mas y el server lo tira SIN AVISAR — que es como se
+     estuvieron perdiendo 203 productos de Poly. */
+  ok(!!m && parseInt(m[1], 10) === core.CATALOGO_MAX,
+     'y vale lo mismo que CATALOGO_MAX del server (' + core.CATALOGO_MAX + ')',
+     m ? ('cliente ' + m[1] + ' vs server ' + core.CATALOGO_MAX) : '');
+  ok(/catalogo_recortado/.test(cliente), 'el cliente lee cuántos productos quedaron afuera');
+
+  const api = fsx.readFileSync(pathx.join(ROOTx, 'api/asistente.js'), 'utf8');
+  ok(/catalogo_recortado: norm\.recortados/.test(api), 'y el server se lo manda en la respuesta');
+  /* Las tres fallas hacia OpenRouter tienen que distinguirse: con un solo
+     mensaje no hay forma de saber desde la consola cuál pasó. */
+  ok(/AbortError/.test(api) && /TIMEOUT/.test(api), 'el timeout se distingue de un fallo de red');
+  ok(/504/.test(api), 'y se reporta como 504, no como 502');
+  ok(/orRes\.text\(\)/.test(api), 'un error de OpenRouter se loguea con su cuerpo, no solo el status');
+}
+
+{
+  // El recorte tiene que informarse, no solo aplicarse.
+  const muchos = [];
+  for(let i = 0; i < core.CATALOGO_MAX + 37; i++) muchos.push({id: 'SKU-' + i, description: 'p' + i});
+  const n = core.normalizarCatalogoEntrada({mensaje: 'hola', catalogo: muchos});
+  ok(n.catalogo.length === core.CATALOGO_MAX, 'el server sigue capeando en CATALOGO_MAX', String(n.catalogo.length));
+  ok(n.recortados === 37, 'y ahora dice cuántos dejó afuera', String(n.recortados));
+  const pocos = core.normalizarCatalogoEntrada({mensaje: 'hola', catalogo: [{id:'A', description:'a'}]});
+  ok(pocos.recortados === 0, 'sin recorte informa 0, no undefined', String(pocos.recortados));
+}
+
+
 console.log('\n' + (fallos ? '✗ ' + fallos + ' de ' + corridas + ' fallaron' : '✓ ' + corridas + ' chequeos OK') + '\n');
 process.exit(fallos ? 1 : 0);

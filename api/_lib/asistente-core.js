@@ -32,7 +32,15 @@ function normalizarCatalogoEntrada(body){
 
   var mensaje = (typeof body.mensaje === 'string') ? body.mensaje.trim().slice(0, MENSAJE_MAX) : '';
 
-  var catalogoCrudo = Array.isArray(body.catalogo) ? body.catalogo.slice(0, CATALOGO_MAX) : [];
+  /* El recorte a CATALOGO_MAX era MUDO, y desde el 24/08 dejó de ser teórico:
+     el catálogo de Poly pasó a 703 productos (el Excel de deals) y se estaban
+     descartando 203 sin que nadie se enterara. El síntoma es de los peores:
+     el asistente contesta "no encontré nada así" sobre un producto que SÍ está
+     en el catálogo, solo que nunca le llegó. Se informa cuántos quedaron
+     afuera para que quien llama pueda decirlo. */
+  var catalogoEntero = Array.isArray(body.catalogo) ? body.catalogo : [];
+  var recortados = Math.max(0, catalogoEntero.length - CATALOGO_MAX);
+  var catalogoCrudo = catalogoEntero.slice(0, CATALOGO_MAX);
   var catalogo = [];
   for(var i=0;i<catalogoCrudo.length;i++){
     var p = catalogoCrudo[i];
@@ -55,7 +63,7 @@ function normalizarCatalogoEntrada(body){
     itemsActuales.push({id: it.id.trim(), qty: (isFinite(qty) && qty > 0) ? qty : 1});
   }
 
-  return {mensaje: mensaje, catalogo: catalogo, itemsActuales: itemsActuales};
+  return {mensaje: mensaje, catalogo: catalogo, itemsActuales: itemsActuales, recortados: recortados};
 }
 
 var TOOL_SCHEMA = {

@@ -915,16 +915,29 @@ function cevenAplicarSkusPegados(found){
 // nivel enteros, solo una referencia de presupuesto al nivel vigente (el
 // mismo que usa aplicarTierDelCliente()) — el asistente nunca debe decidir
 // ni devolver un precio, price_ref es puro contexto para elegir mejor.
+/* Los que SÍ tienen precio al nivel vigente van primero. Importa desde que el
+   Excel de deals llevó el catálogo de 77 a 703 productos (24/08): shared/
+   asistente.js recorta la lista antes de mandarla, y sin este orden el recorte
+   se comía productos cotizables para dejar entrar SKUs de servicio que el
+   asistente ni siquiera puede proponer con precio — si el modelo elige uno sin
+   `price_ref`, la línea entra a la cotización con el importe vacío. */
 function _asisCatalogoCompacto(){
   var tier = tierGlobal();
-  return products.map(function(p){
-    return {
+  var conPrecio = [], sinPrecio = [];
+  for(var i=0;i<products.length;i++){
+    var p = products[i];
+    var ref = cevenPolyPrecioDe(p, tier);
+    (ref === null ? sinPrecio : conPrecio).push({
       id: p.sku,
       description: p.description,
       category: p.rubro || '',
-      price_ref: cevenPolyPrecioDe(p, tier)
-    };
-  });
+      price_ref: ref
+    });
+  }
+  /* Los sin precio NO se descartan: sin nivel global elegido `ref` es null para
+     todos, y devolver una lista vacía haría que el asistente conteste "todavía
+     no hay catálogo cargado" con el catálogo cargado. */
+  return conPrecio.concat(sinPrecio);
 }
 
 // Lo que la cotización ya lleva (solo la opción que se está editando), para

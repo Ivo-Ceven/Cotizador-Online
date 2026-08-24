@@ -148,6 +148,101 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 24/08/2026 · El asistente IA empieza a dar 502 — y el culpable fue el Excel de deals
+
+Reporte desde la consola de producción:
+
+```
+POST /api/asistente 502 (Bad Gateway)
+[asistente] error al pedir propuesta: {ok:false, error:'No se pudo contactar al proveedor de IA.'}
+```
+
+(En el mismo volcado había ruido de `contentscript.js` —`MaxListenersExceededWarning`,
+`ObjectMultiplex - orphaned data`—: es una extensión del navegador, no la app.)
+
+### El diagnóstico
+
+Ese mensaje sale de UN solo lugar: el `catch` alrededor del `fetch` a
+OpenRouter. Se descartó lo obvio: el modelo `nvidia/nemotron-3.5-lightning:free`
+**sigue existiendo** en OpenRouter, sostiene `tools`/`tool_choice` y tiene 1M de
+contexto (verificado contra `GET /api/v1/models`). Y la clave está puesta, si no
+la respuesta habría sido un 500 "Falta configurar OPENROUTER_API_KEY".
+
+Lo que cambió hoy fue **el tamaño del pedido**. El importador de deals llevó el
+catálogo de Poly de 77 a 703 productos, y `_asisCatalogoCompacto()` le manda al
+modelo el catálogo entero:
+
+| | productos | payload |
+|---|---|---|
+| antes | 77 | 12,1 KB (~3k tokens) |
+| hoy | 703 (500 tras el cap) | 57 KB (~15k tokens) |
+
+Casi 5 veces más prompt contra un modelo del tier gratuito, con un timeout de
+cliente de **20 s**. El `AbortController` salta, `fetch` tira `AbortError`, y ese
+error caía en el mismo `catch` que un fallo de DNS.
+
+Queda como hipótesis fuerte y no como certeza: los logs de runtime de Vercel
+devolvieron 403 con la cuenta conectada, así que no se pudo leer el
+`console.warn` real. Por eso el primer arreglo es de diagnóstico.
+
+### Lo que se arregló
+
+**1. Las tres fallas dejan de llamarse igual.** Timeout, fallo de red y
+"respondió 200 con algo que no es JSON" caían todas en `'No se pudo contactar al
+proveedor de IA.'`. Ahora el timeout devuelve **504** con su propio texto ("tardó
+más de N segundos"), la red sigue en 502, y el JSON ilegible tiene el suyo. El
+log agrega cuánto tardó, qué modelo, cuántos productos y cuántos bytes tenía el
+payload. Y cuando OpenRouter contesta con error se loguea **el cuerpo**, que es
+donde dice si fue el rate limit del tier gratuito, créditos o el modelo.
+
+**2. El timeout pasó de 20 s a 25 s.** `vercel.json` le da `maxDuration: 30` a
+la función: había 10 s de margen sin usar. No es la solución de fondo — el techo
+sigue siendo `maxDuration`, y pasarse de ahí lo corta Vercel con un 504 propio,
+sin nuestro mensaje.
+
+**3. El recorte silencioso.** `CATALOGO_MAX = 500` en el server venía cortando
+**203 productos sin decir nada**. El síntoma es de los peores: el asistente
+contesta "no encontré nada así" sobre un producto que SÍ está en el catálogo,
+solo que nunca le llegó. Ahora:
+
+- el cliente recorta con el MISMO tope antes de mandar (esos 203 productos
+  viajaban al pedo por la red);
+- cada marca ordena su catálogo poniendo primero lo que puede cotizar de verdad
+  (`price_ref !== null`), así lo que se cae es lo menos útil — antes el recorte
+  era por orden de aparición;
+- cuántos quedaron afuera vuelve en la respuesta (`catalogo_recortado`) y se
+  muestra en el overlay.
+
+Los dos topes son el mismo número escrito dos veces —un módulo de navegador no
+puede `require` uno de Node, igual que con `SUPABASE_URL`—, así que
+`check-asistente.js` verifica que no se desfasen: si se desfasan, el cliente
+manda de más y el server lo tira callado, que es exactamente el bug de arriba.
+
+**4. Un bug de paso.** Un SKU que existe solo por su deal no tiene precio en un
+tier normal, así que si el asistente lo proponía, la línea entraba a la
+cotización **con el importe vacío**. Ordenar por `price_ref` primero lo hace
+mucho menos probable; no lo cierra del todo.
+
+### Lo que NO se arregló
+
+**El prompt sigue pesando 5 veces más que antes.** El cap del cliente ahorra la
+subida de 203 productos, pero el modelo sigue viendo 500 y el payload sigue en
+~73 KB. Si el timeout era la causa, 25 s puede alcanzar o no. Las salidas reales
+son bajar el tope, sacar del catálogo del asistente los ~626 SKU de servicio que
+trajo el BOM Calculator, o pasar a un modelo pago con `OPENROUTER_MODEL`. Queda
+para decidir con el usuario.
+
+### Verificación
+
+10 chequeos nuevos en `scripts/check-asistente.js` (38 en total): que los dos
+topes coincidan, que el recorte se informe, y que el timeout se distinga de un
+fallo de red y se reporte como 504. **Nada de esto se pudo probar contra
+OpenRouter de verdad**: la API key vive en las env vars de Vercel. Hay que
+deployar y volver a probar — el error nuevo va a decir cuál de las tres cosas
+es.
+
+---
+
 ## 24/08/2026 · "Sin fecha" solo aparece si hay algo sin fecha
 
 Las pastillas de **Cierre estimado** salen de los datos desde siempre: se pinta

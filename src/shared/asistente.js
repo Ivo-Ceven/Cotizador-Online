@@ -33,6 +33,13 @@
    (showToast), shared/safe.js (cevenEsc), shared/nav.js (cevenNav).
    ============================================================================ */
 
+/* Tope de productos que se le mandan al modelo. Es el MISMO valor que
+   CATALOGO_MAX en api/_lib/asistente-core.js, duplicado a propósito por la
+   misma razón que SUPABASE_URL en api/asistente.js: un módulo de navegador no
+   puede `require` uno de Node. Si cambia uno, cambiar el otro —
+   scripts/check-asistente.js lo verifica. */
+var CEVEN_ASIS_CATALOGO_MAX = 500;
+
 var _asisAbierto = false;
 var _asisPropuesta = null;   // última respuesta válida del endpoint
 var _asisPidiendo = false;
@@ -117,6 +124,19 @@ function _asisPedirPropuesta(){
     if(typeof showToast === 'function') showToast('Todavía no hay catálogo cargado.');
     return;
   }
+  /* El recorte se hace ACÁ y no solo en el server. api/_lib/asistente-core.js
+     tiene el mismo tope (CATALOGO_MAX) y hasta el 24/08 recortaba en silencio:
+     el catálogo de Poly pasó a 703 productos y se mandaban 203 al pedo, que el
+     server tiraba sin avisar. Mandarlos igual solo agranda el prompt —y con
+     eso el tiempo de respuesta, que es lo que empezó a dar timeout—. Cada
+     marca ordena su lista poniendo primero lo que de verdad puede cotizar
+     (ver _asisCatalogoCompacto), así que lo que se cae es lo menos útil.
+     Los dos topes tienen que decir lo mismo: si cambia uno, cambiar el otro. */
+  var recortados = 0;
+  if(catalogo.length > CEVEN_ASIS_CATALOGO_MAX){
+    recortados = catalogo.length - CEVEN_ASIS_CATALOGO_MAX;
+    catalogo = catalogo.slice(0, CEVEN_ASIS_CATALOGO_MAX);
+  }
 
   _asisPidiendo = true;
   var resBox = document.getElementById('as-resultado');
@@ -133,6 +153,9 @@ function _asisPedirPropuesta(){
   }).then(function(resp){
     _asisPidiendo = false;
     _asisPropuesta = resp;
+    /* El recorte del cliente y el del server son el mismo tope, así que en la
+       práctica solo puede haber uno; se suman igual por si algún día difieren. */
+    resp.catalogo_recortado = (resp.catalogo_recortado || 0) + recortados;
     _asisRenderResultado(resp);
   }).catch(function(err){
     _asisPidiendo = false;
@@ -172,6 +195,17 @@ function _asisRenderResultado(resp){
 
   if(noEnc.length){
     html += '<p class="as-noenc">No encontrado en el catálogo: ' + cevenEsc(noEnc.join(', ')) + '</p>';
+  }
+
+  /* Cuántos productos NO llegaron a verse. Sin esto, un "no encontró nada"
+     sobre un producto que SÍ está en el catálogo no tiene explicación posible
+     desde la pantalla: el recorte pasaba callado en el server. */
+  var fuera = (resp && resp.catalogo_recortado) || 0;
+  if(fuera){
+    html += '<p class="as-noenc">Nota: el asistente vio los primeros '
+      + CEVEN_ASIS_CATALOGO_MAX + ' productos del catálogo; ' + fuera
+      + (fuera === 1 ? ' quedó afuera' : ' quedaron afuera')
+      + '. Si buscabas uno de esos, agregalo desde el catálogo.</p>';
   }
 
   resBox.innerHTML = html;
