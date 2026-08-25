@@ -543,7 +543,16 @@
         <th style="text-align:center">Forecast</th>
         <th class="srt" data-sort="drExpiration">DR Expiration</th>
         <th class="srt" data-sort="mesCierre">Cierre estimado</th>
-        <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
+        <th class="srt" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
+        <!-- Segundo monto: la sumatoria de lo que Ceven le asignó como
+             productos (poly_regi_pipeline_productos), distinto del "Monto"
+             de arriba (lo que reporta el archivo de HP) — ver
+             js/pipeline-regi-productos.js. stk-monto/stk-act (sticky al
+             scrollear horizontal, #p-pipeline en base.css) van en ESTAS dos
+             columnas porque ahora son las últimas dos de la tabla — "Monto"
+             ya no lo es, así que perdió la clase. -->
+        <th class="srt stk-monto" data-sort="productosMonto" style="text-align:right;min-width:110px">Productos</th>
+        <th class="stk-act" style="width:150px;text-align:center">Acciones</th>
       </tr></thead>
       <tbody id="regi-pipe-body"></tbody>
     </table>
@@ -599,6 +608,7 @@
 <script src="js/pipeline-view.js"></script>
 <script src="js/pipeline-detail.js"></script>
 <script src="js/pipeline-regi.js"></script>
+<script src="js/pipeline-regi-productos.js"></script>
 <script src="../shared/backup-folder.js"></script>
 <script src="js/history.js"></script>
 <script src="../shared/papelera.js"></script>
@@ -609,6 +619,60 @@
 <script src="../shared/undo.js"></script>
 <div id="app-ver-bar"><span>Cotizador Ceven · Poly v<span id="app-ver-num"></span></span></div>
 <script src="../shared/init.js"></script>
+
+<!-- ============================================================
+     EDITAR PROYECTO REGI · asignar productos del catálogo a una
+     oportunidad del pipeline REGI (ver js/pipeline-regi-productos.js).
+     Mismo shell visual que #prod-picker (arriba el catálogo con un `+`
+     por producto, abajo lo asignado con cantidades y total), pero es un
+     carrito PROPIO —no `items`— que se guarda en Supabase
+     (poly_regi_pipeline_productos) en vez de convertirse en cotización.
+     ============================================================ -->
+<div id="regi-prod-modal" style="display:none">
+  <div class="pk-card" role="dialog" aria-modal="true" aria-label="Editar proyecto REGI">
+
+    <div class="pk-hd">
+      <div class="h3">Editar proyecto <span id="rp-proyecto-nombre" style="font-weight:400;color:#6e6e73"></span></div>
+      <button type="button" class="pk-x" data-rp-cerrar title="Cerrar">&times;</button>
+    </div>
+    <div id="rp-proyecto-info" style="padding:0 20px 10px;font-size:12px;color:#6e6e73;margin-top:-6px"></div>
+
+    <div class="pk-filtros">
+      <div class="buscador" style="flex:1">
+        <span class="buscador-lupa" aria-hidden="true">🔍</span>
+        <textarea id="rp-search" rows="1" placeholder="Buscar producto por SKU o descripci&oacute;n..."></textarea>
+      </div>
+    </div>
+    <div class="pk-rubros" id="rp-rubro" data-rubro=""></div>
+
+    <div class="pk-lista">
+      <table style="table-layout:fixed;width:100%">
+        <colgroup><col style="width:54px"><col style="width:130px"><col><col style="width:230px"></colgroup>
+        <thead>
+          <tr>
+            <th></th><th>SKU</th><th>Descripci&oacute;n</th>
+            <th style="text-align:right">Precios por nivel</th>
+          </tr>
+        </thead>
+        <tbody id="rp-body"></tbody>
+      </table>
+    </div>
+
+    <div class="pk-pie">
+      <div class="pk-pie-hd">
+        <span class="lbl" style="margin:0">Productos asignados (<span id="rp-cart-n">0</span>)</span>
+      </div>
+      <div id="rp-cart"></div>
+      <div class="pk-cierre">
+        <span>Total productos</span>
+        <b id="rp-total">&mdash;</b>
+        <button type="button" class="bo" data-rp-cerrar>Cancelar</button>
+        <button type="button" class="bd" onclick="guardarRegiProductos()">Guardar</button>
+      </div>
+    </div>
+
+  </div>
+</div>
 
 <!-- ============================================================
      SUBPANTALLA DE PRODUCTOS  ·  se abre desde "+ Agregar producto"

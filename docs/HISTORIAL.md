@@ -148,6 +148,135 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 25/08/2026 · Pipeline REGI: editar proyecto y asignarle productos del catálogo, segundo monto como KPI
+
+Pedido del usuario sobre el pipeline REGI armado más temprano hoy (ver la
+entrada siguiente): poder "editar los proyectos" del pipeline REGI y
+asignarles productos, manteniendo DOS montos — la sumatoria de los productos
+asignados y el `amount` que ya trae el Excel de HP — y que los dos figuren
+como KPI.
+
+Antes de tocar código se le preguntó al usuario de dónde salen los productos
+que se asignan (`AskUserQuestion`): catálogo real de Poly con precios por
+nivel (como armar una cotización, sin crear una cotización real) vs. carga
+manual sin validar contra el catálogo. Eligió el catálogo real.
+
+### Qué significa "editar" acá
+
+El pipeline REGI sigue siendo, en todo lo que viene del Excel
+(`regi`/`forecast`/`account`/`amount`/fechas), de solo lectura — la única
+forma de tocar esos campos sigue siendo reimportar. Lo único editable es la
+asignación de productos: no se agregó edición de los campos del archivo.
+
+### Tabla nueva, hija por `opd` con `ON DELETE CASCADE`
+
+`poly_regi_pipeline_productos` (migración
+`20260825130000_poly_regi_pipeline_productos.sql`): `opd` (FK a
+`poly_regi_pipeline.opd`), `sku`, `descripcion`, `cantidad`,
+`precio_unitario`. RLS igual que la tabla padre —
+`ceven_is_staff()`/`ceven_is_writer()`, sin Edge Function ni función
+`security definer` nueva: es dato de negocio común, mismo criterio que
+`regi_codigos`.
+
+El `ON DELETE CASCADE` es a propósito: si una oportunidad sale del Excel en
+una reimportación (deja de venir en el archivo y `_procesarRegiPipelineExcel`
+la borra), sus productos asignados se van con ella — mismo criterio de
+"reemplazo, no acumulación" que ya rige la tabla padre. Si en cambio la
+oportunidad se reimporta con el MISMO `opd` (lo normal, el Excel se
+reimporta seguido), el upsert no borra la fila padre y los productos
+asignados sobreviven.
+
+Verificado en vivo contra la base real con `set local "request.jwt.claims"`
+simulando tres JWT distintos (dentro de una transacción con `rollback` al
+final, sin dejar datos de prueba): un `ventas`/`admin` de `@ceven.com` puede
+insertar y leer; un email fuera de `@ceven.com` no ve ninguna fila y su
+insert es rechazado por RLS; un `lector` de `@ceven.com` puede leer pero su
+insert también es rechazado (`ceven_is_writer()` exige rol distinto de
+`lector`, igual que el gate del lado del cliente,
+`cevenCanUsePipeline()`); y borrar la fila padre efectivamente cascadea el
+borrado de sus productos. `get_advisors` (security y performance) no muestra
+ninguna alerta nueva atribuible a esta tabla.
+
+### La pantalla: un carrito propio, no `items`
+
+Botón "✎ Editar" nuevo en cada fila (columna "Acciones") abre
+`#regi-prod-modal` (`js/pipeline-regi-productos.js`), mismo shell visual que
+`#prod-picker` (arriba el catálogo con un `+` por producto y sus precios por
+nivel, abajo lo asignado con cantidad/nivel/precio y total) — reutiliza sin
+tocarlas `getFilteredCon`/`_pintarFiltroRubro`/`bindRubros`/`_catPreciosHTML`
+de `catalog.js` y `cevenTiers`/`tierGlobal`/`cevenPolyPrecioDe` de
+`tiers.js`/`pricing-core.js`.
+
+Es un carrito PROPIO (`_rpCarrito`, direccionado por índice) y no `items` (la
+cotización que se esté armando en la pantalla, si hay alguna abierta):
+agregarle líneas a `items` habría mezclado "lo que se está cotizando ahora"
+con "lo que se le asignó a este proyecto REGI", dos cosas sin relación.
+"Guardar" hace un reemplazo — DELETE de todo lo que ese `opd` tenía y POST
+del carrito entero — igual que ya hace `_procesarRegiPipelineExcel` con la
+tabla padre.
+
+Bug encontrado y corregido antes de terminar: si se guardaba mientras el
+carrito con lo YA asignado todavía se estaba trayendo de Supabase (o si esa
+carga fallaba), el reemplazo podía borrar productos ya guardados con un
+carrito vacío sin que el usuario lo supiera. Se agregó una bandera
+`_rpListo` que bloquea "Guardar" (con aviso) hasta que la carga inicial
+termina con éxito.
+
+Otro bug encontrado y corregido: los montos del carrito usaban `dp()`
+(formatea en ARS si la cotización en curso tiene ese toggle puesto), cuando
+todo el resto del pipeline REGI es USD fijo (`'USD '+fI(...)` a mano, sin
+`dp()`) — se corrigió para no mezclar el estado de moneda de una cotización
+ajena con esta asignación.
+
+### KPI: dos montos que conviven
+
+Columna nueva "Productos" en la tabla (antes de "Acciones"), con guión en
+vez de "USD 0" cuando no hay nada cargado (un 0 se leería como "se cotizó en
+cero"). En el dashboard, la tarjeta `dash-proy-card` — normalmente "Forecast
+del mes", sin sentido en REGI y por eso ya no se ocultaba con nada útil — se
+repropone como "Productos asignados", mismo criterio que ya usaba
+`dash-total-card` reproposta como "Monto total REGI". Ninguna de las dos
+tarjetas pisa a la otra: `renderPipeline()` (pipeline normal) repinta sus
+rótulos de siempre en cada pasada, así que volver del REGI no deja nada
+pegado.
+
+Bug de layout encontrado y corregido: las columnas `stk-monto`/`stk-act`
+(sticky al scrollear horizontal, reglas CSS scopeadas a `#p-pipeline` que
+alcanzan a las DOS tablas del pipeline) estaban puestas sobre "Monto", que
+dejó de ser la anteúltima columna al agregar "Productos" y "Acciones" — se
+movieron a las dos columnas que ahora sí son las últimas.
+
+### Verificación
+
+`node --check` sobre los dos archivos JS tocados/nuevos, los 23
+`scripts/check-*.js` existentes (ninguno nuevo: no hay uno de pipeline REGI)
+siguen en verde salvo `check-precache.js`, que ya venía fallando por el
+trabajo del portal — se le sumaron y ARREGLARON las dos entradas de
+`pipeline-regi.js`/`pipeline-regi-productos.js` en `ASSETS` de `src/sw.js`
+(la primera ya estaba rota desde el 25/08 más temprano, no se había
+detectado). Las ~16 entradas de `portal/*` que siguen faltando son
+pre-existentes y no se tocaron.
+
+**NO verificado**: la extensión Claude in Chrome no estaba conectada en esta
+sesión, así que nada de esto se abrió en un navegador real. Falta el
+recorrido completo: abrir "✎ Editar" en una fila real, buscar y agregar 2-3
+productos con distintos niveles, guardar, confirmar que la columna
+"Productos" y la tarjeta del dashboard reflejan la suma, reabrir el mismo
+proyecto y confirmar que lo guardado vuelve a aparecer (como Custom, ver
+abajo), y reimportar el Excel para confirmar que una oportunidad que sigue
+en el archivo conserva sus productos.
+
+### Pendiente / limitación conocida
+
+El nivel de precio de cada línea NO se persiste en la base (solo
+`sku`/`cantidad`/`precio_unitario`): al reabrir un proyecto ya editado, cada
+línea vuelve a aparecer con nivel "Custom" aunque se haya cargado con un
+Tier real — el precio sí es el que se guardó, pero el `<select>` de nivel no
+"recuerda" cuál se usó. Se podría agregar una columna `tier` a la tabla si
+en algún momento hace falta mostrar con qué nivel se cargó cada línea.
+
+---
+
 ## 25/08/2026 · Segundo pipeline en Poly: Deal Registration de HP (REGI), importado a mano de un Excel
 
 Pedido del usuario: una segunda vista del pipeline de Poly, elegida con el

@@ -131,6 +131,8 @@ var ASSETS = [
   './poly/js/archive-view.js',
   './poly/js/pipeline-view.js',
   './poly/js/pipeline-detail.js',
+  './poly/js/pipeline-regi.js',
+  './poly/js/pipeline-regi-productos.js',
   './poly/js/history.js',
   './poly/js/pdf.js',
   './poly/js/boot.js',

@@ -524,6 +524,18 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
   .pk-filtros{flex-wrap:wrap}
 }
 
+/* ── EDITAR PROYECTO REGI (poly/js/pipeline-regi-productos.js) ──
+   Mismo overlay que #prod-picker (position:fixed;inset:0;blur de fondo).
+   Reusa .pk-card/.pk-hd/.pk-x/.pk-filtros/.pk-rubros/.pk-lista/.pk-pie/
+   .pk-line/.pk-vacio/.pk-cierre tal cual. Prefijo `rp-` para lo propio,
+   mismo motivo que el comentario de arriba sobre `pk-`. */
+#regi-prod-modal{position:fixed;inset:0;z-index:9200;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:20px;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+#rp-cart{max-height:132px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}
+@media (max-width:640px){
+  #regi-prod-modal{padding:0}
+  #regi-prod-modal .pk-card{max-width:none;max-height:100vh;height:100vh;border-radius:0}
+}
+
 /* ── ASISTENTE IA (shared/asistente.js) ──
    Mismo overlay que #prod-picker (position:fixed;inset:0;blur de fondo), pero
    con su propio id porque el markup se inyecta con JS en vez de vivir en cada
