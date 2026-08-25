@@ -148,6 +148,109 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 25/08/2026 · Pipeline REGI: el monto de productos reemplaza al del archivo, Forecast editable (+ "Perdido"), cantidad tipeable
+
+Ajuste sobre la entrada de más abajo (mismo día, sesión siguiente), con
+feedback de después de mostrarlo: "al final, me piden que...". Tres pedidos:
+
+1. Dejar de mostrar los dos montos como KPI separados: con productos
+   asignados, el monto de la fila (y todo lo que se calcula con él) tiene
+   que ser la sumatoria de productos, no convivir con el del archivo de HP.
+2. Poder editar el Forecast a mano, con un cuarto estado que el archivo no
+   trae: Commit / Pipeline / Upside / **Perdido**.
+3. En el editor de productos (entrada de más abajo), revisar los
+   selectores de cantidad y precio: que la cantidad también se pueda
+   escribir a mano, no solo con los botones +/−.
+
+### 1. Un solo monto, no dos KPI
+
+Se deshace el diseño de la sesión anterior (columna "Productos" +
+tarjeta "Productos asignados"): ahora `r.monto` —el que se ve y se suma en
+TODA la UI (fila, encabezado de grupo, tarjeta "Monto total REGI", orden)—
+es la sumatoria de productos si el proyecto tiene alguno asignado, o si no
+el `amount` del archivo. Uno reemplaza al otro, no conviven. `r.montoArchivo`
+guarda el valor crudo del archivo aparte, solo para un tooltip en la celda
+("Sumatoria de los productos asignados (el archivo de HP dice USD X)") y
+para el encabezado del modal de edición — sin eso, "editar" un proyecto ya
+priceado mostraría su propio monto de productos etiquetado como "archivo
+HP", mintiendo sobre el origen. Bug que salió al hacer este cambio y se
+corrigió antes de terminar: `abrirRegiEditor()` armaba ese encabezado con
+`row.monto` (ya blended) en vez de `row.montoArchivo`.
+
+La columna "Productos" y la tarjeta `dash-proy-card` reproposta como
+"Productos asignados" se sacaron (vuelve a ocultarse en REGI, como estaba
+antes de la sesión anterior). La celda "Monto" lleva un 🎯 + tooltip cuando
+el valor viene de productos, para que no se confunda con el del archivo sin
+avisar. La tabla REGI volvió a 8 columnas (las 7 de siempre + Acciones);
+`stk-monto`/`stk-act` (sticky al scrollear horizontal) volvieron a "Monto" y
+"Acciones", que son otra vez las últimas dos columnas.
+
+### 2. Forecast editable, con Perdido excluido del total
+
+Columna nueva `forecast_override` en `poly_regi_pipeline` (migración
+`20260825140000_poly_regi_pipeline_forecast_override.sql`), con
+`check (... in ('Commit','Pipeline','Upside','Perdido'))`. Aparte de
+`forecast` (el que trae el Excel) y no un UPDATE directo sobre esa columna,
+por la misma razón que `poly_regi_pipeline_productos` es una tabla aparte:
+`forecast` se reescribe en CADA reimportación
+(`_procesarRegiPipelineExcel` manda ese valor para toda fila presente en el
+archivo nuevo), así que un edit a mano ahí se perdería en la próxima
+importación. `forecast_override` no entra en ese upsert, así que sobrevive
+mientras el proyecto siga existiendo. Sin policy nueva: la tabla ya tenía
+`poly_regi_pipeline_update` (`ceven_is_writer()`), que cubre cualquier
+columna.
+
+La pastilla de Forecast (antes de solo lectura) pasó a ser un `<select>`
+coloreado según el valor — con una opción "— Sin definir —" para el caso
+raro de archivo sin ese dato y sin override cargado. Cambiar el valor hace
+un PATCH directo (no optimista: espera la confirmación antes de tocar
+`window._regiPipeRows` y re-renderizar, así que si falla el `<select>`
+vuelve solo a su valor real al re-pintarse). El efectivo (`r.forecast`) es
+`forecast_override || forecast`.
+
+Bug encontrado y corregido antes de terminar: al limpiar el override
+(elegir "— Sin definir —"), el código local ponía `row.forecast = ''`
+directo — dejaba la fila en blanco en vez de volver a mostrar el forecast
+del archivo, que es lo que hace la base (`forecast_override` en `null` cae
+a `forecast`). Se agregó `r.forecastArchivo` (guardado aparte, igual que
+`montoArchivo`) para poder volver a él.
+
+**Perdido se excluye de "Monto total REGI"**, mismo criterio que ya usa el
+pipeline normal para su "Total pipeline" (`pipeline-view.js`:
+`sumPipeline = sumMonto - facturado - perdido`) — acá no hay Facturado, así
+que solo se resta Perdido. Las filas Perdido se siguen viendo en la tabla y
+en su propia pastilla de "Por Forecast" (con el mismo rojo que usa 'Perdido'
+en el embudo de Estado del pipeline normal), solo no suman al total de
+arriba.
+
+Verificado en vivo contra la base real (transacción con `rollback`, sin
+dejar datos de prueba): un `ventas`/`admin` de `@ceven.com` puede poner
+`forecast_override`, el `check` de la columna rechaza un valor fuera de la
+lista, y un `lector` de `@ceven.com` no puede actualizar ninguna fila
+(0 filas afectadas bajo RLS). `get_advisors` no muestra alertas nuevas.
+
+### 3. Cantidad tipeable en el editor de productos
+
+`pipeline-regi-productos.js`: la cantidad de cada línea del carrito tenía
+solo los botones +/−. Se cambió al mismo patrón `.qstepper` que ya usa la
+tabla principal de la cotización (`poly/js/quote.js`): botones +/− más un
+`<input type="number" min="1">` tipeable en el medio — escribir 12 de una es
+más rápido que apretar + doce veces. Escribir 0 o borrar el campo clampea a
+1 (no saca la línea; para eso está la papelera), mismo contrato que
+`upQty()` en `quote.js`. El precio ya tenía un input tipeable desde la
+sesión anterior; se le agregó una aclaración en el `title` ("se puede
+escribir a mano") para que quede tan visible como la cantidad.
+
+### Verificación
+
+`node --check` sobre los dos archivos JS tocados, los 23
+`scripts/check-*.js` existentes siguen en verde salvo `check-precache.js`
+(pre-existente, sin cambios de esta entrada). **No verificado en un
+navegador real** — sin la extensión Claude in Chrome conectada en esta
+sesión tampoco, igual que la entrada anterior.
+
+---
+
 ## 25/08/2026 · Pipeline REGI: editar proyecto y asignarle productos del catálogo, segundo monto como KPI
 
 Pedido del usuario sobre el pipeline REGI armado más temprano hoy (ver la

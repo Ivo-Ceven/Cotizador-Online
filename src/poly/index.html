@@ -543,15 +543,12 @@
         <th style="text-align:center">Forecast</th>
         <th class="srt" data-sort="drExpiration">DR Expiration</th>
         <th class="srt" data-sort="mesCierre">Cierre estimado</th>
-        <th class="srt" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
-        <!-- Segundo monto: la sumatoria de lo que Ceven le asignó como
-             productos (poly_regi_pipeline_productos), distinto del "Monto"
-             de arriba (lo que reporta el archivo de HP) — ver
-             js/pipeline-regi-productos.js. stk-monto/stk-act (sticky al
-             scrollear horizontal, #p-pipeline en base.css) van en ESTAS dos
-             columnas porque ahora son las últimas dos de la tabla — "Monto"
-             ya no lo es, así que perdió la clase. -->
-        <th class="srt stk-monto" data-sort="productosMonto" style="text-align:right;min-width:110px">Productos</th>
+        <!-- Con productos asignados, este monto pasa a ser esa sumatoria y
+             reemplaza al que reporta el archivo de HP (pedido del usuario,
+             ver docs/HISTORIAL.md 25/08/2026) — un 🎯 en la celda avisa de
+             dónde sale. stk-monto/stk-act (sticky al scrollear horizontal,
+             #p-pipeline en base.css) van en las ÚLTIMAS dos columnas. -->
+        <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
         <th class="stk-act" style="width:150px;text-align:center">Acciones</th>
       </tr></thead>
       <tbody id="regi-pipe-body"></tbody>

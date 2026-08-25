@@ -33,14 +33,20 @@
    — mismo criterio que ya dejan escrito shared/pipeline-group.js y
    shared/pipeline-ui.js sobre Poly vs Apple.
 
-   25/08/2026: la fila dejó de ser 100% de solo lectura en UN sentido —
+   25/08/2026: la fila dejó de ser 100% de solo lectura en DOS sentidos —
    se le puede asignar productos del catálogo (poly_regi_pipeline_productos,
-   ver js/pipeline-regi-productos.js). Los campos que vienen del Excel
-   (regi/forecast/account/amount/...) siguen sin editarse a mano: la única
-   forma de tocarlos sigue siendo reimportar. `r.productosMonto` es la
-   sumatoria de esos productos, un monto DISTINTO de `r.monto` (el que
-   reporta el archivo de HP) — los dos conviven como KPI a propósito, sin
-   que uno pise al otro.
+   ver js/pipeline-regi-productos.js) y se le puede editar el Forecast a
+   mano (columna `forecast_override`, incluye un cuarto estado que el
+   archivo de HP no tiene: "Perdido"). El resto de lo que viene del Excel
+   (regi/account/amount/fechas) sigue sin editarse: la única forma de
+   tocarlo sigue siendo reimportar.
+
+   `r.monto` es el monto que se VE y se SUMA en toda la UI (fila, grupo,
+   dashboard, orden): si el proyecto tiene productos asignados, es la
+   sumatoria de esos productos; si no, es el `amount` del archivo de HP.
+   Uno reemplaza al otro a propósito (pedido del usuario) — no conviven
+   como dos KPI separados. `r.montoArchivo` guarda el valor crudo del
+   archivo aparte, solo para el tooltip de la fila cuando los dos difieren.
 
    Depende de: shared/auth.js (cevenAuthedFetch, cevenMyRole,
    cevenSessionUser, cevenCanUsePipeline), shared/config.js
@@ -58,10 +64,15 @@ window._regiVistaWasActive = false;
 
 function _cevenRegiPipeRest(path){ return SUPABASE_URL + '/rest/v1/' + path; }
 
+// Perdido no viene del archivo de HP (no es una categoría de forecast del
+// partner portal): es el cuarto estado que Ceven puede fijar a mano — ver
+// forecast_override más abajo. Mismo rojo que usa 'Perdido' en el embudo de
+// Estado del pipeline normal (shared/pipeline-status.js), a propósito.
 var REGI_FORECAST_COLORS = {
   Commit:   {bg:'#fff8e1', fg:'#7a5800'},
   Pipeline: {bg:'#e8f4ff', fg:'#0071e3'},
-  Upside:   {bg:'#f2e8ff', fg:'#6e36c8'}
+  Upside:   {bg:'#f2e8ff', fg:'#6e36c8'},
+  Perdido:  {bg:'#fbbebe', fg:'#a80011'}
 };
 
 /* 'AAAA-MM-DD' -> 'DD/MM/AAAA', solo para mostrar. DR Expiration se guarda en
@@ -95,17 +106,15 @@ function cevenRegiToggleVista(activa){
   if(execWrap) execWrap.style.display = activa ? 'none' : '';
   if(statusWrap) statusWrap.style.display = activa ? 'none' : '';
 
-  // Facturado no tiene equivalente en REGI (no hay "facturado" en una
-  // oportunidad que todavía es de un partner). El pipeline normal y el
-  // archivo sí lo usan — queda visible ahí.
+  // Facturado y Forecast del mes no tienen equivalente en REGI: no hay
+  // "facturado" en una oportunidad que todavía es de un partner, y el
+  // monto único de la fila (ver el comentario de cabecera) ya reemplaza la
+  // necesidad de un segundo KPI separado. El pipeline normal y el archivo
+  // sí usan las dos tarjetas — quedan visibles ahí.
   var facturadoCard = document.getElementById('dash-facturado-card');
+  var proyCard = document.getElementById('dash-proy-card');
   if(facturadoCard) facturadoCard.style.display = activa ? 'none' : '';
-  // La tarjeta de "Forecast del mes" (dash-proy-card) NO se oculta: en REGI
-  // se repropone como "Productos asignados" (ver _regiPintarDashboard), el
-  // segundo KPI que pidió el usuario. Mismo criterio que dash-total-card,
-  // ya reproposta como "Monto total REGI" — renderPipeline() repinta sus
-  // rótulos de siempre en cada pasada del pipeline normal, así que no queda
-  // pegado al volver.
+  if(proyCard) proyCard.style.display = activa ? 'none' : '';
 
   // exportPipeline() arma el Excel con las columnas del pipeline normal
   // (fecha/ejecutivo/OPG/factura...): no sabe leer una fila de REGI.
@@ -184,27 +193,39 @@ function _procesarRegiPipelineExcel(filas){
 /* ── Traer los datos ──────────────────────────────────────────────────── */
 
 function _regiRowToPipeRow(r){
+  var montoArchivo = Number(r.amount) || 0;
+  var productosMonto = (window._regiProductosTotales && window._regiProductosTotales[r.opd]) || 0;
   return {
-    opd: r.opd, regi: r.regi || '', forecast: r.forecast || '',
+    opd: r.opd, regi: r.regi || '',
+    // El forecast a mano (forecast_override) reemplaza al del archivo — no
+    // conviven, ver el comentario de cabecera. Incluye "Perdido", que el
+    // archivo de HP no contempla. forecastArchivo se guarda aparte para
+    // poder volver a él si alguna vez se limpia el override (ver
+    // _regiCambiarForecast): sin esto, "— Sin definir —" dejaría la fila en
+    // blanco en vez de volver a mostrar lo que dice el archivo.
+    forecastArchivo: r.forecast || '',
+    forecast: r.forecast_override || r.forecast || '',
     proyecto: r.opportunity || '', primaryPartner: r.primary_partner || '',
     drExpiration: r.dr_expiration || '',
     // cliente/monto/mesCierre: mismos nombres que una fila real, a propósito
     // (ver el comentario del encabezado) — así cevenPipeGroupBy() y
     // compañía las agrupan/ordenan sin que se las toque.
     cliente: r.account || '',
-    monto: Number(r.amount) || 0,
-    // Sumatoria propia de poly_regi_pipeline_productos (ver
-    // js/pipeline-regi-productos.js), distinta de `monto` (lo que reporta
-    // el archivo de HP). window._regiProductosTotales ya está armado por
-    // _cevenRegiPipeFetch() antes de mapear estas filas.
-    productosMonto: (window._regiProductosTotales && window._regiProductosTotales[r.opd]) || 0,
+    // Con productos asignados, `monto` pasa a ser esa sumatoria — reemplaza
+    // al del archivo en TODA la UI (fila, grupo, dashboard, orden). Sin
+    // productos, sigue siendo el `amount` de HP. montoArchivo se guarda
+    // aparte solo para el tooltip de la fila. window._regiProductosTotales
+    // ya está armado por _cevenRegiPipeFetch() antes de mapear estas filas.
+    montoArchivo: montoArchivo,
+    productosMonto: productosMonto,
+    monto: productosMonto > 0 ? productosMonto : montoArchivo,
     mesCierre: r.close_date ? String(r.close_date).slice(0, 7) : ''
   };
 }
 
 function _cevenRegiPipeFetch(){
   var url = _cevenRegiPipeRest('poly_regi_pipeline')
-    + '?select=opd,regi,dr_expiration,opportunity,forecast,account,primary_partner,amount,close_date'
+    + '?select=opd,regi,dr_expiration,opportunity,forecast,forecast_override,account,primary_partner,amount,close_date'
     + '&order=amount.desc';
   // Los productos asignados se traen en la MISMA pasada (no por fila, no
   // hay función de agregación en la base): son pocas filas por proyecto y
@@ -232,7 +253,7 @@ function _cevenRegiPipeFetch(){
 function renderRegiPipeline(){
   if(window._regiPipeRows === null){
     var body = document.getElementById('regi-pipe-body');
-    if(body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">Cargando…</td></tr>';
+    if(body) body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aeaeb2;padding:24px">Cargando…</td></tr>';
     var dash = document.getElementById('pipe-dashboard');
     if(dash) dash.style.display = 'none';
     _cevenRegiPipeFetch().then(function(){
@@ -241,7 +262,7 @@ function renderRegiPipeline(){
       if(sel && sel.value === '__regi') _renderRegiPipelineFromCache();
     }).catch(function(e){
       var b = document.getElementById('regi-pipe-body');
-      if(b) b.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#d70015;padding:24px">No se pudo cargar el pipeline REGI'
+      if(b) b.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#d70015;padding:24px">No se pudo cargar el pipeline REGI'
         + ((e && e.message) ? (': ' + cevenEsc(e.message)) : '.') + '</td></tr>';
     });
     return;
@@ -276,7 +297,7 @@ function _renderRegiPipelineFromCache(){
   });
 
   var sortCol = window._pipeSort.col, sortDir = window._pipeSort.dir;
-  var numericCols = {monto: 1, productosMonto: 1};
+  var numericCols = {monto: 1};
   filtered.sort(function(a, b){
     var av = a[sortCol], bv = b[sortCol];
     if(av === undefined || av === null) av = numericCols[sortCol] ? 0 : '';
@@ -292,7 +313,7 @@ function _renderRegiPipelineFromCache(){
   var _vacio = rows.length === 0
     ? 'Todavía no se importó ningún Excel de REGI. Tocá "⬇ Importar Excel REGI".'
     : (_hayFiltros ? 'Ninguna oportunidad coincide con los filtros. Tocá "✕ Limpiar filtros".' : 'El Excel importado no tiene oportunidades.');
-  document.getElementById('regi-pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
+  document.getElementById('regi-pipe-body').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
   _regiBindDelegation();
 }
@@ -302,11 +323,14 @@ function _regiPintarDashboard(filtered, forecastFilter){
   if(!dash) return;
   dash.style.display = 'block';
 
-  var sumMonto = 0, sumProductos = 0, conProductos = 0, cliVistos = {}, nClientes = 0, byForecast = {};
+  // Perdido se excluye de la suma — mismo criterio que "Total pipeline" en
+  // el pipeline normal, que tampoco cuenta Perdido ni Facturado
+  // (pipeline-view.js: sumPipeline = sumMonto - facturado - perdido). Acá
+  // no hay Facturado, así que solo se resta Perdido.
+  var sumMonto = 0, sumPerdido = 0, cliVistos = {}, nClientes = 0, byForecast = {};
   filtered.forEach(function(r){
     sumMonto += (r.monto || 0);
-    sumProductos += (r.productosMonto || 0);
-    if(r.productosMonto) conProductos++;
+    if(r.forecast === 'Perdido') sumPerdido += (r.monto || 0);
     var ck = (r.cliente||'').trim().toLowerCase();
     if(ck && !cliVistos[ck]){ cliVistos[ck] = 1; nClientes++; }
     var fc = r.forecast || '';
@@ -319,16 +343,8 @@ function _regiPintarDashboard(filtered, forecastFilter){
   document.getElementById('dash-count').textContent = nClientes;
   document.getElementById('dash-proyectos').textContent = filtered.length;
   _pipeSetLbl('dash-total-lbl', 'Monto total REGI');
-  document.getElementById('dash-total').textContent = 'USD ' + fI(sumMonto);
-  _pipeSetLbl('dash-total-sub', 'Deal Registration de HP/Poly, del último Excel importado');
-
-  // Segundo KPI (dash-proy-card, normalmente "Forecast del mes"): la
-  // sumatoria de los productos que Ceven le asignó a cada proyecto, un
-  // monto DISTINTO del de arriba — ver el comentario de cabecera y
-  // js/pipeline-regi-productos.js.
-  _pipeSetLbl('dash-proy-lbl', 'Productos asignados');
-  document.getElementById('dash-proy').textContent = 'USD ' + fI(sumProductos);
-  _pipeSetLbl('dash-proy-sub', conProductos + ' de ' + filtered.length + (filtered.length === 1 ? ' proyecto con productos cargados' : ' proyectos con productos cargados'));
+  document.getElementById('dash-total').textContent = 'USD ' + fI(sumMonto - sumPerdido);
+  _pipeSetLbl('dash-total-sub', 'sin Perdido · con productos asignados, ese monto reemplaza al del archivo de HP');
 
   var pillsHtml = '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Por Forecast</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">';
@@ -350,7 +366,7 @@ function _regiPintarDashboard(filtered, forecastFilter){
 function _regiGroupRowHTML(g, key, abierto){
   var n = g.n + (g.n === 1 ? ' oportunidad' : ' oportunidades');
   return '<tr class="pipe-grp" data-act="expcli" data-k="'+cevenEsc(key)+'" style="cursor:pointer">'
-    + '<td colspan="9" style="padding:9px 12px;background:#f0f0f3;border-top:0.5px solid #d2d2d7">'
+    + '<td colspan="8" style="padding:9px 12px;background:#f0f0f3;border-top:0.5px solid #d2d2d7">'
       + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
         + '<span style="font-size:11px;width:12px;display:inline-block">'+(abierto?'▼':'▶')+'</span>'
         + '<strong style="font-size:13px">'+cevenEsc(g.label)+'</strong>'
@@ -361,29 +377,43 @@ function _regiGroupRowHTML(g, key, abierto){
     + '</td></tr>';
 }
 
-function _regiForecastTagHTML(f){
-  if(!f) return '<span style="color:#aeaeb2;font-size:11px">—</span>';
-  var c = REGI_FORECAST_COLORS[f] || {bg:'#f2f2f7', fg:'#1d1d1f'};
-  return '<span style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700">'+cevenEsc(f)+'</span>';
+/* Forecast editable: un <select> coloreado según el valor elegido, no una
+   pastilla fija. "— Sin definir —" cubre el caso —raro— de un archivo con
+   la columna vacía y ningún override cargado todavía; sin esa opción el
+   <select> caería en la primera del array (Commit) y mentiría sobre el
+   valor real. */
+function _regiForecastSelectHTML(r){
+  var actual = r.forecast || '';
+  var c = REGI_FORECAST_COLORS[actual] || {bg:'#fff', fg:'#6e6e73'};
+  var h = '<select class="si" data-act="regi-forecast-edit" data-opd="'+cevenEsc(r.opd)+'"'
+    + ' style="font-size:11px;font-weight:700;padding:2px 6px;background:'+c.bg+';color:'+c.fg+';border-color:'+c.fg+'">'
+    + '<option value=""'+(!actual?' selected':'')+'>— Sin definir —</option>';
+  Object.keys(REGI_FORECAST_COLORS).forEach(function(fc){
+    h += '<option value="'+fc+'"'+(fc===actual?' selected':'')+'>'+fc+'</option>';
+  });
+  h += '</select>';
+  return h;
 }
 
 function _regiRowHTML(r){
   var vencido = r.drExpiration && r.drExpiration < cevenHoyISO();
+  // Cuando el monto de la fila viene de los productos asignados (reemplaza
+  // al del archivo, ver el comentario de cabecera), un 🎯 + tooltip avisa
+  // de dónde sale — sin eso, un número que de repente cambió de fuente se
+  // ve idéntico al de siempre y nadie se entera de por qué no coincide con
+  // el archivo de HP.
+  var deProductos = r.productosMonto > 0;
+  var montoTitle = deProductos
+    ? 'Sumatoria de los productos asignados (el archivo de HP dice USD ' + fI(r.montoArchivo||0) + ')'
+    : '';
   return '<tr>'
     + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+(r.regi ? cevenEsc(r.regi) : '<span style="color:#aeaeb2">sin REGI</span>')+'</td>'
     + '<td style="font-size:12px"><div style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
     + '<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.primaryPartner||'—')+'</td>'
-    + '<td style="text-align:center">'+_regiForecastTagHTML(r.forecast)+'</td>'
+    + '<td style="text-align:center;overflow:visible">'+_regiForecastSelectHTML(r)+'</td>'
     + '<td style="font-size:12px;white-space:nowrap'+(vencido?';color:#d70015':'')+'" title="'+(vencido?'Deal Registration vencido':'')+'">'+cevenEsc(r.drExpiration ? _regiFechaDDMMYYYY(r.drExpiration) : '—')+'</td>'
     + '<td style="font-size:12px;white-space:nowrap">'+cevenEsc(r.mesCierre ? _mesLabelPoly(r.mesCierre) : '—')+'</td>'
-    + '<td style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px">USD '+fI(r.monto||0)+'</td>'
-    // Segundo monto: la sumatoria de los productos asignados (distinta del
-    // "Monto" de arriba, que es lo que reporta el archivo de HP). Sin
-    // productos cargados se dice con un guión, no con "USD 0" — un 0 se
-    // leería como "se cotizó en cero" y acá solo significa "sin cargar".
-    // stk-monto/stk-act: ahora son las ÚLTIMAS dos columnas de la tabla
-    // (ver el comentario del <th> en index.html) — "Monto" perdió la clase.
-    + '<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px;color:'+(r.productosMonto?'#1d1d1f':'#aeaeb2')+'">'+(r.productosMonto ? 'USD '+fI(r.productosMonto) : '—')+'</td>'
+    + '<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px" title="'+cevenEsc(montoTitle)+'">'+(deProductos?'<span title="Monto de los productos asignados">🎯</span> ':'')+'USD '+fI(r.monto||0)+'</td>'
     + '<td class="stk-act" style="text-align:center;white-space:nowrap"><button class="bs" data-act="regi-editar" data-opd="'+cevenEsc(r.opd)+'" title="Asignar productos del catálogo a este proyecto" style="padding:2px 8px;font-size:12px">✎ Editar</button></td>'
   + '</tr>';
 }
@@ -401,6 +431,33 @@ function _regiTablaHTML(filas){
     g.rows.forEach(function(r){ html += _regiRowHTML(r); });
   });
   return html;
+}
+
+/* ── Editar el Forecast a mano ────────────────────────────────────────────
+   No optimista a propósito: espera la confirmación del PATCH antes de tocar
+   `window._regiPipeRows` y re-renderizar — mismo criterio que
+   guardarRegiProductos() en pipeline-regi-productos.js. Si falla, el
+   re-render deja el <select> como estaba (el objeto en memoria nunca
+   cambió), que es el revert más simple y correcto. */
+function _regiCambiarForecast(opd, valor){
+  if(!opd) return;
+  if(!cevenCanUsePipeline()){ showToast('Tu rol no permite editar proyectos REGI.'); renderPipeline(); return; }
+  cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?opd=eq.' + encodeURIComponent(opd), {
+    method: 'PATCH',
+    headers: {Prefer: 'return=minimal'},
+    body: JSON.stringify({forecast_override: valor || null})
+  }).then(function(){
+    var row = (window._regiPipeRows || []).filter(function(r){ return r.opd === opd; })[0];
+    // Limpiar el override (valor === '') no deja la fila en blanco: vuelve
+    // a mostrar lo que dice el archivo, igual que hace la base con
+    // forecast_override en null (ver el comentario de forecastArchivo).
+    if(row) row.forecast = valor || row.forecastArchivo || '';
+    if(typeof renderPipeline === 'function') renderPipeline();
+    showToast('✓ Forecast actualizado' + (valor ? (': ' + valor) : ' (vuelve a mostrar el del archivo)') + '.');
+  }).catch(function(e){
+    showErr('No se pudo actualizar el forecast: ' + ((e && e.message) || 'error desconocido'));
+    if(typeof renderPipeline === 'function') renderPipeline();
+  });
 }
 
 /* Delegación propia: #regi-pipe-body y #dash-by-status son contenedores
@@ -421,6 +478,10 @@ function _regiBindDelegation(){
       // se llama por nombre y no por referencia directa, mismo criterio que
       // el resto del pipeline usa para hooks opcionales.
       else if(act === 'regi-editar' && typeof abrirRegiEditor === 'function') abrirRegiEditor(el.getAttribute('data-opd'));
+    });
+    body.addEventListener('change', function(ev){
+      var el = cevenActEl(ev, body);
+      if(el && el.getAttribute('data-act') === 'regi-forecast-edit') _regiCambiarForecast(el.getAttribute('data-opd'), el.value);
     });
   }
   var dashByStatus = document.getElementById('dash-by-status');

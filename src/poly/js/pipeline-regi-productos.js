@@ -15,9 +15,10 @@
    relación — "lo que se está cotizando ahora" y "lo que se le asignó a
    este proyecto REGI". Guardar-y-listo, sin pasar por armar-cotización.
 
-   El monto de este carrito (`productosMonto` en pipeline-regi.js) es un
-   KPI DISTINTO del `amount` que trae el Excel de HP (`monto`): los dos
-   conviven, ninguno pisa al otro. Ver la cabecera de pipeline-regi.js.
+   El monto de este carrito (`productosMonto` en pipeline-regi.js) REEMPLAZA
+   al `amount` que trae el Excel de HP en toda la UI en cuanto hay al menos
+   un producto asignado — no conviven como dos KPI separados (pedido del
+   usuario). Ver la cabecera de pipeline-regi.js.
 
    Depende de: shared/auth.js (cevenAuthedFetch, cevenCanUsePipeline,
    cevenSessionUser), shared/config.js (SUPABASE_URL), shared/safe.js
@@ -65,7 +66,10 @@ function abrirRegiEditor(opd){
   var info = [];
   if(row.cliente) info.push(row.cliente);
   if(row.regi) info.push('REGI ' + row.regi);
-  info.push('Monto archivo HP: USD ' + fI(row.monto || 0));
+  // montoArchivo, no `row.monto`: éste último puede YA ser la sumatoria de
+  // productos de una edición anterior (reemplaza al del archivo en toda la
+  // UI, ver pipeline-regi.js) — mostrarlo acá como "archivo HP" mentiría.
+  info.push('Monto archivo HP: USD ' + fI(row.montoArchivo || 0));
   document.getElementById('rp-proyecto-info').textContent = info.join(' · ');
 
   var body = document.getElementById('rp-body');
@@ -233,12 +237,17 @@ function _pintarRegiCarrito(){
     html += '<div class="pk-line">'
       + '<span class="pk-line-sku" title="'+cevenEsc(it.description)+'">'+cevenEsc(it.sku)+'</span>'
       + _rpTierSelectHTML(it, i)
-      + '<span class="pk-qty">'
-        + '<button class="pk-step" data-rp-act="menos" data-li="'+i+'" title="Restar uno">−</button>'
-        + '<b>'+cevenEsc(it.cantidad)+'</b>'
-        + '<button class="pk-step" data-rp-act="mas" data-li="'+i+'" title="Sumar uno">+</button>'
+      // Cantidad: stepper Y tipeo directo, mismo patrón que la tabla
+      // principal de la cotización (poly/js/quote.js, .qstepper) — escribir
+      // 12 de una es más rápido que apretar + doce veces. Bajar de 1 a mano
+      // no saca la línea (clampea a 1): para eso está la papelera, que el
+      // input la borre de sorpresa sería otra cosa.
+      + '<span class="qstepper">'
+        + '<button class="qstep" data-rp-act="menos" data-li="'+i+'" title="Restar uno">−</button>'
+        + '<input class="si" type="number" min="1" value="'+cevenEsc(it.cantidad)+'" data-rp-act="cantidad" data-li="'+i+'">'
+        + '<button class="qstep" data-rp-act="mas" data-li="'+i+'" title="Sumar uno">+</button>'
       + '</span>'
-      + '<input type="number" min="0" step="0.01" class="si" data-rp-act="precio" data-li="'+i+'" value="'+(it.precioUnitario||0)+'" style="width:82px;font-size:12px;padding:2px 4px" title="Precio unitario">'
+      + '<input type="number" min="0" step="0.01" class="si" data-rp-act="precio" data-li="'+i+'" value="'+(it.precioUnitario||0)+'" style="width:82px;font-size:12px;padding:2px 4px" title="Precio unitario — se puede escribir a mano">'
       // Siempre USD, como el resto del pipeline REGI: dp() convierte a ARS
       // según el toggle de moneda de la cotización en curso, y esta
       // asignación no tiene nada que ver con esa cotización (puede ni
@@ -287,8 +296,15 @@ function guardarRegiProductos(){
       window._regiProductosTotales[opd] = total;
       // Actualiza la fila ya en memoria en vez de refetchear todo el
       // pipeline REGI: más rápido, y no hay riesgo de pisar un filtro o
-      // una búsqueda que se esté escribiendo en el buscador.
-      (window._regiPipeRows || []).forEach(function(r){ if(r.opd === opd) r.productosMonto = total; });
+      // una búsqueda que se esté escribiendo en el buscador. `monto` es el
+      // que se ve y se suma en toda la UI (pipeline-regi.js): con productos
+      // pasa a ser esta sumatoria, reemplazando al del archivo de HP; sin
+      // productos (carrito vaciado) vuelve a ser `montoArchivo`.
+      (window._regiPipeRows || []).forEach(function(r){
+        if(r.opd !== opd) return;
+        r.productosMonto = total;
+        r.monto = total > 0 ? total : (r.montoArchivo || 0);
+      });
       cerrarRegiEditor();
       if(typeof renderPipeline === 'function') renderPipeline();
       showToast('✓ Productos guardados: ' + filas.length + (filas.length === 1 ? ' línea' : ' líneas') + ' · USD ' + fI(total));
@@ -354,6 +370,12 @@ function guardarRegiProductos(){
           // cambio de nivel le pisaría el precio recién escrito.
           linea.tier = CEVEN_TIER_MANUAL;
           linea.precioUnitario = Math.max(0, parseFloat(el.value) || 0);
+          _pintarRegiCarrito();
+        } else if(act === 'cantidad'){
+          // Clampea a 1 en vez de sacar la línea — mismo criterio que
+          // upQty() en quote.js: escribir 0 o borrar el campo no es un
+          // gesto de "sacar esto", es un campo a medio completar.
+          linea.cantidad = Math.max(1, parseInt(el.value, 10) || 1);
           _pintarRegiCarrito();
         }
       });
