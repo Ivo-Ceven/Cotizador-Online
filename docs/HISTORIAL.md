@@ -148,6 +148,94 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 25/08/2026 · Segundo pipeline en Poly: Deal Registration de HP (REGI), importado a mano de un Excel
+
+Pedido del usuario: una segunda vista del pipeline de Poly, elegida con el
+mismo selector "Vista" que hoy alterna entre "Pipeline actual" y los meses
+archivados, alimentada por el Excel que manda el partner portal de HP
+(`REgis.xlsx`, columnas REGI/DR Expiration/Opportunity/Forecast/Account/
+Primary Partner/Amount/Close Date). Por ahora tiene que verse "idéntica" al
+pipeline de siempre — mismo dashboard, mismas pastillas, misma tabla agrupada
+por cliente —, y el refinamiento específico de REGI queda para después.
+
+Tres decisiones de diseño, confirmadas con el usuario antes de tocar código
+(`AskUserQuestion`):
+
+1. **El Excel se importa a mano desde el navegador** (botón "⬇ Importar Excel
+   REGI" en la barra del pipeline → `FileReader` + `XLSX.read`, mismo patrón
+   que `handlePL()` en `catalog.js`). No hay otra forma: `*.xlsx` está en
+   `.gitignore` y `vercel.json` tiene `outputDirectory: "src"`, así que el
+   archivo nunca se despliega — no existe una URL fija de la que "fetchear"
+   nada.
+2. **Se comparte con todo el equipo vía Supabase**, no queda solo en el
+   navegador de quien importa: tabla nueva `poly_regi_pipeline`
+   (`supabase/migrations/20260825120000_poly_regi_pipeline.sql`), RLS
+   `ceven_is_staff()`/`ceven_is_writer()` — mismo criterio que `regi_codigos`
+   (sin columna `brand`, exclusivo de Poly a propósito). Sin Edge Function ni
+   `security definer` nueva: es dato de negocio común, igual que
+   `regi_codigos`.
+3. **Las filas son de solo lectura**: no hay cotización de Ceven detrás, así
+   que no hay estado editable, link de Netsuite ni botón de quitar. Para
+   actualizar se reimporta el Excel.
+
+**Reemplazo, no acumulación.** `OPD` es la clave real (no `REGI`: el Deal
+Registration puede no estar aprobado todavía — 3 de las 62 filas del Excel
+real vienen con `REGI` vacío). Cada importación deja la tabla igual al Excel
+que se acaba de cargar: upsert por `opd` con un `imported_at` común
+(`Prefer: resolution=merge-duplicates`), y después un `DELETE …
+imported_at=lt.<ts>` que saca lo que ya no vino en esta vuelta. Sin función
+SQL nueva — dos llamadas REST siguen alcanzando.
+
+**Reuso, no una tabla paralela.** La vista REGI arma filas sintéticas con los
+MISMOS nombres de campo que una fila real (`cliente`, `monto`, `mesCierre`) y
+así reusa sin tocarlas `cevenPipeGroupBy`/`cevenPipeSortGroups`
+(`shared/pipeline-group.js`) y `cevenPintarPillsMes`/`cevenPintarTopClientes`
+(`shared/pipeline-ui.js`) — agrupan/ordenan por esos nombres, no por marca.
+El encabezado de grupo y las columnas de la fila sí son código propio
+(`src/poly/js/pipeline-regi.js`): las pastillas de Estado del embudo de Ceven
+no tienen sentido para Forecast (Upside/Pipeline/Commit), y las columnas no
+se parecen (REGI/Oportunidad/Partner/Forecast/DR Expiration en vez de
+Fecha/Ejecutivo/OPG/Q°/Acciones). Tabla y thead propios
+(`#pipe-table-regi`/`#regi-pipe-body`), mostrados/ocultados junto con la
+tabla normal desde un único punto (`cevenRegiToggleVista()`, llamado en cada
+`renderPipeline()`) para que volver a "Pipeline actual" o a un mes archivado
+siempre deje todo como estaba.
+
+**Verificado en esta sesión:**
+- La migración se aplicó a la base real (`mcp__supabase__apply_migration` +
+  `list_tables` confirmando columnas, tipos y `primary_keys:["opd"]`), sin
+  warnings nuevos en `get_advisors`.
+- El mapeo fila-a-fila del Excel real (`./REgis.xlsx`, 62 filas) se corrió
+  aparte en Node contra la lógica de `_procesarRegiPipelineExcel`: 62 filas
+  Excel → 62 filas mapeadas, 62 `opd` únicos, 3 sin `REGI` (correcto, quedan
+  con `regi: null` en vez de descartarse), fechas convertidas bien con
+  `cevenDealFechaISO` (serial de Excel → `AAAA-MM-DD`).
+- Los tres archivos JS tocados pasan `node --check` (sin errores de sintaxis).
+- El HTML servido por `scripts/dev-server.js` se inspeccionó con `curl`: los
+  ids nuevos existen y no hay ids duplicados, el `<script>` de
+  `pipeline-regi.js` está incluido, y los nombres de función en los
+  `onclick`/`onchange` matchean los definidos en el archivo.
+
+**NO verificado**: no se abrió en un navegador real con sesión (la extensión
+Claude in Chrome no estaba conectada en esta sesión). Falta el recorrido
+completo: elegir "🎯 Pipeline REGI" antes de importar nada (vacío, sin
+romper), importar `REgis.xlsx` de verdad y comparar 2-3 filas a mano contra
+el Excel, reimportar el mismo archivo (no debe duplicar), sacar una fila del
+Excel y reimportar (esa oportunidad tiene que desaparecer), y volver a
+"Pipeline actual" para confirmar que el pipeline de siempre no quedó tocado
+(filtros, dashboard, filas editables).
+
+Archivos: `supabase/migrations/20260825120000_poly_regi_pipeline.sql` (nuevo),
+`src/poly/js/pipeline-regi.js` (nuevo), `src/poly/index.html` (opción del
+selector Vista, botón + input de importar, tabla `#pipe-table-regi`, ids
+`pipe-exec-wrap`/`pipe-status-wrap`/`pipe-export-btn`), `src/poly/js/pipeline-view.js`
+(dispatcher + reconstrucción del `<select>` con la opción `__regi`),
+`src/poly/js/pipeline-core.js` (una línea: `clearPipelineFilters()` también
+limpia `window._regiForecastFilter`). No se tocó `src/apple/*` — REGI es
+exclusivo de Poly, igual que `regi_codigos`.
+
+---
+
 ## 24/08/2026 · El asistente IA empieza a dar 502 — y el culpable fue el Excel de deals
 
 Reporte desde la consola de producción:

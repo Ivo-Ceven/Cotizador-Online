@@ -426,13 +426,21 @@
          cuando hacía falta — que es siempre mirando los filtros, no la barra. -->
     <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer el último cambio en el pipeline" disabled>↩</button>
     <button class="bo" id="pipe-backup-btn" onclick="pickBackupFolder()" title="Elegí una carpeta donde guardar backups automáticos">📂 Elegir carpeta backup</button>
-    <button class="bo" onclick="exportPipeline()">⬇ Excel</button>
+    <!-- Pipeline REGI (Deal Registration de HP/Poly): reemplaza ENTERA la tabla
+         poly_regi_pipeline con lo que traiga este Excel. Ver pipeline-regi.js. -->
+    <button class="bo" onclick="document.getElementById('regi-pipe-up').click()" title="Excel del partner portal de HP (REgis.xlsx): reemplaza el pipeline REGI completo">⬇ Importar Excel REGI</button>
+    <input type="file" id="regi-pipe-up" accept=".xls,.xlsx" style="display:none" onchange="handleRegiPipelineFile(this.files[0]);this.value=''">
+    <button class="bo" id="pipe-export-btn" onclick="exportPipeline()">⬇ Excel</button>
   </div>
   <div class="card" style="margin-bottom:12px">
     <div class="gf">
       <div><label class="lbl">Buscar cliente / OPG / proyecto</label><input id="pipe-search" type="text" placeholder="Nombre, OPG o proyecto..." oninput="renderPipeline()"></div>
-      <div><label class="lbl">Ejecutivo</label><select id="pipe-exec" onchange="renderPipeline()"><option value="">Todos</option></select></div>
-      <div><label class="lbl">Estado</label>
+      <!-- Ejecutivo/Estado no aplican al pipeline REGI (no hay ejecutivo Ceven
+           ni estado del embudo detrás de una fila importada del Excel de HP):
+           pipeline-regi.js oculta estos dos <div> mientras esa vista está
+           activa (cevenRegiToggleVista(), en vez de duplicar la barra). -->
+      <div id="pipe-exec-wrap"><label class="lbl">Ejecutivo</label><select id="pipe-exec" onchange="renderPipeline()"><option value="">Todos</option></select></div>
+      <div id="pipe-status-wrap"><label class="lbl">Estado</label>
         <!-- Los `value` son los que se guardan y NO se tocan; las etiquetas
              visibles las manda shared/pipeline-status.js. Si se agrega un
              estado, va allá y acá. -->
@@ -504,7 +512,7 @@
   </div>
 
   <div class="tw">
-    <table style="min-width:1100px">
+    <table style="min-width:1100px" id="pipe-table-normal">
       <thead><tr>
         <th class="srt" data-sort="fechaISO">Fecha</th>
         <th class="srt" data-sort="ejecutivo">Ejecutivo</th>
@@ -521,6 +529,23 @@
         <th class="stk-act" style="width:150px;text-align:center">Acciones</th>
       </tr></thead>
       <tbody id="pipe-body"></tbody>
+    </table>
+    <!-- Pipeline REGI: mismo shell (tarjeta de dashboard, pastillas, tabla
+         agrupada por cuenta), tabla propia porque las columnas no tienen nada
+         que ver — es un snapshot de solo lectura del Excel, sin cotización
+         detrás. Oculta por defecto; pipeline-regi.js la muestra/oculta según
+         el selector "Vista". -->
+    <table style="min-width:900px;display:none" id="pipe-table-regi">
+      <thead><tr>
+        <th class="srt" data-sort="regi">REGI</th>
+        <th class="srt" data-sort="proyecto">Oportunidad</th>
+        <th class="srt" data-sort="primaryPartner">Partner primario</th>
+        <th style="text-align:center">Forecast</th>
+        <th class="srt" data-sort="drExpiration">DR Expiration</th>
+        <th class="srt" data-sort="mesCierre">Cierre estimado</th>
+        <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
+      </tr></thead>
+      <tbody id="regi-pipe-body"></tbody>
     </table>
   </div>
 </div>
@@ -573,6 +598,7 @@
 <script src="../shared/pipeline-ui.js"></script>
 <script src="js/pipeline-view.js"></script>
 <script src="js/pipeline-detail.js"></script>
+<script src="js/pipeline-regi.js"></script>
 <script src="../shared/backup-folder.js"></script>
 <script src="js/history.js"></script>
 <script src="../shared/papelera.js"></script>

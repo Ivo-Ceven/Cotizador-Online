@@ -168,5 +168,6 @@ function clearPipelineFilters(){
   });
   window._pipeStatusFilters = [];
   window._pipeMonthFilter = '';
+  window._regiForecastFilter = '';
   renderPipeline();
 }
