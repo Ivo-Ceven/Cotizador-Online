@@ -34,7 +34,7 @@
    cuando alguien la abre desde el historial de esa marca.
 
    Depende de: apple/js/pricing-core.js, poly/js/pricing-core.js,
-   shared/quote-num.js (cevenQNumFmt).
+   legamaster/js/pricing-core.js, shared/quote-num.js (cevenQNumFmt).
    ============================================================ */
 
 /* El contexto que reciben todas estas funciones lo arma emitir.js/quote.js:
@@ -193,6 +193,63 @@ var CEVEN_MULTI_MARCAS = {
        NO los pisa. */
     pipelineExtra: function(ctx){
       return { opg: ctx.opg || null, factura: null };
+    }
+  },
+
+  /* ── LEGAMASTER ──────────────────────────────────────────────────────────
+     Precio = el del nivel (Con Registro/Canal/Web) en el catálogo. Mismo
+     patrón que Poly, sin DEAL: legamaster/js/catalog.js no trae ese mecanismo. */
+  legamaster: {
+    label: 'Legamaster',
+    prefix: 'legamaster_',
+    controles: ['tier'],
+
+    nuevaLinea: function(p, ctx){
+      var it = {
+        brand: 'legamaster',
+        sku: p.sku, description: p.description,
+        iva: cevenLegamasterIvaTxt(p), qty: 1, salePrice: '', stock: '',
+        tier: ''            // '' = sigue al nivel global
+      };
+      cevenLegamasterRepricear(it, ctx.catalogos.legamaster, ctx.tierGlobal);
+      return it;
+    },
+
+    // Cambió el nivel global: mueve solo las que lo siguen (las de nivel propio
+    // y las MANUAL quedan intactas, igual que en el cotizador de Legamaster).
+    repricear: function(it, ctx){
+      if(it.tier) return false;
+      return cevenLegamasterRepricear(it, ctx.catalogos.legamaster, ctx.tierGlobal);
+    },
+
+    // Claves de doSave() en legamaster/js/quotes-db.js. Sin OPG, a diferencia de Poly.
+    filaCquotes: function(it, ctx){
+      var sp = (it.salePrice === '' || it.salePrice == null) ? 0 : it.salePrice;
+      return {
+        'N° Cotización': ctx.qn, 'Fecha': ctx.fecha, 'Hora': ctx.hora,
+        'Cliente': ctx.cliente, 'Proyecto': ctx.proyecto,
+        'Ejecutivo': ctx.ejecutivo, 'Observaciones': ctx.obs,
+        'Mes Cierre': ctx.mesCierre,
+        'Condición de pago': ctx.payMode, 'Propuesta efectiva hasta': ctx.effDate,
+        'Entrega': ctx.delivery,
+        'Opción': 1, '_opcEf': 1,
+        'Nivel de precio': cevenLegamasterTierEfectivo(it, ctx.tierGlobal),
+        'SKU': it.sku, 'Descripción': it.description, 'Cantidad': it.qty,
+        'Nota': it.stock || '—', 'IVA': it.iva || '',
+        'P. Venta Unitario': it.salePrice, 'Total': sp * it.qty,
+        'Tipo': 'producto', '_estado': ctx.estado,
+        '_multi': ctx.multiQNum
+      };
+    },
+
+    // Legamaster no tiene familias ni margen: la fila lleva un monto y nada más.
+    filaPipeline: function(its, ctx){
+      return { monto: cevenLegamasterMonto(its) };
+    },
+
+    // Sin campos extra de pipeline (ver legamaster/brand.js: sin OPG ni factura).
+    pipelineExtra: function(ctx){
+      return {};
     }
   }
 };

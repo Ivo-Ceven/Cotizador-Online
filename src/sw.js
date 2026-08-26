@@ -137,10 +137,28 @@ var ASSETS = [
   './poly/js/pdf.js',
   './poly/js/boot.js',
 
-  /* Cotizador multimarca. Carga ADEMÁS los `pricing-core.js` de Apple y de Poly
-     (ya listados arriba): son las cuentas de precio de cada marca, y usarlas —en
-     vez de copiarlas— es lo que garantiza que el mismo SKU salga al mismo precio
-     por los dos caminos. */
+  './legamaster/brand.js',
+  './legamaster/js/state.js',
+  './legamaster/js/catalog.js',
+  './legamaster/js/quote.js',
+  './legamaster/js/picker.js',
+  './legamaster/js/pricing-core.js',
+  './legamaster/js/tiers.js',
+  './legamaster/js/products.js',
+  './legamaster/js/quotes-db.js',
+  './legamaster/js/pipeline-data.js',
+  './legamaster/js/pipeline-core.js',
+  './legamaster/js/archive-view.js',
+  './legamaster/js/pipeline-view.js',
+  './legamaster/js/pipeline-detail.js',
+  './legamaster/js/history.js',
+  './legamaster/js/pdf.js',
+  './legamaster/js/boot.js',
+
+  /* Cotizador multimarca. Carga ADEMÁS los `pricing-core.js` de Apple, Poly y
+     Legamaster (ya listados arriba): son las cuentas de precio de cada marca, y
+     usarlas —en vez de copiarlas— es lo que garantiza que el mismo SKU salga al
+     mismo precio por los dos caminos. */
   './multi/brand.js',
   './multi/js/marcas.js',
   './multi/js/state.js',
@@ -167,6 +185,8 @@ var DOCS = [
   './apple/cevencare',
   './poly/',
   './poly/index.html',
+  './legamaster/',
+  './legamaster/index.html',
   './multi/',
   './multi/index.html',
   './tareas/',
@@ -277,6 +297,7 @@ async function respond(e){
   if(req.mode === 'navigate'){
     var brandFallback = url.pathname.indexOf('/apple/') === 0 ? './apple/'
                        : url.pathname.indexOf('/poly/') === 0  ? './poly/'
+                       : url.pathname.indexOf('/legamaster/') === 0 ? './legamaster/'
                        : './';
     var fb = await cache.match(brandFallback);
     if(fb) return fb;

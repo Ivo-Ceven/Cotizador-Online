@@ -47,9 +47,10 @@
      nivel abajo de la raíz (apple/index.html, apple/cevencare.html, poly/…), el
      mismo supuesto del botón "volver al panel" de más abajo. */
   var MARKS = {
-    apple: { img: 'apple.png', mono: true },
-    poly:  { img: 'poly.png' },
-    hp:    { img: 'hp.png' }
+    apple:      { img: 'apple.png', mono: true },
+    poly:       { img: 'poly.png' },
+    legamaster: { img: 'legamaster.png' },
+    hp:         { img: 'hp.png' }
   };
 
   var ROLES = { admin: 'Administrador', ventas: 'Ventas', lector: 'Lector' };

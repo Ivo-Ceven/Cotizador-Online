@@ -45,8 +45,9 @@ const ROOT = path.resolve(__dirname, '..');
    <script src>. El tablero de tareas (src/tareas/) no es una marca pero comparte
    el mismo scope global con shared/, asi que corre el mismo riesgo. */
 const MARCAS = [
-  { nombre: 'apple',  html: 'src/apple/index.html'  },
-  { nombre: 'poly',   html: 'src/poly/index.html'   },
+  { nombre: 'apple',      html: 'src/apple/index.html'      },
+  { nombre: 'poly',       html: 'src/poly/index.html'       },
+  { nombre: 'legamaster', html: 'src/legamaster/index.html' },
   /* El multimarca es el caso de mayor riesgo de colision: carga los
      `pricing-core.js` de DOS marcas en el mismo bundle. Si alguna vez las dos
      definieran una funcion con el mismo nombre, una pisaria a la otra en
