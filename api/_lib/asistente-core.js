@@ -18,7 +18,13 @@
    ============================================================================ */
 
 var MENSAJE_MAX = 2000;
-var CATALOGO_MAX = 500;
+/* Bajado de 500 a 150 el 26/08/2026 junto con CEVEN_ASIS_CATALOGO_MAX en
+   src/shared/asistente.js: con el catálogo ordenado por relevancia (no por
+   orden de aparición) antes de llegar acá, 150 alcanza para los candidatos
+   reales de un pedido puntual y deja el prompt en el orden de magnitud del
+   catálogo viejo de 77 productos que nunca dio timeout (ver
+   docs/HISTORIAL.md, "El asistente IA empieza a dar 502"). */
+var CATALOGO_MAX = 150;
 var ITEMS_ACTUALES_MAX = 500;
 var MOTIVO_MAX = 300;
 var CANTIDAD_MIN = 1;
@@ -187,15 +193,66 @@ function validarPropuestaModelo(argumentos, catalogoNormalizado){
   return {items: items, no_encontrados: noEncontrados};
 }
 
+/* ============================================================================
+   ESCALADO DE MODELO · heurística determinística, sin llamada de IA extra
+   ----------------------------------------------------------------------------
+   Decide DEFAULT vs un modelo más potente/pago, mirando solo señales que el
+   propio server ya calculó (norm.mensaje, norm.catalogo) — nunca algo que
+   mande el cliente, para no abrir una forma barata de forzar el modelo caro.
+   Sin `modeloEscalado` (o sea, sin OPENROUTER_MODEL_ESCALADO seteada en las
+   env vars) el escalado queda desactivado por completo: fail-safe, cero
+   riesgo de costo nuevo sin que un operador lo configure a propósito.
+   ============================================================================ */
+
+var PALABRAS_ESCALADO_MIN = 40;  // mensaje "cargado": varios ítems/requisitos
+var COMAS_ESCALADO_MIN    = 3;   // 3+ separadores de cláusula: pedido con varias partes
+var CATALOGO_ESCALADO_MIN = 60;  // catálogo grande post-filtro: muchos candidatos, más lugar para errar
+
+function contarPalabras(mensaje){
+  var m = String(mensaje || '').trim();
+  return m ? m.split(/\s+/).length : 0;
+}
+
+function contarSeparadoresDeClausula(mensaje){
+  var m = String(mensaje || '');
+  var comas = (m.match(/[,;]/g) || []).length;
+  var conectores = (m.match(/\by\b/gi) || []).length;
+  return comas + conectores;
+}
+
+/* Escala solo si el mensaje es complejo Y el catálogo candidato sigue siendo
+   grande (o hizo falta recortarlo de nuevo acá) — exigir ambas condiciones
+   evita pagar de más en catálogos chicos donde el modelo gratis ya acierta
+   sin problema. */
+function elegirModelo(norm, modeloDefault, modeloEscalado){
+  if(!modeloEscalado) return modeloDefault;
+
+  var palabras = contarPalabras(norm.mensaje);
+  var separadores = contarSeparadoresDeClausula(norm.mensaje);
+  var mensajeComplejo = (palabras >= PALABRAS_ESCALADO_MIN) || (separadores >= COMAS_ESCALADO_MIN);
+
+  var catalogoGrande = norm.catalogo.length >= CATALOGO_ESCALADO_MIN;
+  var cortadoDosVeces = norm.recortados > 0;
+
+  if(mensajeComplejo && (catalogoGrande || cortadoDosVeces)) return modeloEscalado;
+  return modeloDefault;
+}
+
 module.exports = {
   MENSAJE_MAX: MENSAJE_MAX,
   CATALOGO_MAX: CATALOGO_MAX,
   ITEMS_ACTUALES_MAX: ITEMS_ACTUALES_MAX,
   CANTIDAD_MIN: CANTIDAD_MIN,
   CANTIDAD_MAX: CANTIDAD_MAX,
+  PALABRAS_ESCALADO_MIN: PALABRAS_ESCALADO_MIN,
+  COMAS_ESCALADO_MIN: COMAS_ESCALADO_MIN,
+  CATALOGO_ESCALADO_MIN: CATALOGO_ESCALADO_MIN,
   TOOL_SCHEMA: TOOL_SCHEMA,
   normalizarCatalogoEntrada: normalizarCatalogoEntrada,
   armarPayloadOpenRouter: armarPayloadOpenRouter,
   parsearArgumentosToolCall: parsearArgumentosToolCall,
-  validarPropuestaModelo: validarPropuestaModelo
+  validarPropuestaModelo: validarPropuestaModelo,
+  contarPalabras: contarPalabras,
+  contarSeparadoresDeClausula: contarSeparadoresDeClausula,
+  elegirModelo: elegirModelo
 };

@@ -21,7 +21,11 @@
        prompt, no un filtro server-side, para no bloquear "3 más de esto");
      · nunca aparece un precio en la salida, ni de entrada ni de vuelta;
      · el catálogo/mensaje se capean sin tirar el request entero;
-     · un JSON de argumentos inválido falla controlado, no con excepción.
+     · un JSON de argumentos inválido falla controlado, no con excepción;
+     · elegirModelo() nunca escala sin OPENROUTER_MODEL_ESCALADO configurada;
+     · _asisOrdenarPorRelevancia/_asisResolverListaSkus (src/shared/asistente.js,
+       scope global de navegador) se cargan con vm — mismo patrón que
+       check-poly-catalogo.js — porque no tienen module.exports.
 
    Uso:  node scripts/check-asistente.js
    ========================================================================== */
@@ -189,6 +193,84 @@ console.log('\nRecorte del catálogo · el tope del cliente y el del server\n');
   ok(pocos.recortados === 0, 'sin recorte informa 0, no undefined', String(pocos.recortados));
 }
 
+
+/* ====== 8) elegirModelo: escalado determinístico, apagado por default ====== */
+console.log('\nelegirModelo · fail-safe y las dos condiciones necesarias\n');
+
+function normPrueba(mensaje, catalogoLen, recortados){
+  const catalogo = [];
+  for(let i = 0; i < catalogoLen; i++) catalogo.push({id: 'X' + i, description: 'x'});
+  return {mensaje: mensaje, catalogo: catalogo, recortados: recortados || 0};
+}
+
+ok(core.elegirModelo(normPrueba('pedido corto', 5, 0), 'default', '') === 'default',
+  'sin OPENROUTER_MODEL_ESCALADO (string vacío), nunca escala aunque el resto de las señales digan que sí');
+
+const mensajeLargo = new Array(core.PALABRAS_ESCALADO_MIN + 5).fill('palabra').join(' ');
+ok(core.elegirModelo(normPrueba(mensajeLargo, 5, 0), 'default', 'potente') === 'default',
+  'mensaje complejo pero catálogo chico y sin recorte: se queda en default');
+
+ok(core.elegirModelo(normPrueba('pedido corto', core.CATALOGO_ESCALADO_MIN, 0), 'default', 'potente') === 'default',
+  'catálogo grande pero mensaje simple: se queda en default (hacen falta las dos condiciones)');
+
+ok(core.elegirModelo(normPrueba(mensajeLargo, core.CATALOGO_ESCALADO_MIN, 0), 'default', 'potente') === 'potente',
+  'mensaje complejo por cantidad de palabras + catálogo grande: escala');
+
+const mensajeConComas = 'auriculares, parlantes, monitores y bases';
+ok(core.contarSeparadoresDeClausula(mensajeConComas) >= core.COMAS_ESCALADO_MIN,
+  'mensaje de prueba tiene suficientes separadores de cláusula para el siguiente check');
+ok(core.elegirModelo(normPrueba(mensajeConComas, core.CATALOGO_ESCALADO_MIN, 0), 'default', 'potente') === 'potente',
+  'mensaje complejo por comas/conectores + catálogo grande: también escala');
+
+ok(core.elegirModelo(normPrueba(mensajeLargo, 5, 3), 'default', 'potente') === 'potente',
+  'mensaje complejo + el server tuvo que recortar de nuevo: escala aunque el catálogo recibido sea chico');
+
+/* ====== 9) funciones de scope global en src/shared/asistente.js ============ */
+console.log('\n_asisOrdenarPorRelevancia / _asisResolverListaSkus (scope global de navegador, vía vm)\n');
+
+{
+  const vm = require('vm');
+  const fsx = require('fs');
+  const pathx = require('path');
+  const ROOTx = pathx.resolve(__dirname, '..');
+  const src = fsx.readFileSync(pathx.join(ROOTx, 'src/shared/asistente.js'), 'utf8');
+  const ctx = {console: console};
+  vm.createContext(ctx);
+  vm.runInContext(src, ctx);
+
+  const CAT = [
+    {id: '772D0AA', description: 'Sync 20+ auriculares con cancelacion de ruido', category: 'Audio', price_ref: 235},
+    {id: 'A4LZ8AA', description: 'Studio X30 barra de video', category: 'Video', price_ref: 1899},
+    {id: 'SVC-001', description: 'Instalacion tecnica', category: '', price_ref: null}
+  ];
+
+  const porRelevancia = ctx._asisOrdenarPorRelevancia('necesito auriculares para call center', CAT);
+  ok(porRelevancia[0].id === '772D0AA', 'match de categoría/descripción trae el producto relevante primero',
+    'quedó primero: ' + porRelevancia[0].id);
+
+  const porSku = ctx._asisOrdenarPorRelevancia('quiero el A4LZ8AA', CAT);
+  ok(porSku[0].id === 'A4LZ8AA', 'match exacto de SKU gana pase lo que pase, aunque no matchee ninguna palabra más');
+
+  const sinTokens = ctx._asisOrdenarPorRelevancia('  ', CAT);
+  ok(sinTokens === CAT, 'mensaje sin tokens útiles devuelve el MISMO array, intacto — no reordena por las dudas');
+
+  const vago = ctx._asisOrdenarPorRelevancia('necesito para la oficina', CAT);
+  ok(vago[0].price_ref !== null, 'mensaje vago (ningún token matchea nada) cae al criterio de siempre: precio disponible primero');
+
+  const idsEntrada = CAT.map(p => p.id).slice().sort();
+  const idsSalida = porRelevancia.map(p => p.id).slice().sort();
+  ok(porRelevancia.length === CAT.length && JSON.stringify(idsEntrada) === JSON.stringify(idsSalida),
+    'reordena, nunca filtra: mismo largo y mismo conjunto de ids que la entrada');
+
+  const listaSkus = ctx._asisResolverListaSkus('772D0AA, A4LZ8AA', CAT);
+  ok(!!listaSkus && listaSkus.items.length === 2, 'lista de 2+ SKUs pegados (separados por coma) se resuelve local, sin pasar por la IA');
+
+  const noLista = ctx._asisResolverListaSkus('necesito auriculares para la sala de reuniones', CAT);
+  ok(noLista === null, 'un pedido en lenguaje natural sin separadores de lista no se confunde con SKUs pegados');
+
+  const listaParcial = ctx._asisResolverListaSkus('772D0AA, esto no es un sku', CAT);
+  ok(listaParcial === null, 'si la mayoría de los tokens no matchea un SKU real, no se activa el atajo — sigue el camino normal');
+}
 
 console.log('\n' + (fallos ? '✗ ' + fallos + ' de ' + corridas + ' fallaron' : '✓ ' + corridas + ' chequeos OK') + '\n');
 process.exit(fallos ? 1 : 0);

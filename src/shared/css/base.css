@@ -520,7 +520,12 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 
 @media (max-width:640px){
   #prod-picker{padding:0}
-  .pk-card{max-width:none;max-height:100vh;height:100vh;border-radius:0}
+  /* dvh además de vh (no en reemplazo: es el fallback en navegadores que no
+     entienden dvh) — 100vh en mobile es la altura SIN teclado, así que con el
+     teclado abierto el pie de la tarjeta (cantidad/nivel/precio) quedaba
+     fuera del viewport visible y el primer toque ahí caía en el fondo del
+     modal en vez de en el campo, cerrándolo. dvh sigue el viewport visual. */
+  .pk-card{max-width:none;max-height:100vh;height:100vh;max-height:100dvh;height:100dvh;border-radius:0}
   .pk-filtros{flex-wrap:wrap}
 }
 
@@ -533,7 +538,8 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 #rp-cart{max-height:132px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}
 @media (max-width:640px){
   #regi-prod-modal{padding:0}
-  #regi-prod-modal .pk-card{max-width:none;max-height:100vh;height:100vh;border-radius:0}
+  /* dvh: ver el comentario del mismo fix en #prod-picker .pk-card, arriba. */
+  #regi-prod-modal .pk-card{max-width:none;max-height:100vh;height:100vh;max-height:100dvh;height:100dvh;border-radius:0}
 }
 
 /* ── ASISTENTE IA (shared/asistente.js) ──
@@ -564,7 +570,8 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 
 @media (max-width:640px){
   #asis-picker{padding:0}
-  #asis-picker .pk-card{max-width:none;max-height:100vh;height:100vh;border-radius:0}
+  /* dvh: ver el comentario del mismo fix en #prod-picker .pk-card, arriba. */
+  #asis-picker .pk-card{max-width:none;max-height:100vh;height:100vh;max-height:100dvh;height:100dvh;border-radius:0}
 }
 
 /* ── Buscador con lupa ──

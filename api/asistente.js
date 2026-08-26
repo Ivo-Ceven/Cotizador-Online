@@ -31,6 +31,12 @@ var SUPABASE_ANON_KEY = 'sb_publishable_Za9l64nzVBsaKHrSCgeu0w_x7Vhe7Aa';
 // sin tocar código; no hace falta que sea gratis, es solo el default.
 var OPENROUTER_MODEL_DEFAULT = 'nvidia/nemotron-3.5-lightning:free';
 
+// Modelo al que core.elegirModelo() escala para pedidos complejos contra un
+// catálogo grande (ver api/_lib/asistente-core.js). Sin setear, el escalado
+// queda apagado del todo — es a propósito: nadie paga de más sin que un
+// operador lo configure explícitamente.
+var OPENROUTER_MODEL_ESCALADO = process.env.OPENROUTER_MODEL_ESCALADO || '';
+
 /* 25 s y no 20: la función tiene `maxDuration: 30` en vercel.json, así que
    había 10 s de margen sin usar. Se subió el 24/08, cuando el catálogo de Poly
    pasó de 77 a 703 productos por el Excel de deals y el prompt se hizo ~5 veces
@@ -116,7 +122,13 @@ module.exports = async function handler(req, res){
   if(!norm.mensaje) return jsonError(res, 400, 'Falta el mensaje.');
   if(!norm.catalogo.length) return jsonError(res, 400, 'El catálogo recibido está vacío.');
 
-  var payload = core.armarPayloadOpenRouter(norm, process.env.OPENROUTER_MODEL || OPENROUTER_MODEL_DEFAULT);
+  var modeloDefault = process.env.OPENROUTER_MODEL || OPENROUTER_MODEL_DEFAULT;
+  var modeloElegido = core.elegirModelo(norm, modeloDefault, OPENROUTER_MODEL_ESCALADO);
+  if(modeloElegido !== modeloDefault){
+    console.warn('[asistente] escalado a ' + modeloElegido + ' · palabras=' + core.contarPalabras(norm.mensaje)
+      + ' · catalogo=' + norm.catalogo.length + ' · recortados=' + norm.recortados);
+  }
+  var payload = core.armarPayloadOpenRouter(norm, modeloElegido);
 
   var controller = new AbortController();
   var timeout = setTimeout(function(){ controller.abort(); }, OPENROUTER_TIMEOUT_MS);

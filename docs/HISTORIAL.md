@@ -148,6 +148,95 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 26/08/2026 · Asistente IA: filtro de relevancia, cap más chico, escalado de modelo y atajo sin IA para pegar SKUs
+
+Cierra el "queda para decidir con el usuario" que había dejado abierto la
+entrada del 24/08 ("El asistente IA empieza a dar 502"): ahí quedaron tres
+salidas anotadas y sin elegir (bajar el tope, sacar del catálogo los ~626 SKU
+de servicio que trajo el BOM Calculator, o pasar a un modelo pago). Se
+terminó implementando algo distinto a las tres: en vez de decidir con qué
+CONTENIDO se arma el catálogo que ve la IA, se lo hace decidir por CUÁL pedido
+puntual está resolviendo cada consulta.
+
+### El diagnóstico, más preciso que en agosto
+
+`nvidia/nemotron-3.5-lightning:free` tiene 1M de tokens de contexto — el
+catálogo completo (~16k tokens con el cap viejo de 500) le entraba de sobra.
+El incidente del 24/08 nunca fue un límite de ventana de contexto: fue
+**latencia/timeout contra un modelo del tier gratuito** cuando el prompt creció
+~5x (77→703 productos). Un catálogo más grande no rompe por no entrar, rompe
+por tardar más en procesarse contra un modelo lento con un timeout fijo.
+
+### Qué se implementó
+
+1. **Filtro de relevancia** (`_asisOrdenarPorRelevancia`,
+   `src/shared/asistente.js`): reemplaza el `.slice(0, CAP)` ciego que solo
+   respetaba "precio disponible primero". Tokeniza el pedido del vendedor
+   (sin acentos, sin stopwords en español) y puntúa cada producto por
+   coincidencia contra `category`/`description`, con un match exacto de SKU
+   pesando 1000x cualquier otra señal — así que pedir por código exacto
+   siempre lo trae primero. Si el mensaje no deja tokens útiles, no reordena
+   nada: cae solo al comportamiento de siempre (precio primero), porque todos
+   los scores quedan en 0. Efecto colateral: como el desempate por precio
+   ahora vive acá y no en cada `_asisCatalogoCompacto()` de marca, de paso
+   corrige que `src/portal/js/asistente-hooks.js` nunca ordenaba por precio
+   como sí hacía Poly.
+2. **Cap bajado de 500 a 150** (`CEVEN_ASIS_CATALOGO_MAX` en
+   `src/shared/asistente.js` y `CATALOGO_MAX` en
+   `api/_lib/asistente-core.js`, mismo patrón de duplicación verificada por
+   `scripts/check-asistente.js` que ya existía). Con selección por relevancia
+   en vez de por disponibilidad de precio, el corte deja de perder productos
+   que sí importaban para el pedido puntual — y el prompt típico vuelve al
+   orden de magnitud del catálogo viejo de 77 productos que nunca dio
+   timeout.
+3. **Escalado de modelo determinístico** (`elegirModelo`,
+   `api/_lib/asistente-core.js`, llamado desde `api/asistente.js`): sin
+   llamada de IA extra, mira solo señales que el propio server ya calculó
+   (cantidad de palabras/separadores de cláusula del mensaje, tamaño del
+   catálogo recibido) para decidir si usar `OPENROUTER_MODEL_ESCALADO` en vez
+   del modelo gratuito de siempre. **Apagado por default**: sin esa env var
+   seteada, nunca escala — cero riesgo de costo nuevo sin que alguien lo
+   configure a propósito. Nunca confía en nada que mande el cliente.
+4. **Atajo sin IA para listas de SKUs pegadas** (`_asisResolverListaSkus`,
+   `src/shared/asistente.js`): mismo criterio que ya usaba
+   `handleSearchPaste`/`processMultiSKUs` en `src/shared/catalog-core.js`
+   para el buscador general. Si el pedido es, en los hechos, una lista de 2+
+   SKUs separados por salto de línea/tab/coma/punto y coma y la mayoría
+   matchea un id real, se resuelve entero local — sin red, sin gastar cuota
+   de OpenRouter — y se muestra en la misma pantalla de confirmación de
+   siempre. Un vendedor que ya sabe qué SKUs necesita no debería esperar una
+   respuesta de IA para algo que no requiere interpretar nada.
+
+Deliberadamente NO se hizo lo que se venía discutiendo como alternativa (una
+segunda llamada de IA tipo "clasificador" antes de la propuesta): con un solo
+modelo gratuito/lento de por medio, encadenar dos llamadas secuenciales
+hubiera duplicado la chance de timeout y el consumo de la cuota de 30
+consultas/hora por cada pedido — exactamente el tipo de cambio que hubiera
+reintroducido el riesgo del incidente de agosto. Queda como opción a futuro
+si el filtro por palabras no alcanza en la práctica; tampoco se sumó
+infraestructura nueva (embeddings, Supabase pgvector) por la misma razón de
+alcance.
+
+Los ~626 SKU de servicio del BOM Calculator **no se excluyeron a mano**: se
+confirmó en código (`src/poly/js/catalog.js:388`) que llegan con `rubro: ''`,
+así que el scoring nuevo (que pesa fuerte la categoría) ya los deprioritiza
+solo, sin lista negra que mantener.
+
+### Verificación
+
+`node scripts/check-asistente.js` — 53 chequeos, entre los nuevos: el
+fail-safe de `elegirModelo` (sin `OPENROUTER_MODEL_ESCALADO` nunca escala),
+las dos condiciones necesarias para escalar, y para
+`_asisOrdenarPorRelevancia`/`_asisResolverListaSkus` (cargadas con `vm`,
+mismo patrón que `scripts/check-poly-catalogo.js`, porque viven en scope
+global de navegador sin `module.exports`): match de SKU exacto gana siempre,
+mensaje sin señal útil no reordena nada, reordena pero nunca filtra (mismo
+largo y mismo conjunto de ids que la entrada), y una lista de SKUs pegada se
+distingue de un pedido en lenguaje natural. La prueba manual con el catálogo
+real de Poly en el navegador queda para el usuario.
+
+---
+
 ## 25/08/2026 · Pipeline REGI: el monto de productos reemplaza al del archivo, Forecast editable (+ "Perdido"), cantidad tipeable
 
 Ajuste sobre la entrada de más abajo (mismo día, sesión siguiente), con
