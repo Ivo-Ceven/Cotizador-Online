@@ -209,7 +209,7 @@ function _rpTierSelectHTML(linea, li){
   var pr = (prod && prod.precios) || {};
   var deal = (prod && prod.deal) || null;
   var actual = linea.tier || CEVEN_TIER_MANUAL;
-  var h = '<select class="si" data-rp-act="tier" data-li="'+li+'" style="font-size:11px;padding:2px 4px;max-width:130px">';
+  var h = '<select class="si" name="rp-tier-'+li+'" data-rp-act="tier" data-li="'+li+'" style="font-size:11px;padding:2px 4px;max-width:130px">';
   for(var i=0;i<tiers.length;i++){
     var v = tiers[i].v, pv = pr[v];
     // El nivel DEAL solo se ofrece si el SKU está en deal (o ya está en ese
@@ -244,10 +244,10 @@ function _pintarRegiCarrito(){
       // input la borre de sorpresa sería otra cosa.
       + '<span class="qstepper">'
         + '<button class="qstep" data-rp-act="menos" data-li="'+i+'" title="Restar uno">−</button>'
-        + '<input class="si" type="number" min="1" value="'+cevenEsc(it.cantidad)+'" data-rp-act="cantidad" data-li="'+i+'">'
+        + '<input class="si" type="number" min="1" name="rp-cantidad-'+i+'" value="'+cevenEsc(it.cantidad)+'" data-rp-act="cantidad" data-li="'+i+'">'
         + '<button class="qstep" data-rp-act="mas" data-li="'+i+'" title="Sumar uno">+</button>'
       + '</span>'
-      + '<input type="number" min="0" step="0.01" class="si" data-rp-act="precio" data-li="'+i+'" value="'+(it.precioUnitario||0)+'" style="width:82px;font-size:12px;padding:2px 4px" title="Precio unitario — se puede escribir a mano">'
+      + '<input type="number" min="0" step="0.01" class="si" name="rp-precio-'+i+'" data-rp-act="precio" data-li="'+i+'" value="'+(it.precioUnitario||0)+'" style="width:82px;font-size:12px;padding:2px 4px" title="Precio unitario — se puede escribir a mano">'
       // Siempre USD, como el resto del pipeline REGI: dp() convierte a ARS
       // según el toggle de moneda de la cotización en curso, y esta
       // asignación no tiene nada que ver con esa cotización (puede ni

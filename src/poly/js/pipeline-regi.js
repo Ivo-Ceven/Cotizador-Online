@@ -385,7 +385,7 @@ function _regiGroupRowHTML(g, key, abierto){
 function _regiForecastSelectHTML(r){
   var actual = r.forecast || '';
   var c = REGI_FORECAST_COLORS[actual] || {bg:'#fff', fg:'#6e6e73'};
-  var h = '<select class="si" data-act="regi-forecast-edit" data-opd="'+cevenEsc(r.opd)+'"'
+  var h = '<select class="si" name="regi-forecast-'+cevenEsc(r.opd)+'" data-act="regi-forecast-edit" data-opd="'+cevenEsc(r.opd)+'"'
     + ' style="font-size:11px;font-weight:700;padding:2px 6px;background:'+c.bg+';color:'+c.fg+';border-color:'+c.fg+'">'
     + '<option value=""'+(!actual?' selected':'')+'>— Sin definir —</option>';
   Object.keys(REGI_FORECAST_COLORS).forEach(function(fc){
