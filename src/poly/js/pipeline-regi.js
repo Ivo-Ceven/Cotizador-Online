@@ -82,6 +82,52 @@ function _regiFechaDDMMYYYY(iso){
   return p.length === 3 ? (p[2]+'/'+p[1]+'/'+p[0]) : (iso||'');
 }
 
+/* ── Vínculo con el pipeline real, vía OPG (27/08/2026) ───────────────────
+   El pipeline REGI tiene que "quedar vacío": toda oportunidad que HP nos
+   reconoce tiene que terminar con una cotización real cargada del lado de
+   Ceven. El matching es `pipeline.opg` (ya existe, "número de precio
+   especial que asigna la marca") contra la columna `regi` de acá — el
+   código de Deal Registration YA APROBADO por HP, no `opd` (que es la clave
+   interna del archivo pero nunca es el número que el equipo termina usando).
+   Consecuencia aceptada: mientras HP no aprueba el REGI (columna `regi`
+   vacía, pasa en varias filas reales) esa oportunidad no tiene con qué
+   matchear todavía — no hay vuelta que darle sin usar `opd` en su lugar, y
+   esa alternativa se descartó a propósito.
+
+   Sin columna nueva ni fetch nuevo a Supabase: getPipeline() ya es la misma
+   fuente en memoria que usa toda la vista del pipeline real, mantenida al
+   día por shared/sync.js. */
+function _regiNormCodigo(v){
+  return String(v == null ? '' : v).trim().toUpperCase();
+}
+
+function _regiOpgVinculadosSet(){
+  var set = {};
+  (getPipeline() || []).forEach(function(r){
+    var v = _regiNormCodigo(r.opg);
+    if(v) set[v] = r.id;
+  });
+  return set;
+}
+
+/* Una oportunidad REGI está vinculada si tiene REGI aprobado Y ese código
+   coincide con el OPG de alguna fila real. `vinculados` la arma UNA vez por
+   render (_regiOpgVinculadosSet) para no recorrer getPipeline() por fila. */
+function _regiEsVinculada(r, vinculados){
+  var v = _regiNormCodigo(r.regi);
+  return !!(v && vinculados[v]);
+}
+
+/* Usada desde pipeline-view.js (fila del pipeline REAL) para el 🎯 que
+   confirma que un OPG cargado matchea AHORA con una oportunidad REGI
+   vigente. Si el pipeline REGI no se cargó todavía esta sesión, no hay con
+   qué comparar: se devuelve false sin disparar un fetch solo para esto. */
+function _regiOpgMatcheaVigente(opg){
+  var v = _regiNormCodigo(opg);
+  if(!v || !window._regiPipeRows) return false;
+  return window._regiPipeRows.some(function(r){ return _regiNormCodigo(r.regi) === v; });
+}
+
 /* ── Mostrar/ocultar según la vista ──────────────────────────────────────
    Un solo punto de control, llamado desde renderPipeline() en CADA render
    (cambie o no la vista): así "Pipeline actual" y los meses archivados
@@ -105,6 +151,11 @@ function cevenRegiToggleVista(activa){
   var statusWrap = document.getElementById('pipe-status-wrap');
   if(execWrap) execWrap.style.display = activa ? 'none' : '';
   if(statusWrap) statusWrap.style.display = activa ? 'none' : '';
+
+  // "Mostrar vinculadas": al revés que Ejecutivo/Estado, solo existe EN la
+  // vista REGI (no tiene sentido en el pipeline real).
+  var vincWrap = document.getElementById('regi-vinc-wrap');
+  if(vincWrap) vincWrap.style.display = activa ? '' : 'none';
 
   // Facturado y Forecast del mes no tienen equivalente en REGI: no hay
   // "facturado" en una oportunidad que todavía es de un partner, y el
@@ -271,7 +322,18 @@ function renderRegiPipeline(){
 }
 
 function _renderRegiPipelineFromCache(){
-  var rows = window._regiPipeRows || [];
+  var rowsTotal = window._regiPipeRows || [];
+
+  // Se recalcula EN CADA render (no al traer del Excel): getPipeline() puede
+  // haber cambiado desde el último render de esta vista —por ejemplo, se
+  // vinculó un proyecto con "✎" en el pipeline real y se volvió acá— sin que
+  // haga falta reimportar ni volver a pedirle nada a Supabase.
+  var vinculados = _regiOpgVinculadosSet();
+  rowsTotal.forEach(function(r){ r.vinculada = _regiEsVinculada(r, vinculados); });
+  var nVinculadas = rowsTotal.filter(function(r){ return r.vinculada; }).length;
+  _regiPintarToggleVinculadas(nVinculadas);
+
+  var rows = window._regiMostrarVinculadas ? rowsTotal : rowsTotal.filter(function(r){ return !r.vinculada; });
 
   var q = (document.getElementById('pipe-search').value || '').toLowerCase().trim();
   var forecastFilter = window._regiForecastFilter || '';
@@ -310,12 +372,28 @@ function _renderRegiPipelineFromCache(){
 
   var html = _regiTablaHTML(filtered);
   var _hayFiltros = !!(q || forecastFilter || monthFilter);
-  var _vacio = rows.length === 0
-    ? 'Todavía no se importó ningún Excel de REGI. Tocá "⬇ Importar Excel REGI".'
-    : (_hayFiltros ? 'Ninguna oportunidad coincide con los filtros. Tocá "✕ Limpiar filtros".' : 'El Excel importado no tiene oportunidades.');
+  var _vacio;
+  if(rowsTotal.length === 0){
+    _vacio = 'Todavía no se importó ningún Excel de REGI. Tocá "⬇ Importar Excel REGI".';
+  } else if(rows.length === 0 && !window._regiMostrarVinculadas && nVinculadas > 0){
+    // El caso lindo: no queda nada por atender. Se lo dice así y no como
+    // "ninguna oportunidad coincide con los filtros" (que suena a que algo
+    // está mal filtrado) para no ir a buscar el "✕ Limpiar filtros" al pedo.
+    _vacio = '✓ Todas las oportunidades de REGI ya están vinculadas a un proyecto real. Tocá "Mostrar vinculadas ('+nVinculadas+')" para verlas.';
+  } else {
+    _vacio = _hayFiltros ? 'Ninguna oportunidad coincide con los filtros. Tocá "✕ Limpiar filtros".' : 'El Excel importado no tiene oportunidades.';
+  }
   document.getElementById('regi-pipe-body').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
   _regiBindDelegation();
+}
+
+/* Etiqueta del checkbox "Mostrar vinculadas (N)". Separado en su propio
+   <span> para no tener que rearmar el <label> entero (y perder el checkbox
+   con su estado) en cada render. */
+function _regiPintarToggleVinculadas(n){
+  var el = document.getElementById('regi-vinc-count');
+  if(el) el.textContent = '(' + n + ')';
 }
 
 function _regiPintarDashboard(filtered, forecastFilter){
@@ -406,7 +484,17 @@ function _regiRowHTML(r){
   var montoTitle = deProductos
     ? 'Sumatoria de los productos asignados (el archivo de HP dice USD ' + fI(r.montoArchivo||0) + ')'
     : '';
-  return '<tr>'
+  // Vinculada: el proyecto real ya existe (mismo OPG que este REGI) y es la
+  // fuente de verdad — no tiene sentido seguir asignándole productos o
+  // forecast a mano acá, así que la celda de Acciones se reduce a decirlo.
+  // La fila se atenúa (mismo criterio que las pastillas apagadas del
+  // dashboard) para que salte a la vista cuál ya está resuelta.
+  var celdaAcc = r.vinculada
+    ? '<span style="background:#e6f7ec;color:#15863a;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✓ Vinculada</span>'
+    : '<button class="bs" data-act="regi-editar" data-opd="'+cevenEsc(r.opd)+'" title="Asignar productos del catálogo a este proyecto" style="padding:2px 8px;font-size:12px">✎ Editar</button>'
+      + ' <button class="bs" data-act="regi-copiar" data-opd="'+cevenEsc(r.opd)+'" title="Crear la cotización real en nuestro pipeline a partir de esta oportunidad" style="padding:2px 8px;font-size:12px;background:#e8f4ff;color:#0071e3;border-color:#b8ddff">'
+        + ((window._regiCopiadas && window._regiCopiadas[r.opd]) ? '➕ Copiar de nuevo' : '➕ Copiar a Ceven') + '</button>';
+  return '<tr'+(r.vinculada ? ' style="opacity:.55"' : '')+'>'
     + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+(r.regi ? cevenEsc(r.regi) : '<span style="color:#aeaeb2">sin REGI</span>')+'</td>'
     + '<td style="font-size:12px"><div style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
     + '<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.primaryPartner||'—')+'</td>'
@@ -414,7 +502,7 @@ function _regiRowHTML(r){
     + '<td style="font-size:12px;white-space:nowrap'+(vencido?';color:#d70015':'')+'" title="'+(vencido?'Deal Registration vencido':'')+'">'+cevenEsc(r.drExpiration ? _regiFechaDDMMYYYY(r.drExpiration) : '—')+'</td>'
     + '<td style="font-size:12px;white-space:nowrap">'+cevenEsc(r.mesCierre ? _mesLabelPoly(r.mesCierre) : '—')+'</td>'
     + '<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px" title="'+cevenEsc(montoTitle)+'">'+(deProductos?'<span title="Monto de los productos asignados">🎯</span> ':'')+'USD '+fI(r.monto||0)+'</td>'
-    + '<td class="stk-act" style="text-align:center;white-space:nowrap"><button class="bs" data-act="regi-editar" data-opd="'+cevenEsc(r.opd)+'" title="Asignar productos del catálogo a este proyecto" style="padding:2px 8px;font-size:12px">✎ Editar</button></td>'
+    + '<td class="stk-act" style="text-align:center;white-space:nowrap">'+celdaAcc+'</td>'
   + '</tr>';
 }
 
@@ -460,6 +548,39 @@ function _regiCambiarForecast(opd, valor){
   });
 }
 
+/* ── Copiar una oportunidad a una cotización real ─────────────────────────
+   Confirmado con el usuario antes de construir esto: NO crea una fila
+   liviana sin cotización atrás. Abre una cotización nueva de verdad,
+   prellenada, igual que loguea el resto del pipeline hoy (una fila = una
+   cotización real) — así no hay que inventar ningún caso especial en
+   addToPipeline() ni en el detalle expandible/export del pipeline real. El
+   OPG se prellena con el propio `regi` de la oportunidad: cuando el AM
+   apriete "Agregar al pipeline" con productos reales cargados, ese OPG va a
+   matchear solo y la oportunidad se va a ocultar de acá sin tocar nada más.
+
+   window._regiCopiadas es solo para no repetir el mismo botón "Copiar a
+   Ceven" sin que el usuario se dé cuenta de que ya lo usó — no persiste
+   entre sesiones ni distingue quién lo apretó, no hace falta más que eso. */
+window._regiCopiadas = window._regiCopiadas || {};
+
+function _regiCopiarAPipeline(opd){
+  if(!cevenCanUsePipeline()){ showToast('Tu rol no permite agregar al pipeline.'); return; }
+  var r = (window._regiPipeRows || []).filter(function(x){ return x.opd === opd; })[0];
+  if(!r) return;
+  goTo('quote');
+  nuevaCotizacion();
+  document.getElementById('client').value = r.cliente;
+  if(typeof aplicarTierDelCliente === 'function') aplicarTierDelCliente();
+  if(typeof cevenClienteCambio === 'function') cevenClienteCambio();
+  document.getElementById('proyecto').value = r.proyecto;
+  document.getElementById('opg').value = r.regi || '';
+  if(r.mesCierre && typeof setMesCierre === 'function') setMesCierre(r.mesCierre);
+  window._regiCopiadas[opd] = true;
+  showToast(r.regi
+    ? 'Cotización iniciada desde REGI "'+r.proyecto+'" (OPG '+r.regi+') — cargá los productos reales y usá "Agregar al pipeline".'
+    : 'Cotización iniciada desde REGI "'+r.proyecto+'" — todavía no tiene REGI aprobado: completá el OPG cuando HP lo confirme.');
+}
+
 /* Delegación propia: #regi-pipe-body y #dash-by-status son contenedores
    propios/compartidos, pero pipeBindDelegation() (pipeline-view.js) ya deja
    UN listener por contenedor vía cevenDelegate() — atarle un segundo ahí no
@@ -478,6 +599,7 @@ function _regiBindDelegation(){
       // se llama por nombre y no por referencia directa, mismo criterio que
       // el resto del pipeline usa para hooks opcionales.
       else if(act === 'regi-editar' && typeof abrirRegiEditor === 'function') abrirRegiEditor(el.getAttribute('data-opd'));
+      else if(act === 'regi-copiar') _regiCopiarAPipeline(el.getAttribute('data-opd'));
     });
     body.addEventListener('change', function(ev){
       var el = cevenActEl(ev, body);

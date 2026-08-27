@@ -194,6 +194,64 @@ function validarPropuestaModelo(argumentos, catalogoNormalizado){
 }
 
 /* ============================================================================
+   GEMINI · payload y parseo para el proveedor primario (api/asistente.js)
+   ----------------------------------------------------------------------------
+   La API de Interactions de Gemini (generativelanguage.googleapis.com,
+   endpoint /v1beta/interactions) es distinta a la de OpenRouter/OpenAI:
+     - el pedido de tool forzada no es tool_choice.function.name sino
+       generation_config.tool_choice.allowed_tools = {mode:'any', tools:[...]};
+     - la respuesta no trae choices[0].message.tool_calls[0].function.arguments
+       como STRING para parsear con JSON.parse — trae un array `steps`, y el
+       step de tipo function_call ya tiene `arguments` como objeto nativo.
+   Confirmado contra ai.google.dev el 27/08/2026 (API nueva, no la
+   generateContent clásica) — sin poder probarla contra la key real (vive
+   solo en las env vars de Vercel), así que parsearArgumentosGemini es
+   deliberadamente estricto: cualquier forma inesperada devuelve {ok:false} en
+   vez de arriesgar una excepción o un item mal formado, y eso alcanza para
+   que api/asistente.js caiga solo al fallback de OpenRouter.
+   ============================================================================ */
+
+var GEMINI_TOOL = {
+  type: 'function',
+  name: TOOL_SCHEMA.function.name,
+  description: TOOL_SCHEMA.function.description,
+  parameters: TOOL_SCHEMA.function.parameters
+};
+
+function armarPayloadGemini(norm, model){
+  return {
+    model: model,
+    system_instruction: construirSystemPrompt(),
+    input: construirMensajeUsuario(norm),
+    tools: [GEMINI_TOOL],
+    generation_config: {
+      temperature: 0.3,
+      tool_choice: {allowed_tools: {mode: 'any', tools: [GEMINI_TOOL.name]}}
+    }
+  };
+}
+
+/* Respuesta cruda de Gemini → argumentos de la function_call, o {ok:false} si
+   no hubo una function_call de proponer_items con argumentos utilizables.
+   Nunca tira excepción. */
+function parsearArgumentosGemini(geminiJson){
+  try{
+    var steps = geminiJson && geminiJson.steps;
+    if(!Array.isArray(steps)) return {ok: false};
+    for(var i=0;i<steps.length;i++){
+      var s = steps[i];
+      if(!s || s.type !== 'function_call' || s.name !== GEMINI_TOOL.name) continue;
+      var args = s.arguments;
+      if(!args || typeof args !== 'object' || !Array.isArray(args.items)) return {ok: false};
+      return {ok: true, items: args.items, nota: (typeof args.nota === 'string') ? args.nota : ''};
+    }
+    return {ok: false};
+  }catch(e){
+    return {ok: false};
+  }
+}
+
+/* ============================================================================
    ESCALADO DE MODELO · heurística determinística, sin llamada de IA extra
    ----------------------------------------------------------------------------
    Decide DEFAULT vs un modelo más potente/pago, mirando solo señales que el
@@ -248,9 +306,12 @@ module.exports = {
   COMAS_ESCALADO_MIN: COMAS_ESCALADO_MIN,
   CATALOGO_ESCALADO_MIN: CATALOGO_ESCALADO_MIN,
   TOOL_SCHEMA: TOOL_SCHEMA,
+  GEMINI_TOOL: GEMINI_TOOL,
   normalizarCatalogoEntrada: normalizarCatalogoEntrada,
   armarPayloadOpenRouter: armarPayloadOpenRouter,
   parsearArgumentosToolCall: parsearArgumentosToolCall,
+  armarPayloadGemini: armarPayloadGemini,
+  parsearArgumentosGemini: parsearArgumentosGemini,
   validarPropuestaModelo: validarPropuestaModelo,
   contarPalabras: contarPalabras,
   contarSeparadoresDeClausula: contarSeparadoresDeClausula,

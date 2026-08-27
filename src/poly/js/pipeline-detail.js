@@ -70,6 +70,33 @@ function editNetsuiteLink(id){
   }, {okLabel:'Guardar'});
 }
 
+/* ── OPG / código REGI ───────────────────────────────────────────────────
+   El OPG es un dato informativo del proyecto (número de precio especial que
+   asigna la marca) que además, desde 27/08/2026, sirve para vincular el
+   proyecto con una oportunidad del pipeline REGI de HP: si acá se carga el
+   mismo código que trae la columna "REGI" del Excel (ver pipeline-regi.js),
+   esa oportunidad se oculta sola de la vista REGI. Antes solo se cargaba
+   reabriendo la cotización entera — con esto se puede corregir sin salir
+   del pipeline, igual que ya se hace con el link de Netsuite. */
+function editOpgValue(id){
+  var pipe = getPipeline();
+  var idx = -1;
+  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ idx = i; break; } }
+  if(idx < 0) return;
+  if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.'); return; }
+  var current = pipe[idx].opg || '';
+  promptModal('Editar OPG (pegá acá el código REGI de HP para vincular este proyecto)', current, function(val){
+    val = (val||'').trim();
+    if(val === current) return;
+    if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
+    var pipe2 = getPipeline();
+    for(var i=0;i<pipe2.length;i++){ if(pipe2[i].id === id){ pipe2[i].opg = val === '' ? null : val; break; } }
+    savePipeline(pipe2);
+    renderPipeline();
+    notifyUndo(val ? '✓ OPG actualizado' : '✓ OPG quitado', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
+  }, {okLabel:'Guardar'});
+}
+
 function updatePipelineStatus(id, newStatus){
   var pipe = getPipeline();
   var row = pipe.find(function(r){ return r.id === id; });

@@ -22,6 +22,10 @@
      · nunca aparece un precio en la salida, ni de entrada ni de vuelta;
      · el catálogo/mensaje se capean sin tirar el request entero;
      · un JSON de argumentos inválido falla controlado, no con excepción;
+     · armarPayloadGemini/parsearArgumentosGemini hablan el formato de la API
+       de Interactions de Gemini (distinto al de OpenRouter/OpenAI) y caen
+       controlado ante cualquier forma inesperada — Gemini es primario desde
+       el 27/08/2026, con fallback a OpenRouter si falla o no da tool call;
      · elegirModelo() nunca escala sin OPENROUTER_MODEL_ESCALADO configurada;
      · _asisOrdenarPorRelevancia/_asisResolverListaSkus (src/shared/asistente.js,
        scope global de navegador) se cargan con vm — mismo patrón que
@@ -154,6 +158,37 @@ ok(payload.model === 'modelo-de-prueba', 'usa el modelo que se le pasa, no uno h
 ok(payload.tool_choice && payload.tool_choice.function.name === 'proponer_items', 'tool_choice fuerza proponer_items siempre — nunca texto libre');
 ok(JSON.stringify(payload).indexOf('235') !== -1, 'el price_ref SÍ viaja hacia el modelo (es contexto de presupuesto para él)');
 
+/* ============================ 6b) Gemini (armado + parseo) ================= */
+console.log('\narmarPayloadGemini / parsearArgumentosGemini\n');
+
+const normGemini = core.normalizarCatalogoEntrada({mensaje: 'hola', catalogo: CATALOGO});
+const payloadGemini = core.armarPayloadGemini(normGemini, 'modelo-de-prueba');
+ok(payloadGemini.model === 'modelo-de-prueba', 'usa el modelo que se le pasa, no uno hardcodeado');
+ok(payloadGemini.tools[0].name === 'proponer_items' && payloadGemini.tools[0].type === 'function',
+  'declara la tool en formato Gemini (plana: type/name/description/parameters, no anidada bajo function como OpenAI)');
+ok(payloadGemini.generation_config.tool_choice.allowed_tools.mode === 'any'
+  && payloadGemini.generation_config.tool_choice.allowed_tools.tools.indexOf('proponer_items') !== -1,
+  'fuerza la tool_choice a proponer_items siempre — nunca texto libre');
+ok(typeof payloadGemini.system_instruction === 'string' && typeof payloadGemini.input === 'string',
+  'system_instruction e input son texto plano — mismo construirSystemPrompt/construirMensajeUsuario que OpenRouter');
+ok(payloadGemini.input.indexOf('235') !== -1, 'el price_ref SÍ viaja hacia el modelo (es contexto de presupuesto para él)');
+
+const argsGeminiOk = core.parsearArgumentosGemini({
+  steps: [{type: 'function_call', name: 'proponer_items', arguments: {items: [{id: 'X', cantidad: 1, motivo: 'x'}], nota: 'listo'}}]
+});
+ok(argsGeminiOk.ok && argsGeminiOk.items.length === 1 && argsGeminiOk.nota === 'listo',
+  'function_call bien formada se parsea entera — arguments YA es objeto, no hace falta JSON.parse');
+
+ok(core.parsearArgumentosGemini({}).ok === false, 'respuesta sin steps no rompe, falla controlado');
+ok(core.parsearArgumentosGemini({steps: []}).ok === false, 'steps vacío falla controlado');
+ok(core.parsearArgumentosGemini({steps: [{type: 'text', text: 'no llamé ninguna tool'}]}).ok === false,
+  'un step que no es function_call (el modelo contestó texto en vez de forzar la tool) falla controlado');
+ok(core.parsearArgumentosGemini({steps: [{type: 'function_call', name: 'otra_funcion', arguments: {items: []}}]}).ok === false,
+  'una function_call de otra función (no proponer_items) se ignora');
+ok(core.parsearArgumentosGemini({steps: [{type: 'function_call', name: 'proponer_items', arguments: {items: 'no es array'}}]}).ok === false,
+  'arguments con items que no es array falla controlado');
+ok(core.parsearArgumentosGemini(null).ok === false, 'null no tira excepción');
+
 /* ====== 7) el recorte del catalogo: los dos topes y el aviso ================ */
 console.log('\nRecorte del catálogo · el tope del cliente y el del server\n');
 
@@ -175,11 +210,19 @@ console.log('\nRecorte del catálogo · el tope del cliente y el del server\n');
 
   const api = fsx.readFileSync(pathx.join(ROOTx, 'api/asistente.js'), 'utf8');
   ok(/catalogo_recortado: norm\.recortados/.test(api), 'y el server se lo manda en la respuesta');
-  /* Las tres fallas hacia OpenRouter tienen que distinguirse: con un solo
-     mensaje no hay forma de saber desde la consola cuál pasó. */
+  /* Las tres fallas de un proveedor tienen que distinguirse: con un solo
+     mensaje no hay forma de saber desde la consola cuál pasó. Viven en
+     llamarProveedor(), compartida entre Gemini y OpenRouter. */
   ok(/AbortError/.test(api) && /TIMEOUT/.test(api), 'el timeout se distingue de un fallo de red');
   ok(/504/.test(api), 'y se reporta como 504, no como 502');
-  ok(/orRes\.text\(\)/.test(api), 'un error de OpenRouter se loguea con su cuerpo, no solo el status');
+  ok(/\.text\(\)\)\.slice\(0, 500\)/.test(api), 'un error de proveedor se loguea con su cuerpo, no solo el status');
+
+  /* Gemini primario, OpenRouter fallback (27/08/2026): sin GEMINI_API_KEY
+     tiene que seguir andando SOLO con OpenRouter, como antes. */
+  ok(/GEMINI_API_KEY/.test(api), 'lee GEMINI_API_KEY de las env vars');
+  ok(/x-goog-api-key/.test(api), 'llama a Gemini con su propio esquema de auth, no Bearer');
+  ok(/if\(GEMINI_API_KEY\)/.test(api), 'Gemini se intenta primero, condicionado a que la key esté configurada');
+  ok(/if\(!resultado\)/.test(api), 'OpenRouter corre solo si Gemini no dio un resultado usable — es el fallback, no una segunda opción en paralelo');
 }
 
 {

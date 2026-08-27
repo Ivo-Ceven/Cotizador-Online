@@ -456,6 +456,17 @@
           <option value="Perdido">Perdido</option>
         </select>
       </div>
+      <!-- Solo tiene sentido en la vista REGI (cevenRegiToggleVista la
+           muestra/oculta, igual que pipe-exec-wrap/pipe-status-wrap al revés).
+           Las oportunidades ya vinculadas a un proyecto real se ocultan por
+           defecto — esto es para poder revisarlas igual, ej. para auditar. -->
+      <div id="regi-vinc-wrap" style="display:none">
+        <label class="lbl" aria-hidden="true">&nbsp;</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;height:36px">
+          <input type="checkbox" id="regi-mostrar-vinc" onchange="window._regiMostrarVinculadas=this.checked;renderPipeline()">
+          Mostrar vinculadas <span id="regi-vinc-count">(0)</span>
+        </label>
+      </div>
       <!-- Una celda más de la misma grilla, así el botón queda alineado con los
            campos que limpia. El <label> vacío es lo que lo baja hasta la línea
            de los inputs (los otros tres tienen rótulo arriba). Limpia también

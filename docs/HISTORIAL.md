@@ -148,6 +148,196 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 27/08/2026 · Pipeline REGI: vincularlo con el pipeline real vía OPG, para que "quede vacío"
+
+Pedido de Ivo, confirmado con Ariel: mantener los dos pipelines de Poly (el
+nuestro y el REGI de HP), pero con el REGI siempre "vacío" — que toda
+oportunidad que HP nos reconoce termine con una cotización real cargada del
+lado de Ceven. Hasta ahora las dos vistas (`pipeline` y `poly_regi_pipeline`,
+ver la entrada del 25/08 más abajo) no tenían ninguna relación entre sí: no
+había forma de saber, mirando el REGI, si un AM ya estaba trabajando esa
+oportunidad.
+
+### La decisión de diseño (confirmada con `AskUserQuestion`, dos preguntas)
+
+1. **¿Qué es "copiar a pipeline Ceven"?** Se descartó crear una fila liviana
+   sin cotización atrás (hubiera roto el supuesto de "una fila = una
+   cotización real" en el detalle expandible y en el export a Excel). El
+   botón nuevo abre una cotización de verdad, prellenada — el AM la termina
+   de armar con productos reales y la agrega al pipeline como siempre.
+2. **¿Contra qué campo se matchea?** Se evaluó agregar una columna nueva
+   (`pipeline.regiOpd`, vinculada a `poly_regi_pipeline.opd`, la clave
+   interna del archivo). Ivo la descartó: `pipeline.opg` ya existe ("número
+   de precio especial que asigna la marca") y ya se sincroniza — no hace
+   falta columna nueva. El matching quedó `opg` contra `poly_regi_pipeline.regi`
+   (el REGI YA APROBADO por HP), no contra `opd`. Consecuencia aceptada:
+   mientras HP no aprueba el REGI (columna `regi` vacía, pasa en varias filas
+   reales del archivo) esa oportunidad no tiene con qué matchear todavía —
+   elegido a sabiendas, sin usar `opd` como alternativa.
+
+### Qué se implementó
+
+Sin migración de Supabase ni cambios en `brand.js`: `opg` ya estaba en
+`pipeCols`/`nullableCols` de `src/poly/brand.js` desde el corte de modelo de
+08/2026, así que ya viaja a Supabase con el resto de la fila.
+
+- **`_regiOpgVinculadosSet()`** (`pipeline-regi.js`): arma
+  `{OPG_NORMALIZADO: idDeLaFila}` recorriendo `getPipeline()` — la misma
+  fuente en memoria que ya usa toda la vista del pipeline real, mantenida al
+  día por `shared/sync.js`. Sin fetch nuevo a Supabase. Se recalcula EN CADA
+  render de la vista REGI (no solo al importar el Excel), así que vincular un
+  proyecto y volver a REGI sin reimportar nada ya refleja el cambio.
+- **`editOpgValue(id)`** (`pipeline-detail.js`), calcada de
+  `editNetsuiteLink()`: botón "✎" nuevo junto al OPG de cada fila del
+  pipeline real (antes era de solo lectura ahí — solo se cargaba/cambiaba
+  reabriendo la cotización entera). Gateado por `cevenCanEditPipelineRow()`,
+  deshabilitado en meses archivados (ahí `getPipeline()` no tiene la fila).
+  Un 🎯 al lado del valor confirma cuando matchea con un REGI vigente —pista
+  barata para pescar un typo—, sin disparar un fetch si el pipeline REGI no
+  se cargó todavía esta sesión.
+- **"➕ Copiar a Ceven"** en cada fila REGI no vinculada
+  (`_regiCopiarAPipeline()`): `goTo('quote')` + `nuevaCotizacion()` +
+  precarga cliente/proyecto/OPG (con el `regi` de la oportunidad, si ya está
+  aprobado)/mes de cierre. Nada que tocar en `addToPipeline()`: ya lee el
+  campo OPG de la pantalla tal cual, así que el matching ocurre solo cuando
+  el AM aprieta "Agregar al pipeline" con productos reales cargados.
+- **Ocultamiento automático**: `_renderRegiPipelineFromCache()` marca
+  `r.vinculada` y filtra las vinculadas por defecto (dashboard, pastillas y
+  tabla parten todos del mismo array ya filtrado). Checkbox nuevo "Mostrar
+  vinculadas (N)" en la barra de filtros —visible solo en la vista REGI,
+  mismo criterio que los wraps de Ejecutivo/Estado pero al revés— para poder
+  auditarlas igual. Una fila vinculada y visible se pinta atenuada y su
+  celda de Acciones pasa a ser una pastilla "✓ Vinculada" (se sacan "✎
+  Editar" y "➕ Copiar": el proyecto real ya es la fuente de verdad, no hace
+  falta seguir tocando productos/forecast a mano en REGI).
+
+### Límite conocido, aceptado a propósito
+
+No hay forma de saber si una oportunidad "ya se copió" antes de que el REGI
+matchee (si todavía no tiene código aprobado): el botón "➕ Copiar a Ceven"
+sigue apareciendo hasta que HP aprueba el REGI y alguien completa el OPG.
+`window._regiCopiadas` (en memoria, no persiste) solo evita el caso más
+tonto —repetir el mismo clic sin darse cuenta— cambiando el texto del botón
+a "➕ Copiar de nuevo" tras el primer uso en la sesión.
+
+Esto deja el terreno listo para la página de estadísticas REGI-vs-real de la
+que se había hablado (comparar el monto/fecha que carga HP contra los reales,
+que tenemos porque hablamos directo con el cliente) — queda para después.
+
+### Verificación
+
+`node --check` sobre los tres archivos JS tocados
+(`pipeline-regi.js`/`pipeline-detail.js`/`pipeline-view.js`) y
+`scripts/check-pipe-regi-opg.js` (nuevo, mismo patrón `vm` que
+`check-pipe-pills.js`): normalización de código (trim/mayúsculas), una fila
+REGI sin `regi` nunca puede quedar `vinculada`, el filtro no toca el array
+cuando el toggle está en "mostrar", y el orden dashboard/pastillas/tabla
+queda consistente entre sí. Los `scripts/check-*.js` existentes siguen en
+verde. **No verificado en un navegador real** (sin extensión Claude in
+Chrome conectada en esta sesión): falta vincular un proyecto real de
+verdad, confirmar que se oculta, copiar una oportunidad nueva y confirmar
+que el vínculo se arma solo al agregarla al pipeline, y reimportar el Excel
+para confirmar que los vínculos ya hechos sobreviven.
+
+---
+
+## 27/08/2026 · Asistente IA: Gemini directo como proveedor primario, OpenRouter de fallback
+
+El fix del 26/08 (filtro de relevancia + cap a 150) no alcanzó: en producción
+el asistente siguió dando `FUNCTION_INVOCATION_TIMEOUT` — el 504 propio de
+Vercel cuando una función se pasa de `maxDuration` (30s en `vercel.json`),
+**no** el 504 con mensaje en español que arma `api/asistente.js`. Eso importa:
+si el corte lo hace Vercel y no nuestro `AbortController` de 25s, la causa no
+es (solo) el tamaño del prompt — es el modelo gratuito de OpenRouter
+(`nvidia/nemotron-3.5-lightning:free`) tardando más de lo que su propio tope
+de 20 solicitudes/minuto · 50-1000/día debería permitir, probablemente por
+saturación del tier gratis en horas pico.
+
+El usuario cargó una `GEMINI_API_KEY` en las env vars de Vercel y pidió
+Gemini como proveedor primario con fallback a OpenRouter (no un reemplazo:
+las dos cosas conviven).
+
+### Lo que se implementó
+
+- **`api/_lib/asistente-core.js`**: `armarPayloadGemini`/`parsearArgumentosGemini`,
+  hablando el formato de la API de **Interactions** de Gemini
+  (`generativelanguage.googleapis.com/v1beta/interactions`) — confirmado
+  contra `ai.google.dev` el 27/08/2026 porque es una API nueva (no la
+  `generateContent` clásica) y no estaba en el conocimiento de base del
+  modelo. Reutiliza `construirSystemPrompt()`/`construirMensajeUsuario()` tal
+  cual (son texto plano, no dependen del proveedor); solo cambia cómo se
+  fuerza la tool call (`generation_config.tool_choice.allowed_tools`, no
+  `tool_choice.function.name` como OpenAI) y cómo se lee la respuesta
+  (`steps[].type==='function_call'`, con `arguments` ya como objeto nativo,
+  no un string para `JSON.parse`).
+- **`api/asistente.js`**: reescrito para intentar Gemini primero (si
+  `GEMINI_API_KEY` está seteada) y caer a OpenRouter si Gemini falla en red,
+  responde con error HTTP, o contesta 200 sin una `function_call` entendible
+  de `proponer_items`. Sin la key, el comportamiento es idéntico a antes
+  (solo OpenRouter) — fail-safe. Se extrajo `llamarProveedor()`, compartida
+  entre los dos proveedores, para no duplicar la lógica de timeout/abort/log
+  que antes vivía una sola vez inline.
+- **Presupuesto de tiempo repartido**: con dos proveedores posibles dentro de
+  los mismos 30s de `maxDuration`, `OPENROUTER_TIMEOUT_MS` bajó de 25000 a
+  12000 y `GEMINI_TIMEOUT_MS` quedó en 12000 — 12+12=24s, dejando margen
+  sobre los ~27s disponibles (30s menos lo que tardan el chequeo de auth y de
+  rate-limit contra Supabase). Dejar los 25s viejos a OpenRouter como
+  fallback DESPUÉS de que Gemini ya gastara su propio presupuesto hubiera
+  reproducido el mismo `FUNCTION_INVOCATION_TIMEOUT` que se está tratando de
+  evitar, solo que más tarde.
+- La respuesta ahora incluye `proveedor: 'gemini'|'openrouter'` — solo para
+  debug (pestaña Network), no se muestra en la UI. Es la forma más directa de
+  confirmar cuál de los dos contestó una consulta real.
+
+### Lo que quedó sin verificar contra la key real
+
+No hay forma de probar esto contra `GEMINI_API_KEY` real desde acá — vive
+solo en las env vars de Vercel. Dos puntos del formato de Gemini se
+confirmaron con una fuente y no con una segunda independiente (documentación
+fragmentada entre `/gemini-api/docs/function-calling`, que la propia página
+llama "legacy", y `/api/interactions-api`, que sí la reemplaza):
+
+1. El nombre exacto del header de autenticación (`x-goog-api-key`) — visto
+   una vez, no confirmado en un segundo fetch.
+2. El campo exacto para forzar la tool call
+   (`generation_config.tool_choice.allowed_tools.mode: 'any'`) — mismo caso.
+
+El diseño es deliberadamente tolerante a que alguno de los dos esté mal: si
+Gemini devuelve un error HTTP (por auth mal armada) o un 200 sin
+`function_call` (por no haber forzado bien la tool), `parsearArgumentosGemini`
+devuelve `{ok:false}` y `api/asistente.js` cae solo a OpenRouter — el usuario
+no ve nada raro, en el peor caso Gemini simplemente no aporta y todo sigue
+funcionando como el 26/08. Para confirmar que Gemini SÍ se está usando de
+verdad, mirar el campo `proveedor` en la respuesta de una consulta real.
+
+### Ajuste el mismo día: el modelo default de Gemini bajó de generación
+
+El usuario hizo notar que `gemini-3.5-flash-lite` (el default original)
+probablemente fuera de pago o tuviera un tier gratuito muy chico por ser un
+lanzamiento reciente. Se confirmó contra `ai.google.dev/gemini-api/docs/pricing`
+que `gemini-2.5-flash-lite` — una generación más asentada, no la más nueva —
+sigue teniendo acceso gratuito y soporte de function calling, así que pasó a
+ser el `GEMINI_MODEL_DEFAULT`. El límite exacto (RPM/RPD) del tier gratis ya
+no se publica en una tabla fija en la documentación pública — depende de la
+cuenta/proyecto de Google detrás de la key y se ve en
+`https://aistudio.google.com/rate-limit`. `GEMINI_MODEL` en las env vars
+sigue pisando el default sin tocar código si hiciera falta otro.
+
+### Verificación
+
+`node scripts/check-asistente.js` — 69 chequeos (16 nuevos: armado del
+payload de Gemini, parseo de su respuesta incluyendo casos borde, y que el
+cableado de fallback en `api/asistente.js` esté ahí). Además se corrió una
+simulación descartable (no comiteada) del handler completo con `fetch`
+mockeado, ejecutando `api/asistente.js` de verdad con cuatro escenarios:
+Gemini responde bien (nunca toca OpenRouter), Gemini falla en red (cae a
+OpenRouter y responde bien), sin `GEMINI_API_KEY` (va directo a OpenRouter,
+igual que antes), y los dos proveedores fallan (502 controlado, sin
+excepción sin manejar). Los cuatro se comportaron como se esperaba. La
+prueba contra las APIs reales queda para el usuario.
+
+---
+
 ## 26/08/2026 · Asistente IA: filtro de relevancia, cap más chico, escalado de modelo y atajo sin IA para pegar SKUs
 
 Cierra el "queda para decidir con el usuario" que había dejado abierto la

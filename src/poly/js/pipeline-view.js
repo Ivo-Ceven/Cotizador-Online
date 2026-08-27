@@ -343,7 +343,26 @@ function _pipeTablaHTML(filas, scope, opts){
         // El cliente ya está en el encabezado del grupo, con una fila entera de
         // ancho: acá se repetía truncado y con el nombre completo solo en un
         // tooltip, que en touch no existe. Se usa la columna para el OPG.
-        +'<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.opg||'—')+'</td>'
+        //
+        // El 🎯 es una pista barata de que el OPG cargado matchea AHORA MISMO
+        // con una oportunidad REGI vigente (ver pipeline-regi.js): si después
+        // de guardar no aparece, algo no calzó (typo, o el REGI todavía no
+        // está aprobado del lado de HP). Se omite sin drama si el pipeline
+        // REGI no se cargó todavía esta sesión — no vale la pena un fetch
+        // solo para esto.
+        +'<td style="font-size:12px;color:#6e6e73;white-space:nowrap">'
+          +cevenEsc(r.opg||'—')
+          +((r.opg && typeof _regiOpgMatcheaVigente === 'function' && _regiOpgMatcheaVigente(r.opg))
+              ? ' <span title="Coincide con una oportunidad REGI vigente" style="cursor:default">🎯</span>' : '')
+          // Un mes archivado es de solo lectura (para tocarlo hay que restaurar
+          // el proyecto primero, igual que estado/mes/Netsuite): sin este
+          // chequeo el botón llamaría a editOpgValue(), que busca la fila en
+          // getPipeline() y no la encuentra —una fila archivada no vive ahí—,
+          // así que el click no haría nada y nadie entendería por qué.
+          +(!esArchivo && cevenCanEditPipelineRow(r.ejecutivo)
+              ? ' <button class="bs" data-act="opg-edit" data-k="'+kA+'" title="Editar OPG / vincular con un código REGI" style="padding:0 5px;font-size:10px;line-height:1.3">✎</button>'
+              : '')
+        +'</td>'
         +'<td style="text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:11px">'
           +(r.qNum ? '<span data-act="openq" data-qn="'+cevenEsc(r.qNum)+'" style="color:var(--acc,#0071e3);font-weight:600;cursor:pointer">#'+cevenEsc(r.qNum)+'</span>' : '—')
           /* Chapita de opción A/B: solo aparece si esa cotización tiene dos, y
@@ -411,6 +430,7 @@ function pipeBindDelegation(){
     // link lo frena cevenCanEditPipelineRow() adentro de editNetsuiteLink().
     else if(act === 'ns-open') abrirNetsuite(n.row.id);
     else if(act === 'ns-edit') editNetsuiteLink(n.row.id);
+    else if(act === 'opg-edit') editOpgValue(n.row.id);
     else if(act === 'rm')      removePipeline(n.row.id);
     else if(act === 'restore') restoreFromArchive(el.getAttribute('data-mk'), n.row.id);
   });

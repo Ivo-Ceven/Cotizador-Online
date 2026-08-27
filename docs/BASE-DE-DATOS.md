@@ -41,7 +41,14 @@ create table public.pipeline (
   "skuPartialRemMes" jsonb,   -- mes del remanente parcial
   "skuArchivedQty"   jsonb,   -- qty ya archivada por línea
   "ovLink"        text,       -- link a la orden de venta
-  opg             text,       -- usada solo por brand='poly': número de precio especial que asigna la marca
+  opg             text,       -- usada solo por brand='poly': número de precio especial que asigna la marca.
+                              -- Desde 27/08/2026 tiene un segundo uso: si acá se
+                              -- carga el mismo código que trae la columna `regi`
+                              -- de poly_regi_pipeline (el REGI ya aprobado por HP,
+                              -- no el `opd` interno del archivo), esa oportunidad
+                              -- se oculta sola de la vista "Pipeline REGI" — ver
+                              -- src/poly/js/pipeline-regi.js (_regiOpgVinculadosSet)
+                              -- y docs/HISTORIAL.md (27/08/2026).
   salas           jsonb,      -- usada solo por brand='poly': desglose [{qNum,sala,monto,fecha}] de las Salas agrupadas bajo el OPG
   factura         text,       -- usada solo por brand='poly': número de factura, se completa post-hoc (análogo a ovLink)
   primary key (brand, id)
