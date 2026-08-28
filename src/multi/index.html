@@ -16,10 +16,12 @@
 <meta name="apple-mobile-web-app-title" content="Ceven Multi">
 
 <script src="../vendor/xlsx.full.min.js"></script>
-<!-- PDF del pedido (js/pdf.js + shared/pdf-core.js). Sin autotable: el
-     multimarca no tiene comprobante, que es lo único que la usa. -->
+<!-- PDF del pedido: es el comprobante jsPDF+autotable de shared/comprobante.js
+     (el mismo que emite cada marca), dividido en un cuadro por marca. -->
 <script src="../vendor/html2canvas.min.js"></script>
 <script src="../vendor/jspdf.umd.min.js"></script>
+<!-- DESPUÉS de jspdf: autotable se engancha a jsPDF.API. -->
+<script src="../vendor/jspdf.plugin.autotable.min.js"></script>
 <link rel="stylesheet" href="../shared/css/base.css">
 <link rel="stylesheet" href="../shared/css/dark.css">
 <style>
@@ -93,10 +95,10 @@
       </div>
       <div class="qbar-main">
         <button class="act act-pri" onclick="saveQuote()" title="Guardar el pedido en el historial"><span class="act-i">💾</span>Guardar</button>
-        <!-- El pedido completo en un PDF, agrupado por marca con el subtotal de
-             cada una (js/pdf.js). No reemplaza al PDF de cada marca, que sale
-             al emitir: es la vista única del pedido para el cliente. -->
-        <button class="act" onclick="buildPDF()" title="Exportar el pedido a PDF (agrupado por marca)"><span class="act-i">📄</span>PDF</button>
+        <!-- El comprobante del pedido (mismo diseño que emite cada marca),
+             dividido en un cuadro por marca (js/pdf.js). No reemplaza al PDF de
+             cada marca, que sale al emitir. -->
+        <button class="act" onclick="buildPDF()" title="Exportar el pedido a PDF (un cuadro por marca)"><span class="act-i">📄</span>PDF</button>
         <!-- Emitir es la acción central de este cotizador: crea la cotización
              real de cada marca, con su número y su fila de pipeline. -->
         <button id="btn-add-pipeline" class="act act-go" onclick="emitirAMarcas()" title="Crear la cotización de cada marca y su fila de pipeline"><span class="act-i">📤</span>Emitir a las marcas</button>
@@ -354,9 +356,10 @@
 <script src="../shared/backup-folder.js"></script>
 <script src="../shared/papelera.js"></script>
 <script src="js/history.js"></script>
-<!-- PDF: pdf-core.js primero (define downloadQuotePDF, cevenPdfDocCSS y las
-     condiciones comerciales), después el armado propio del multimarca. -->
+<!-- PDF: pdf-core.js (condiciones comerciales + descarga) y comprobante.js (el
+     documento jsPDF navy) antes del armado propio del multimarca. -->
 <script src="../shared/pdf-core.js"></script>
+<script src="../shared/comprobante.js"></script>
 <script src="js/pdf.js"></script>
 
 <!-- Los ids son los MISMOS que en las otras marcas y no un nombre propio:

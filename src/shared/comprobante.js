@@ -165,15 +165,114 @@ function _compEspacio(doc, y, alto){
   return CEVEN_COMP_M;
 }
 
+/* Estilos de columna de la tabla del detalle. Un solo lugar los define: los usan
+   la tabla completa y la barra de TOTAL GENERAL del multimarca, y tienen que
+   coincidir al milímetro o el "USD …" de la barra no cae debajo de la columna. */
+var CEVEN_COMP_COLS = {
+  0: { cellWidth: 30 },
+  2: { cellWidth: 17, halign: 'center' },
+  3: { cellWidth: 29, halign: 'right' },
+  4: { cellWidth: 29, halign: 'right' },
+  5: { cellWidth: 16, halign: 'center' }
+};
+
+// El pie navy es sólo "TOTAL" + importe (columnas 3 y 4). Las otras van en
+// blanco, o la barra terminaría en un bloque de color sin nada adentro.
+function _compPieBlanco(data){
+  if(data.section === 'foot' && (data.column.index < 3 || data.column.index === 5)){
+    data.cell.styles.fillColor = [255, 255, 255];
+    data.cell.styles.lineColor = [255, 255, 255];
+  }
+}
+
+/* La tabla del detalle: cabecera navy, filas con el IVA al final y la barra de
+   TOTAL abajo. Es el "cuadro" del modelo. Devuelve {total, finalY}.
+
+   Extraída para que el multimarca pueda dibujar UN cuadro por marca sin
+   duplicar ni un color: el comprobante de una sola marca la llama una vez por
+   opción, exactamente igual que antes. */
+function _compTablaDetalle(doc, filasGrupo, startY, footLabel){
+  var total = 0;
+  var cuerpo = filasGrupo.map(function(r){
+    var qty  = parseFloat(r['Cantidad']) || 0;
+    var unit = parseFloat(r['P. Venta Unitario']) || 0;
+    var sub  = parseFloat(r['Total']) || 0;
+    total += sub;
+    /* El IVA va ÚLTIMO, después del subtotal: es informativo y no tiene por qué
+       separar la cantidad del precio, que es lo que se lee junto. */
+    return [
+      cevenCompSan(r['SKU'] || ''),
+      cevenCompSan(r['Descripción'] || ''),
+      String(qty),
+      'USD ' + fD(unit),
+      'USD ' + fD(sub),
+      cevenCompSan(cevenComprobanteIVA(r))
+    ];
+  });
+
+  doc.autoTable({
+    startY: startY,
+    head: [['SKU', 'Descripción', 'Cantidad', 'Precio unitario', 'Subtotal', 'IVA']],
+    body: cuerpo,
+    foot: [['', '', '', footLabel, 'USD ' + fD(total), '']],
+    margin: { left: CEVEN_COMP_M, right: CEVEN_COMP_M },
+    styles: { font: 'times', fontSize: 9.5, cellPadding: 2, lineColor: [183, 196, 221], lineWidth: 0.1 },
+    headStyles: {
+      font: 'times', fontStyle: 'bold', fontSize: 9.5,
+      fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY
+    },
+    footStyles: {
+      font: 'times', fontStyle: 'bold', fontSize: 10.5,
+      fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY,
+      halign: 'right'
+    },
+    alternateRowStyles: { fillColor: CEVEN_COMP_TINT },
+    columnStyles: CEVEN_COMP_COLS,
+    didParseCell: _compPieBlanco
+  });
+
+  return { total: total, finalY: doc.lastAutoTable.finalY };
+}
+
+/* Sólo la barra navy de TOTAL, sin filas. Es el "TOTAL GENERAL" del multimarca,
+   debajo de los cuadros de cada marca. Devuelve la y de abajo. */
+function _compBarraTotal(doc, startY, label, total){
+  doc.autoTable({
+    startY: startY,
+    body: [],
+    foot: [['', '', '', label, 'USD ' + fD(total), '']],
+    margin: { left: CEVEN_COMP_M, right: CEVEN_COMP_M },
+    styles: { font: 'times', fontSize: 9.5, cellPadding: 2, lineColor: [255, 255, 255], lineWidth: 0.1 },
+    footStyles: {
+      font: 'times', fontStyle: 'bold', fontSize: 10.5,
+      fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY,
+      halign: 'right'
+    },
+    columnStyles: CEVEN_COMP_COLS,
+    didParseCell: _compPieBlanco
+  });
+  return doc.lastAutoTable.finalY;
+}
+
 /* Arma el documento. Separado del botón para poder generarlo sin DOM ni
-   navegador — lo usa scripts/check-comprobante.js. */
-function cevenComprobanteDoc(qn, filas, emisor){
+   navegador — lo usa scripts/check-comprobante.js.
+
+   `opts` es opcional y lo usa sólo el multimarca (src/multi/js/pdf.js):
+     · numeroLabel   rótulo del N° en la caja ('Cotización N°: ' por defecto)
+     · grupoDeFila   fila -> clave de grupo; activa "un cuadro por marca"
+     · grupoLabel    clave -> texto del rótulo del cuadro
+     · doc           jsPDF ya empezado: se le agrega una página en vez de crear
+                     uno nuevo (para meter varios pedidos en un archivo)
+   Sin `opts`, el documento sale exactamente igual que antes. */
+function cevenComprobanteDoc(qn, filas, emisor, opts){
   var PDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf && window.jspdf.default);
   if(!PDF) return null;
 
+  opts   = opts || {};
   emisor = emisor || window.CEVEN_EMISOR || {};
   var p   = filas[0];
-  var doc = new PDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  var doc = opts.doc || new PDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  if(opts.doc) doc.addPage();
   var M   = CEVEN_COMP_M;
   var y   = 18;
 
@@ -285,7 +384,7 @@ function cevenComprobanteDoc(qn, filas, emisor){
   doc.setTextColor(0, 0, 0);
   doc.setFont('times', 'bold');
   var celdas = [
-    ['Cotización N°: ', String(qn || ''),               M + 3],
+    [opts.numeroLabel || 'Cotización N°: ', String(qn || ''),   M + 3],
     ['Fecha: ',         String(p['Fecha'] || '—'),      M + wCelda + 3],
     ['Ejecutivo: ',     String(p['Ejecutivo'] || '—'),  M + wCelda * 2 + 3]
   ];
@@ -345,6 +444,19 @@ function cevenComprobanteDoc(qn, filas, emisor){
     y += 6;
   }
 
+  /* Multimarca: `opts.grupoDeFila` parte el detalle en un cuadro por marca.
+     Cada cuadro es la MISMA tabla navy de siempre (_compTablaDetalle); debajo
+     de todos va una barra "TOTAL GENERAL". Sin `opts.grupoDeFila` se dibuja una
+     sola tabla por opción, exactamente como antes.
+
+     Los importes salen en USD, tal como se guardaron. No se convierten a pesos:
+     el TC vive en un input de la pantalla y cambia todos los días, así que
+     convertir haría que dos impresiones del mismo documento den totales
+     distintos según el día. */
+  var agrupar = typeof opts.grupoDeFila === 'function';
+  var etiquetaGrupo = (typeof opts.grupoLabel === 'function')
+    ? opts.grupoLabel : function(k){ return String(k == null ? '' : k); };
+
   opcs.forEach(function(nOpc){
     var deOpc = filas.filter(function(r){ return cevenOpcDe(r) === nOpc; });
     if(hayOpcB){
@@ -356,66 +468,40 @@ function cevenComprobanteDoc(qn, filas, emisor){
       y += 2;
     }
 
-    /* Los importes salen en USD, tal como se guardaron. No se convierten a pesos
-       a propósito: el TC vive en un input de la pantalla de cotización y cambia
-       todos los días, así que convertir haría que dos impresiones del mismo
-       comprobante den totales distintos según el día. */
-    var total = 0;
-    var cuerpo = deOpc.map(function(r){
-      var qty  = parseFloat(r['Cantidad']) || 0;
-      var unit = parseFloat(r['P. Venta Unitario']) || 0;
-      var sub  = parseFloat(r['Total']) || 0;
-      total += sub;
-      /* El IVA va ÚLTIMO, después del subtotal: es un dato informativo y no tiene
-         por qué separar la cantidad del precio, que es lo que se lee junto. */
-      return [
-        cevenCompSan(r['SKU'] || ''),
-        cevenCompSan(r['Descripción'] || ''),
-        String(qty),
-        'USD ' + fD(unit),
-        'USD ' + fD(sub),
-        cevenCompSan(cevenComprobanteIVA(r))
-      ];
+    if(!agrupar){
+      y = _compTablaDetalle(doc, deOpc, y, hayOpcB ? 'TOTAL ' + cevenOpcLetra(nOpc) : 'TOTAL').finalY;
+      return;
+    }
+
+    var claves = [], porClave = {};
+    deOpc.forEach(function(r){
+      var g = opts.grupoDeFila(r);
+      if(!porClave[g]){ porClave[g] = []; claves.push(g); }
+      porClave[g].push(r);
     });
 
-    doc.autoTable({
-      startY: y,
-      head: [['SKU', 'Descripción', 'Cantidad', 'Precio unitario', 'Subtotal', 'IVA']],
-      body: cuerpo,
-      foot: [['', '', '', (hayOpcB ? 'TOTAL ' + cevenOpcLetra(nOpc) : 'TOTAL'), 'USD ' + fD(total), '']],
-      margin: { left: M, right: M },
-      styles: { font: 'times', fontSize: 9.5, cellPadding: 2, lineColor: [183, 196, 221], lineWidth: 0.1 },
-      headStyles: {
-        font: 'times', fontStyle: 'bold', fontSize: 9.5,
-        fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY
-      },
-      footStyles: {
-        font: 'times', fontStyle: 'bold', fontSize: 10.5,
-        fillColor: CEVEN_COMP_NAVY, textColor: [255, 255, 255], lineColor: CEVEN_COMP_NAVY,
-        halign: 'right'
-      },
-      alternateRowStyles: { fillColor: CEVEN_COMP_TINT },
-      columnStyles: {
-        // 30 mm y no 26: con 26 el SKU más largo de Poly (A4LZ8AA#ABM) se partía
-        // en dos renglones. La Descripción no lleva ancho y se queda con el resto.
-        0: { cellWidth: 30 },
-        2: { cellWidth: 17, halign: 'center' },
-        3: { cellWidth: 29, halign: 'right' },
-        4: { cellWidth: 29, halign: 'right' },
-        5: { cellWidth: 16, halign: 'center' }
-      },
-      didParseCell: function(data){
-        // Las celdas vacías del pie van en blanco, como en el modelo: la barra
-        // navy es solo "TOTAL" + importe. La de IVA (la última) también queda
-        // afuera, o la barra terminaría en un bloque de color sin nada adentro.
-        if(data.section === 'foot' && (data.column.index < 3 || data.column.index === 5)){
-          data.cell.styles.fillColor = [255, 255, 255];
-          data.cell.styles.lineColor = [255, 255, 255];
-        }
-      }
+    var totalGeneral = 0;
+    claves.forEach(function(g){
+      y = _compEspacio(doc, y + 4, 34);
+      /* El nombre de la marca es el rótulo del cuadro, navy y en negrita, igual
+         que "Opción A/B". La barra de abajo dice sólo "TOTAL", como el modelo:
+         el contexto lo da este rótulo, y "TOTAL LEGAMASTER" no entra en la
+         columna sin partirse. */
+      doc.setFont('times', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+      _compTxt(doc, etiquetaGrupo(g), M, y);
+      y += 2;
+      var res = _compTablaDetalle(doc, porClave[g], y,
+        hayOpcB ? 'TOTAL ' + cevenOpcLetra(nOpc) : 'TOTAL');
+      totalGeneral += res.total;
+      y = res.finalY;
     });
 
-    y = doc.lastAutoTable.finalY;
+    if(claves.length > 1){
+      y = _compEspacio(doc, y + 3, 16);
+      y = _compBarraTotal(doc, y, hayOpcB ? 'TOTAL GENERAL ' + cevenOpcLetra(nOpc) : 'TOTAL GENERAL', totalGeneral);
+    }
   });
 
   y += 9;
