@@ -169,6 +169,7 @@ var ASSETS = [
   './multi/js/quotes-db.js',
   './multi/js/emitir.js',
   './multi/js/history.js',
+  './multi/js/pdf.js',
   './multi/js/boot.js'
 ];
 

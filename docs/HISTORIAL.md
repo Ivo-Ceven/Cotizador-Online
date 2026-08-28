@@ -148,6 +148,89 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 27/08/2026 · Estadísticas REGI: HP vs. Ceven, uno a uno y por mes/trimestre
+
+Sobre el vínculo por OPG de la entrada anterior (mismo día): pedido de Ivo de
+una tercera vista que compare, oportunidad por oportunidad, lo que HP carga
+en su Excel (`amount`/`close_date`, estimados sin hablar con el cliente)
+contra lo que Ceven tiene cargado de verdad (`pipeline.monto`/`mesCierre`,
+con el cliente real). Solo entran los pares YA VINCULADOS por OPG — sin eso
+no hay con qué comparar del otro lado.
+
+### Los dos KPI, con el criterio de signo pedido
+
+- **Diferencia de monto**: SUMA de `ceven.monto − hp.montoArchivo` de cada
+  par. Negativo si Ceven pronostica MENOS que HP. Usa `montoArchivo` (el
+  monto crudo del Excel), no `.monto`: ese campo puede venir reemplazado por
+  productos asignados dentro del carrito propio de REGI (feature del
+  25/08/2026) — mezclarlo confundiría "lo que HP dice" con "lo que Ceven ya
+  armó adentro de REGI", que es justo la comparación que se quiere evitar.
+- **Diferencia de fecha**: PROMEDIO en meses de `hp.mesCierre − ceven.mesCierre`
+  (year·12+mes de cada uno, restados). Negativo si el cierre de Ceven es
+  posterior al de HP ("pronostica más lejos"). Se le preguntó a Ivo si esto
+  debía ser suma (como el de monto) o promedio: sumar desfasajes de fecha
+  entre muchas oportunidades da un número poco interpretable ("-14 meses"
+  entre 10 REGI no dice nada útil), así que se confirmó promedio.
+
+Las tablas "Por mes" y "Por trimestre" agrupan por `hp.mesCierre` (el mes que
+dice HP), no por el de Ceven — es el eje de referencia contra el que se mide
+la variación, mismo criterio que un reporte presupuesto-vs-real agrupa por
+período de presupuesto. No se confirmó explícitamente con Ivo por no ser
+ambiguo; el encabezado de columna lo aclara ("Por mes (cierre estimado de
+HP)") por si hiciera falta cambiarlo.
+
+### Qué se implementó
+
+Cero fetch nuevo, cero columna nueva: todo sale de `getPipeline()` (ya en
+memoria) y `window._regiPipeRows` (ya se trae para la vista REGI).
+
+- **`_regiOpgVinculadosSet()`** (ya existía para el ocultamiento) pasó a
+  guardar la FILA completa del pipeline real en vez de solo `r.id` — nada
+  más la consumía salvo como booleano, así que no rompió nada, y ahora
+  `_regiPairsVinculadas()` la reusa para tener cliente/monto/mesCierre del
+  lado Ceven sin un segundo recorrido de `getPipeline()`.
+- Lógica pura nueva en `pipeline-regi.js`: `_regiPairsVinculadas()`,
+  `_regiDiffMonto()`, `_regiMesOrdinal()`/`_regiDiffFechaMeses()`,
+  `_regiTrimestreKey()`/`_regiTrimestreLabel()`, `_regiKpisTotales()`,
+  `_regiAgregarPorPeriodo()` (usada para mes Y trimestre, pasándole
+  `keyFn`/`labelFn` distintos). El bucket "sin fecha" de
+  `_regiAgregarPorPeriodo` usa una clave con `String.fromCharCode(0xFFFF)`
+  para que ordene SIEMPRE al final — un `Object.keys().sort()` normal lo
+  pondría primero (un paréntesis ordena antes que un dígito) y se leería
+  como si fuera lo más próximo, exactamente al revés de lo que es.
+- Render: `renderRegiStats()`/`_renderRegiStatsFromCache()` (mismo patrón de
+  "Cargando…" + fetch perezoso que `renderRegiPipeline()`), dos tarjetas KPI,
+  dos tablas y un `<select>` con cada par vinculado que pinta un comparador
+  HP-vs-Ceven-vs-Diferencia al elegir uno (`_regiStatsPintarComparacion()`).
+- Tercera opción "📊 Estadísticas REGI" en el selector de Vista
+  (`renderPipeline()`, `pipeline-view.js` — el `<select>` se arma ahí en JS,
+  no en el HTML). `cevenRegiToggleVista()` pasó de recibir un booleano
+  ("¿es REGI?") a recibir el string entero de la vista, para poder distinguir
+  las tres opciones desde el mismo punto de control único; el refetch de
+  `window._regiPipeRows` en la transición "no estaba en ninguna vista que
+  use datos de REGI -> ahora sí" se generalizó de "entró a REGI" a "entró a
+  REGI O a Estadísticas", porque las dos consumen el mismo dato.
+
+### Verificación
+
+`node --check` sobre los dos archivos JS tocados y
+`scripts/check-pipe-regi-stats.js` (nuevo, 49 chequeos, mismo patrón `vm` que
+`check-pipe-regi-opg.js`): el signo de los dos diffs, los bordes de
+trimestre (enero=Q1, diciembre=Q4), que `_regiPairsVinculadas` descarte REGI
+sin código aprobado y REGI aprobado sin match, que el promedio de fecha
+ignore los pares sin fecha de un lado (y dé `null` si ninguno tiene), el
+render completo (KPI/tablas/desplegable/comparador) contra un escenario de
+dos pares armado a mano, el estado vacío sin ningún par vinculado, y que
+`cevenRegiToggleVista('__regi_stats')` apague lo que no corresponde. Los
+`scripts/check-*.js` existentes (incluido `check-pipe-regi-opg.js`, que
+comparte la función que cambió de shape) siguen en verde. **No verificado en
+un navegador real** (sin extensión Claude in Chrome conectada en esta
+sesión): falta abrir "📊 Estadísticas REGI" con proyectos vinculados de
+verdad y confirmar a ojo que los números de las tarjetas/tablas coinciden
+con el comparador uno a uno.
+
+---
+
 ## 27/08/2026 · Pipeline REGI: vincularlo con el pipeline real vía OPG, para que "quede vacío"
 
 Pedido de Ivo, confirmado con Ariel: mantener los dos pipelines de Poly (el

@@ -101,11 +101,15 @@ function _regiNormCodigo(v){
   return String(v == null ? '' : v).trim().toUpperCase();
 }
 
+// Guarda la FILA completa (no solo el id): la vista de Estadísticas
+// (_regiPairsVinculadas) necesita monto/mesCierre/cliente/proyecto del lado
+// Ceven, y nada más consume este set salvo como booleano (_regiEsVinculada),
+// así que no hay ningún otro lugar que romper con el cambio.
 function _regiOpgVinculadosSet(){
   var set = {};
   (getPipeline() || []).forEach(function(r){
     var v = _regiNormCodigo(r.opg);
-    if(v) set[v] = r.id;
+    if(v) set[v] = r;
   });
   return set;
 }
@@ -128,6 +132,111 @@ function _regiOpgMatcheaVigente(opg){
   return window._regiPipeRows.some(function(r){ return _regiNormCodigo(r.regi) === v; });
 }
 
+/* ── Estadísticas REGI: HP vs. Ceven (27/08/2026) ──────────────────────────
+   Compara, oportunidad por oportunidad, lo que HP carga en su Excel (monto y
+   fecha ESTIMADOS, sin hablar con el cliente) contra lo que Ceven tiene
+   cargado de verdad en su propio pipeline (con el cliente real hablado).
+   Solo entran los pares YA VINCULADOS por OPG — sin eso no hay con qué
+   comparar del otro lado (ver el comentario de _regiOpgVinculadosSet). */
+
+/* [{hp, ceven}] — hp es la fila REGI (shape de _regiRowToPipeRow), ceven la
+   fila real del pipeline (shape de getPipeline()). */
+function _regiPairsVinculadas(){
+  var vinculados = _regiOpgVinculadosSet();
+  var pares = [];
+  (window._regiPipeRows || []).forEach(function(hp){
+    var v = _regiNormCodigo(hp.regi);
+    var ceven = v && vinculados[v];
+    if(ceven) pares.push({hp: hp, ceven: ceven});
+  });
+  return pares;
+}
+
+/* ceven − hp: negativo si Ceven pronostica MENOS monto que HP. hp.montoArchivo
+   (no hp.monto) es a propósito: `.monto` puede venir reemplazado por
+   productos asignados dentro del carrito propio de REGI (feature del
+   25/08/2026) — mezclarlo confundiría "lo que HP dice" con "lo que Ceven ya
+   armó adentro de REGI", que es justo la comparación que se quiere evitar. */
+function _regiDiffMonto(par){
+  return (Number(par.ceven.monto) || 0) - (Number(par.hp.montoArchivo) || 0);
+}
+
+// 'YYYY-MM' -> year*12 + (mes-1), para poder restar dos meses. null si no
+// tiene forma de mes (fecha vacía o rota).
+function _regiMesOrdinal(mk){
+  var p = String(mk || '').split('-');
+  if(p.length !== 2) return null;
+  var y = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  if(!y || !m) return null;
+  return y * 12 + (m - 1);
+}
+
+/* hp − ceven, en meses: negativo si el cierre estimado de Ceven es POSTERIOR
+   al de HP (Ceven pronostica "más lejos"). null si falta la fecha de
+   cualquiera de los dos lados — no hay con qué restar. */
+function _regiDiffFechaMeses(par){
+  var oh = _regiMesOrdinal(par.hp.mesCierre), oc = _regiMesOrdinal(par.ceven.mesCierre);
+  if(oh === null || oc === null) return null;
+  return oh - oc;
+}
+
+// 'YYYY-MM' -> 'YYYY-Qn'. '' si no tiene forma de mes (mismo criterio que
+// _regiMesOrdinal: sin esto, una fecha rota se agruparía con el trimestre 1
+// de un año "NaN").
+function _regiTrimestreKey(mk){
+  var p = String(mk || '').split('-');
+  if(p.length !== 2) return '';
+  var m = parseInt(p[1], 10);
+  if(!m) return '';
+  return p[0] + '-Q' + (Math.floor((m - 1) / 3) + 1);
+}
+function _regiTrimestreLabel(qk){
+  var p = String(qk || '').split('-Q');
+  return p.length === 2 ? ('Q' + p[1] + ' ' + p[0]) : qk;
+}
+
+/* KPI totales: {n, diffMonto (SUMA, pedido explícito), diffFechaProm
+   (PROMEDIO — confirmado con el usuario: sumar desfasajes de fecha entre
+   muchas oportunidades da un número poco legible), nFecha}. diffFechaProm
+   queda null si ningún par tiene fecha de los dos lados. */
+function _regiKpisTotales(pares){
+  var diffMonto = 0, sumFecha = 0, nFecha = 0;
+  pares.forEach(function(par){
+    diffMonto += _regiDiffMonto(par);
+    var df = _regiDiffFechaMeses(par);
+    if(df !== null){ sumFecha += df; nFecha++; }
+  });
+  return { n: pares.length, diffMonto: diffMonto, diffFechaProm: nFecha ? (sumFecha / nFecha) : null, nFecha: nFecha };
+}
+
+/* Agrupa por keyFn(hp.mesCierre) — "por mes" pasa la identidad, "por
+   trimestre" pasa _regiTrimestreKey. El bucket "sin fecha" (HP sin
+   close_date) se arma con una clave que ordena SIEMPRE al final: un
+   ordenamiento alfabético normal lo pondría primero (unos paréntesis
+   ordenan antes que un dígito) y ahí se leería como si fuera lo más
+   próximo, exactamente al revés de lo que es. */
+function _regiAgregarPorPeriodo(pares, keyFn, labelFn){
+  // String.fromCharCode(0xFFFF), no el literal: un noncharacter Unicode
+  // pegado a mano en el fuente es frágil entre editores/encodings.
+  var SIN_FECHA = String.fromCharCode(0xFFFF) + '-sin-fecha';
+  var mapa = {};
+  pares.forEach(function(par){
+    var k = keyFn(par.hp.mesCierre) || SIN_FECHA;
+    if(!mapa[k]) mapa[k] = { key: k, n: 0, diffMonto: 0, sumFecha: 0, nFecha: 0 };
+    var g = mapa[k];
+    g.n++;
+    g.diffMonto += _regiDiffMonto(par);
+    var df = _regiDiffFechaMeses(par);
+    if(df !== null){ g.sumFecha += df; g.nFecha++; }
+  });
+  return Object.keys(mapa).sort().map(function(k){
+    var g = mapa[k];
+    g.label = (k === SIN_FECHA) ? 'Sin fecha (HP)' : labelFn(k);
+    g.diffFechaProm = g.nFecha ? (g.sumFecha / g.nFecha) : null;
+    return g;
+  });
+}
+
 /* ── Mostrar/ocultar según la vista ──────────────────────────────────────
    Un solo punto de control, llamado desde renderPipeline() en CADA render
    (cambie o no la vista): así "Pipeline actual" y los meses archivados
@@ -137,40 +246,63 @@ function _regiOpgMatcheaVigente(opg){
    El refetch (invalidar window._regiPipeRows) pasa SOLO en la transición
    false->true, no en cada render: si no, escribir en el buscador mientras
    se está en la vista REGI dispararía un pedido a Supabase por letra. */
-function cevenRegiToggleVista(activa){
+/* Recibe el VALOR del selector "Vista" ('', '__regi', '__regi_stats' o un mes
+   archivado) — antes recibía un booleano ("¿es REGI?"), pero con Estadísticas
+   sumándose como tercer caso, quien decide qué mostrar necesita saber cuál de
+   las tres es, no solo si es "la de antes" o no. Sigue siendo el ÚNICO lugar
+   que decide qué se ve, llamado desde renderPipeline() en CADA render. */
+function cevenRegiToggleVista(vista){
+  var esRegi = (vista === '__regi');
+  var esStats = (vista === '__regi_stats');
+  var usaDatosRegi = esRegi || esStats;   // las dos consumen window._regiPipeRows
+
   var eraActiva = !!window._regiVistaWasActive;
-  window._regiVistaWasActive = activa;
-  if(activa && !eraActiva) window._regiPipeRows = null;
+  window._regiVistaWasActive = usaDatosRegi;
+  if(usaDatosRegi && !eraActiva) window._regiPipeRows = null;
 
   var tNormal = document.getElementById('pipe-table-normal');
   var tRegi = document.getElementById('pipe-table-regi');
-  if(tNormal) tNormal.style.display = activa ? 'none' : '';
-  if(tRegi) tRegi.style.display = activa ? '' : 'none';
+  var stats = document.getElementById('pipe-stats');
+  if(tNormal) tNormal.style.display = usaDatosRegi ? 'none' : '';
+  if(tRegi) tRegi.style.display = esRegi ? '' : 'none';
+  if(stats) stats.style.display = esStats ? '' : 'none';
 
   var execWrap = document.getElementById('pipe-exec-wrap');
   var statusWrap = document.getElementById('pipe-status-wrap');
-  if(execWrap) execWrap.style.display = activa ? 'none' : '';
-  if(statusWrap) statusWrap.style.display = activa ? 'none' : '';
+  if(execWrap) execWrap.style.display = usaDatosRegi ? 'none' : '';
+  if(statusWrap) statusWrap.style.display = usaDatosRegi ? 'none' : '';
 
-  // "Mostrar vinculadas": al revés que Ejecutivo/Estado, solo existe EN la
-  // vista REGI (no tiene sentido en el pipeline real).
+  // "Mostrar vinculadas": solo existe EN la tabla REGI (no en el pipeline
+  // real ni en Estadísticas, que ya muestra las vinculadas por definición).
   var vincWrap = document.getElementById('regi-vinc-wrap');
-  if(vincWrap) vincWrap.style.display = activa ? '' : 'none';
+  if(vincWrap) vincWrap.style.display = esRegi ? '' : 'none';
 
-  // Facturado y Forecast del mes no tienen equivalente en REGI: no hay
-  // "facturado" en una oportunidad que todavía es de un partner, y el
-  // monto único de la fila (ver el comentario de cabecera) ya reemplaza la
-  // necesidad de un segundo KPI separado. El pipeline normal y el archivo
-  // sí usan las dos tarjetas — quedan visibles ahí.
+  // Facturado y Forecast del mes no tienen equivalente en REGI ni en
+  // Estadísticas: no hay "facturado" en una oportunidad que todavía es de un
+  // partner, y el monto único de la fila (ver el comentario de cabecera) ya
+  // reemplaza la necesidad de un segundo KPI separado. El pipeline normal y
+  // el archivo sí usan las dos tarjetas — quedan visibles ahí.
   var facturadoCard = document.getElementById('dash-facturado-card');
   var proyCard = document.getElementById('dash-proy-card');
-  if(facturadoCard) facturadoCard.style.display = activa ? 'none' : '';
-  if(proyCard) proyCard.style.display = activa ? 'none' : '';
+  if(facturadoCard) facturadoCard.style.display = usaDatosRegi ? 'none' : '';
+  if(proyCard) proyCard.style.display = usaDatosRegi ? 'none' : '';
 
   // exportPipeline() arma el Excel con las columnas del pipeline normal
-  // (fecha/ejecutivo/OPG/factura...): no sabe leer una fila de REGI.
+  // (fecha/ejecutivo/OPG/factura...): no sabe leer una fila de REGI ni de
+  // Estadísticas.
   var exportBtn = document.getElementById('pipe-export-btn');
-  if(exportBtn) exportBtn.style.display = activa ? 'none' : '';
+  if(exportBtn) exportBtn.style.display = usaDatosRegi ? 'none' : '';
+
+  // El dashboard de KPI del pipeline normal/REGI (#pipe-dashboard) lo pinta
+  // cada render (_pipeTablaHTML / _regiPintarDashboard), que también decide
+  // cuándo mostrarlo — salvo Estadísticas, que nunca lo toca porque arma sus
+  // propias tarjetas adentro de #pipe-stats. Sin este apagado explícito,
+  // entrar a Estadísticas después de haber estado en cualquiera de las otras
+  // dos vistas dejaría ese dashboard viejo pegado en pantalla.
+  if(esStats){
+    var dash = document.getElementById('pipe-dashboard');
+    if(dash) dash.style.display = 'none';
+  }
 }
 
 /* ── Importar el Excel ────────────────────────────────────────────────── */
@@ -394,6 +526,155 @@ function _renderRegiPipelineFromCache(){
 function _regiPintarToggleVinculadas(n){
   var el = document.getElementById('regi-vinc-count');
   if(el) el.textContent = '(' + n + ')';
+}
+
+/* ── Render de "📊 Estadísticas REGI" ──────────────────────────────────────
+   Mismo patrón que renderRegiPipeline(): si window._regiPipeRows todavía no
+   se pidió esta sesión, lo trae (_cevenRegiPipeFetch, ya existe) y recién
+   ahí pinta. getPipeline() nunca hace falta traerlo aparte: ya está en
+   memoria. */
+function renderRegiStats(){
+  if(window._regiPipeRows === null){
+    var empty = document.getElementById('stats-empty');
+    var body = document.getElementById('stats-body');
+    if(empty){ empty.style.display = 'block'; empty.textContent = 'Cargando…'; }
+    if(body) body.style.display = 'none';
+    _cevenRegiPipeFetch().then(function(){
+      var sel = document.getElementById('archive-month-sel');
+      if(sel && sel.value === '__regi_stats') _renderRegiStatsFromCache();
+    }).catch(function(e){
+      if(empty) empty.textContent = 'No se pudo cargar el pipeline REGI' + ((e && e.message) ? (': ' + cevenEsc(e.message)) : '.');
+    });
+    return;
+  }
+  _renderRegiStatsFromCache();
+}
+
+function _renderRegiStatsFromCache(){
+  var pares = _regiPairsVinculadas();
+  window._regiStatsPares = pares;   // para que el <select> encuentre el par por opd sin recalcular
+
+  var empty = document.getElementById('stats-empty');
+  var body = document.getElementById('stats-body');
+  if(!pares.length){
+    if(empty){
+      empty.style.display = 'block';
+      empty.textContent = 'Todavía no hay ninguna oportunidad vinculada. Vinculá proyectos desde "🎯 Pipeline REGI" (o cargando el mismo código en el OPG del pipeline real) para verlas acá.';
+    }
+    if(body) body.style.display = 'none';
+    return;
+  }
+  if(empty) empty.style.display = 'none';
+  if(body) body.style.display = 'block';
+
+  _regiStatsPintarKpis(_regiKpisTotales(pares));
+
+  var porMes = _regiAgregarPorPeriodo(pares, function(mk){ return mk || ''; }, _mesLabelPoly);
+  var porQ = _regiAgregarPorPeriodo(pares, _regiTrimestreKey, _regiTrimestreLabel);
+  var mesBody = document.getElementById('stats-mes-body');
+  var qBody = document.getElementById('stats-q-body');
+  if(mesBody) mesBody.innerHTML = porMes.map(_regiStatsFilaPeriodoHTML).join('');
+  if(qBody) qBody.innerHTML = porQ.map(_regiStatsFilaPeriodoHTML).join('');
+
+  var sel = document.getElementById('stats-pick');
+  if(sel){
+    var prev = sel.value;
+    sel.innerHTML = _regiStatsOpciones(pares);
+    sel.value = pares.some(function(p){ return p.hp.opd === prev; }) ? prev : '';
+  }
+  _regiStatsPintarComparacion(sel ? sel.value : '');
+}
+
+function _regiStatsColor(v){
+  if(v === null || v === undefined) return '#1d1d1f';
+  return v < 0 ? '#d70015' : (v > 0 ? '#15863a' : '#1d1d1f');
+}
+
+function _regiStatsPintarKpis(kpis){
+  var elMonto = document.getElementById('stats-kpi-monto');
+  var elMontoSub = document.getElementById('stats-kpi-monto-sub');
+  if(elMonto){
+    elMonto.textContent = (kpis.diffMonto < 0 ? '-' : '+') + 'USD ' + fI(Math.abs(kpis.diffMonto));
+    elMonto.style.color = _regiStatsColor(kpis.diffMonto);
+  }
+  if(elMontoSub){
+    elMontoSub.textContent = 'sobre ' + kpis.n + (kpis.n === 1 ? ' oportunidad vinculada' : ' oportunidades vinculadas')
+      + ' · negativo = Ceven pronostica MENOS monto que HP';
+  }
+
+  var elFecha = document.getElementById('stats-kpi-fecha');
+  var elFechaSub = document.getElementById('stats-kpi-fecha-sub');
+  if(elFecha){
+    elFecha.textContent = (kpis.diffFechaProm === null) ? '—'
+      : ((kpis.diffFechaProm > 0 ? '+' : '') + kpis.diffFechaProm.toFixed(1) + ' meses');
+    elFecha.style.color = _regiStatsColor(kpis.diffFechaProm);
+  }
+  if(elFechaSub){
+    elFechaSub.textContent = (kpis.nFecha
+        ? ('promedio sobre ' + kpis.nFecha + (kpis.nFecha === 1 ? ' oportunidad' : ' oportunidades') + ' con fecha en los dos lados')
+        : 'ninguna oportunidad vinculada tiene fecha en los dos lados')
+      + ' · negativo = Ceven pronostica un cierre MÁS LEJOS que HP';
+  }
+}
+
+function _regiStatsFilaPeriodoHTML(g){
+  var fechaTxt = (g.diffFechaProm === null) ? '—' : ((g.diffFechaProm > 0 ? '+' : '') + g.diffFechaProm.toFixed(1) + ' m');
+  return '<tr>'
+    + '<td>' + cevenEsc(g.label) + '</td>'
+    + '<td style="text-align:center">' + g.n + '</td>'
+    + '<td style="text-align:right;font-weight:600;color:' + _regiStatsColor(g.diffMonto) + '">'
+      + (g.diffMonto < 0 ? '-' : '+') + 'USD ' + fI(Math.abs(g.diffMonto)) + '</td>'
+    + '<td style="text-align:right;font-weight:600;color:' + _regiStatsColor(g.diffFechaProm) + '">' + fechaTxt + '</td>'
+  + '</tr>';
+}
+
+function _regiStatsOpciones(pares){
+  var h = '<option value="">— Elegí una oportunidad —</option>';
+  pares.forEach(function(par){
+    h += '<option value="' + cevenEsc(par.hp.opd) + '">'
+      + cevenEsc(par.ceven.cliente || par.hp.cliente || '—') + ' — '
+      + cevenEsc(par.hp.proyecto || par.ceven.proyecto || '—')
+      + ' (' + cevenEsc(par.hp.regi) + ')</option>';
+  });
+  return h;
+}
+
+function _regiStatsFilaCompararHTML(etiqueta, valHp, valCeven, diffTxt, diffColor){
+  return '<tr>'
+    + '<td style="color:#6e6e73">' + cevenEsc(etiqueta) + '</td>'
+    + '<td>' + valHp + '</td>'
+    + '<td>' + valCeven + '</td>'
+    + '<td style="font-weight:600' + (diffColor ? (';color:' + diffColor) : '') + '">' + diffTxt + '</td>'
+  + '</tr>';
+}
+
+function _regiStatsPintarComparacion(opd){
+  var box = document.getElementById('stats-compare');
+  if(!box) return;
+  var par = opd && (window._regiStatsPares || []).filter(function(p){ return p.hp.opd === opd; })[0];
+  if(!par){ box.innerHTML = ''; return; }
+
+  var diffMonto = _regiDiffMonto(par);
+  var diffFecha = _regiDiffFechaMeses(par);
+  var mesHp = par.hp.mesCierre ? _mesLabelPoly(par.hp.mesCierre) : '—';
+  var mesCeven = par.ceven.mesCierre ? _mesLabelPoly(par.ceven.mesCierre) : '—';
+  var estadoCeven = (typeof cevenEstadoLabel === 'function') ? cevenEstadoLabel(par.ceven.estado || 'Cotizado') : (par.ceven.estado || '—');
+
+  box.innerHTML = '<table style="width:100%">'
+    + '<thead><tr><th></th><th>HP (Excel)</th><th>Ceven (real)</th><th>Diferencia</th></tr></thead>'
+    + '<tbody>'
+      + _regiStatsFilaCompararHTML('Cliente / Proyecto',
+          cevenEsc(par.hp.cliente || '—') + ' — ' + cevenEsc(par.hp.proyecto || '—'),
+          cevenEsc(par.ceven.cliente || '—') + ' — ' + cevenEsc(par.ceven.proyecto || '—'),
+          '—', null)
+      + _regiStatsFilaCompararHTML('Monto',
+          'USD ' + fI(par.hp.montoArchivo || 0),
+          'USD ' + fI(par.ceven.monto || 0),
+          (diffMonto < 0 ? '-' : '+') + 'USD ' + fI(Math.abs(diffMonto)), _regiStatsColor(diffMonto))
+      + _regiStatsFilaCompararHTML('Cierre estimado', mesHp, mesCeven,
+          diffFecha === null ? '—' : ((diffFecha > 0 ? '+' : '') + diffFecha + ' m'), _regiStatsColor(diffFecha))
+      + _regiStatsFilaCompararHTML('Estado', '—', cevenEsc(estadoCeven), '—', null)
+    + '</tbody></table>';
 }
 
 function _regiPintarDashboard(filtered, forecastFilter){

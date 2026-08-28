@@ -20,6 +20,8 @@ function updateHistBtns(){
   var cnt = Object.keys(histSel).length;
   var del = document.getElementById('hist-del-btn');
   if(del) del.style.display = cnt > 0 ? 'inline-block' : 'none';
+  var pdf = document.getElementById('hist-pdf-btn');
+  if(pdf) pdf.style.display = cnt > 0 ? 'inline-block' : 'none';
 }
 
 function toggleHistSel(qn, cb){

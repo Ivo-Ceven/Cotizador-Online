@@ -45,29 +45,32 @@ function renderPipeline(){
     var archiveMonths = Object.keys(archive).sort().reverse();
     var curArchiveVal = archiveSel.value;
     var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    // '__regi' es un valor fijo (no sale de `archive`, como los meses): la
-    // segunda vista del pipeline, generada del Excel de Deal Registration de
-    // HP/Poly. Ver pipeline-regi.js.
+    // '__regi'/'__regi_stats' son valores fijos (no salen de `archive`, como
+    // los meses): la segunda y tercera vista del pipeline, generadas del
+    // Excel de Deal Registration de HP/Poly. Ver pipeline-regi.js.
     var newHtml = '<option value="">Pipeline actual</option>'
-      + '<option value="__regi">🎯 Pipeline REGI</option>';
+      + '<option value="__regi">🎯 Pipeline REGI</option>'
+      + '<option value="__regi_stats">📊 Estadísticas REGI</option>';
     archiveMonths.forEach(function(m){
       var p = m.split('-');
       var lbl = p.length===2 ? (meses[parseInt(p[1])-1]+' '+p[0]) : m;
       newHtml += '<option value="'+cevenEsc(m)+'">📦 '+cevenEsc(lbl)+'</option>';
     });
     if(archiveSel.innerHTML !== newHtml) archiveSel.innerHTML = newHtml;
-    if(curArchiveVal && (curArchiveVal === '__regi' || archiveMonths.indexOf(curArchiveVal) !== -1)) archiveSel.value = curArchiveVal;
+    if(curArchiveVal && (curArchiveVal === '__regi' || curArchiveVal === '__regi_stats' || archiveMonths.indexOf(curArchiveVal) !== -1)) archiveSel.value = curArchiveVal;
   }
   var selectedArchiveMonth = archiveSel ? archiveSel.value : '';
 
-  // Muestra/oculta lo que solo tiene sentido en una de las dos vistas: la
-  // tabla y sus columnas, los filtros de Ejecutivo/Estado (no existen en el
-  // Excel de REGI) y el export a Excel del pipeline normal (exportPipeline()
-  // no sabe leer filas de REGI). Un solo punto de control, para que volver a
-  // "Pipeline actual" o a un mes archivado siempre los deje como estaban.
-  if(typeof cevenRegiToggleVista === 'function') cevenRegiToggleVista(selectedArchiveMonth === '__regi');
+  // Muestra/oculta lo que solo tiene sentido en una de las vistas: la tabla y
+  // sus columnas, los filtros de Ejecutivo/Estado (no existen en el Excel de
+  // REGI ni en Estadísticas) y el export a Excel del pipeline normal
+  // (exportPipeline() no sabe leer filas de REGI/Estadísticas). Un solo punto
+  // de control, para que volver a "Pipeline actual" o a un mes archivado
+  // siempre los deje como estaban.
+  if(typeof cevenRegiToggleVista === 'function') cevenRegiToggleVista(selectedArchiveMonth);
 
   if(selectedArchiveMonth === '__regi'){ renderRegiPipeline(); return; }
+  if(selectedArchiveMonth === '__regi_stats'){ if(typeof renderRegiStats === 'function') renderRegiStats(); return; }
   if(selectedArchiveMonth){
     renderArchiveMonth(selectedArchiveMonth, archive[selectedArchiveMonth] || []);
     return;

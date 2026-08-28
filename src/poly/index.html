@@ -565,6 +565,49 @@
       <tbody id="regi-pipe-body"></tbody>
     </table>
   </div>
+
+  <!-- Estadísticas REGI: compara, oportunidad por oportunidad, lo que HP
+       carga en su Excel (monto/fecha ESTIMADOS, sin hablar con el cliente)
+       contra lo que Ceven tiene cargado de verdad. Solo entran los pares ya
+       VINCULADOS por OPG (ver pipeline-regi.js) — oculta por defecto, la
+       muestra/oculta cevenRegiToggleVista() como a las otras dos. -->
+  <div id="pipe-stats" style="display:none">
+    <div id="stats-empty" style="display:none;text-align:center;color:#aeaeb2;padding:24px"></div>
+    <div id="stats-body" style="display:none">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:14px">
+        <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:14px 16px">
+          <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Diferencia de monto (Ceven − HP)</div>
+          <div id="stats-kpi-monto" style="font-size:24px;font-weight:700;color:#1d1d1f">USD 0</div>
+          <div id="stats-kpi-monto-sub" style="font-size:11px;color:#6e6e73;margin-top:2px"></div>
+        </div>
+        <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:14px 16px">
+          <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Diferencia de fecha promedio</div>
+          <div id="stats-kpi-fecha" style="font-size:24px;font-weight:700;color:#1d1d1f">—</div>
+          <div id="stats-kpi-fecha-sub" style="font-size:11px;color:#6e6e73;margin-top:2px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:#6e6e73">Por mes (cierre estimado de HP)</h3>
+        <div class="tw"><table><thead><tr>
+          <th>Mes</th><th style="text-align:center">REGI</th><th style="text-align:right">Dif. monto</th><th style="text-align:right">Dif. fecha (prom.)</th>
+        </tr></thead><tbody id="stats-mes-body"></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:#6e6e73">Por trimestre</h3>
+        <div class="tw"><table><thead><tr>
+          <th>Trimestre</th><th style="text-align:center">REGI</th><th style="text-align:right">Dif. monto</th><th style="text-align:right">Dif. fecha (prom.)</th>
+        </tr></thead><tbody id="stats-q-body"></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:#6e6e73">Comparar una oportunidad</h3>
+        <select id="stats-pick" onchange="_regiStatsPintarComparacion(this.value)" style="padding:6px 10px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;max-width:100%;margin-bottom:12px"></select>
+        <div id="stats-compare"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Navegación (botón Atrás del navegador + Escape) -->
