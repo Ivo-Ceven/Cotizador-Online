@@ -1,50 +1,50 @@
 /* ============================================================
    PDF DEL PEDIDO  ·  Cotizador multimarca
    ------------------------------------------------------------
-   El pedido multimarca se cotiza JUNTO y se le presenta al
-   cliente como UNA sola propuesta, agrupada por marca con el
-   subtotal de cada una — el mismo criterio que la grilla en
-   pantalla (js/quote.js) y que el subtotal que después cae al
-   pipeline de esa marca.
-
-   Este NO es un documento por marca: para eso están los PDF de
-   cada cotizador, que salen al emitir. Este es la vista única
-   del pedido entero, antes o después de emitirlo.
+   Mismo documento que emite Poly (shared/pdf-core.js + el
+   patrón de poly/js/pdf.js): una tabla por opción, con las
+   columnas SKU / Descripción / Qty / P. Venta / Total / IVA /
+   Nota y una fila de Total. La única diferencia es que el
+   pedido multimarca lleva líneas de varias marcas, así que
+   dentro de la tabla va una banda por marca —con su subtotal—
+   antes de sus líneas (mismo recurso que el separador de
+   opción en el historial de Poly). No es un documento por
+   marca: para eso están los PDF de cada cotizador, que salen
+   al emitir.
 
    Dos documentos, igual que en las marcas:
+     buildPDF()          · el pedido en vivo → PDF A4 landscape
+     exportSelectedPDF() · pedidos del historial → HTML para imprimir
+     exportPedidoPDF(qn) · un pedido del historial (botón de la tarjeta)
 
-     buildPDF()          · el pedido en vivo → PDF (una hoja A4
-                           landscape, rasterizada con html2canvas)
-     exportSelectedPDF() · varios pedidos del historial → un HTML
-                           para imprimir (descarga, no captura)
-
-   Ambos comparten el armado de las tablas por marca; solo
-   cambia de dónde salen las líneas (pantalla vs. `cquotes`) y
-   la moneda (el pedido en vivo puede estar en ARS; lo guardado
-   es siempre USD — ver shared/pdf-core.js).
-
-   Depende de: shared/pdf-core.js (cevenPdfDocCSS / cevenPdfListCSS
-   / cevenCondicionesHTML / cevenNombreDocumento / downloadQuotePDF),
+   Depende de: shared/pdf-core.js (cevenPdfDocCSS / cevenPdfListCSS /
+   cevenCondicionesHTML / cevenNombreDocumento / downloadQuotePDF),
    js/marcas.js (cevenMultiMarcas*), shared/opciones.js,
    shared/ui-core.js (dp / fI / _logo), js/quotes-db.js (doSave / getDB).
    ============================================================ */
 
-/* Estilos propios del documento multimarca. El rótulo de marca va en negro
-   pleno —no un color de acento— porque este PDF termina rasterizado y achicado
-   por html2canvas para entrar en una hoja, y a ese tamaño un color se pierde y
-   un recuadro no (mismo criterio que `.opc-tit` en shared/pdf-core.js). */
-var CEVEN_MULTI_PDF_CSS =
-    '.mk-h{display:inline-block;background:#1d1d1f;color:#fff;font-size:11px;font-weight:700;'
-  + 'letter-spacing:.6px;text-transform:uppercase;padding:6px 10px;border-radius:6px;margin:18px 0 9px}'
-  + '.sr td{border-top:1px solid #d2d2d7;border-bottom:none;font-weight:600;font-size:12px;'
-  + 'padding-top:8px;color:#424245}'
-  + '.ptot{text-align:right;font-weight:700;font-size:14px;border-top:1.5px solid #d2d2d7;'
-  + 'padding-top:9px;margin:2px 0 12px}';
+/* Anchos de columna: los mismos que el PDF de Poly. */
+var CEVEN_MULTI_PDF_COLS =
+    '.col-sku{width:14%}.col-desc{width:36%}.col-qty{width:7%}.col-pv{width:13%}'
+  + '.col-tot{width:13%}.col-iva{width:8%}.col-nota{width:9%}';
 
-/* La tabla de UNA marca: el rótulo, el encabezado y la fila de subtotal. Las
-   filas ya vienen armadas (cada llamador las construye desde su fuente). */
-function _multiPdfTablaMarca(label, filasHtml, subFmt){
-  return '<p class="mk-h">' + cevenEsc(label) + '</p>'
+/* Lo único propio del multimarca: la banda que separa las marcas dentro de la
+   tabla. Mismo estilo que el separador de opción del historial de Poly. */
+var CEVEN_MULTI_PDF_CSS =
+    '.mk-row td{background:#f0f0f3;font-weight:700;font-size:11px;text-transform:uppercase;'
+  + 'letter-spacing:.4px;color:#3a3a3c;padding:6px 8px}';
+
+/* La fila-banda de una marca, con su subtotal ya formateado. */
+function _multiPdfBandaMarca(label, subTxt){
+  return '<tr class="mk-row"><td colspan="7">' + cevenEsc(label)
+    + ' <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#6e6e73">— '
+    + subTxt + '</span></td></tr>';
+}
+
+/* El armazón de la tabla de UNA opción: encabezado, cuerpo (bandas + líneas, ya
+   armado por el llamador) y la fila de Total. `tituloOpc` es '' o 'Opción A'. */
+function _multiPdfTabla(cuerpo, totalTxt, tituloOpc){
+  return (tituloOpc ? '<p class="opc-tit">' + cevenEsc(tituloOpc) + '</p>' : '')
     + '<table><colgroup><col class="col-sku"><col class="col-desc"><col class="col-qty">'
     +   '<col class="col-pv"><col class="col-tot"><col class="col-iva"><col class="col-nota"></colgroup>'
     + '<thead><tr>'
@@ -54,29 +54,37 @@ function _multiPdfTablaMarca(label, filasHtml, subFmt){
     +   '<th style="text-align:right">Total</th>'
     +   '<th style="text-align:center">IVA</th>'
     +   '<th style="text-align:center">Nota</th>'
-    + '</tr></thead><tbody>' + filasHtml
-    +   '<tr class="sr"><td colspan="4" style="text-align:right">Subtotal ' + cevenEsc(label) + '</td>'
-    +     '<td style="text-align:right">' + subFmt + '</td><td></td><td></td></tr>'
+    + '</tr></thead>'
+    + '<tbody>' + cuerpo
+    +   '<tr class="tr"><td colspan="4" style="text-align:right">Total'
+    +     (tituloOpc ? ' ' + cevenEsc(tituloOpc) : '') + '</td>'
+    +   '<td style="text-align:right">' + totalTxt + '</td><td></td><td></td></tr>'
     + '</tbody></table>';
 }
 
-/* Las tablas por marca de un juego de líneas EN VIVO (`items`), en el orden del
-   registro. Devuelve {html, total}. `lineas` ya viene filtrada por opción. */
-function _multiPdfTablasLive(lineas){
-  var marcas = cevenMultiMarcasDe(lineas);
-  var html = '', total = 0;
+/* Cuerpo de la tabla desde líneas EN VIVO (`items`): una banda por marca y sus
+   líneas, en el orden del registro. Devuelve {cuerpo, total}. Los importes con
+   dp() (respeta el toggle ARS de la pantalla), igual que el PDF de Poly. */
+function _multiPdfCuerpoLive(lista){
+  var marcas = cevenMultiMarcasDe(lista);
+  var cuerpo = '', total = 0;
   for(var m = 0; m < marcas.length; m++){
-    var ls = cevenMultiLineasDe(lineas, marcas[m]);
+    var ls = cevenMultiLineasDe(lista, marcas[m]);
     if(!ls.length) continue;
-    var rows = '', sub = 0;
+    var sub = 0;
+    for(var s = 0; s < ls.length; s++){
+      var v = (ls[s].salePrice === '' || ls[s].salePrice == null) ? 0 : ls[s].salePrice;
+      sub += v * ls[s].qty;
+    }
+    total += sub;
+    cuerpo += _multiPdfBandaMarca(cevenMultiMarcaLabel(marcas[m]), dp(sub));
     for(var i = 0; i < ls.length; i++){
       var it = ls[i];
       var sp = (it.salePrice === '' || it.salePrice == null) ? 0 : it.salePrice;
-      sub += sp * it.qty;
-      /* SKU y descripción salen de catálogos sincronizados desde Supabase: van
-         escapados sí o sí, y encima este HTML lo mete downloadQuotePDF() en el
-         DOM vivo para fotografiarlo (un onerror correría en la propia app). */
-      rows += '<tr>'
+      /* SKU y descripción salen de catálogos sincronizados de Supabase: van
+         escapados sí o sí, y downloadQuotePDF() mete este HTML en el DOM vivo
+         para fotografiarlo (un onerror correría en la propia app). */
+      cuerpo += '<tr>'
         + '<td class="nowrap" style="font-size:11px;font-family:monospace">' + cevenEsc(it.sku) + '</td>'
         + '<td>' + cevenEsc(it.description) + '</td>'
         + '<td class="nowrap" style="text-align:center">' + cevenEsc(it.qty) + '</td>'
@@ -86,16 +94,14 @@ function _multiPdfTablasLive(lineas){
         + '<td class="nowrap" style="text-align:center">' + cevenEsc(it.stock || '—') + '</td>'
         + '</tr>';
     }
-    total += sub;
-    html += _multiPdfTablaMarca(cevenMultiMarcaLabel(marcas[m]), rows, dp(sub));
   }
-  return { html: html, total: total };
+  return { cuerpo: cuerpo, total: total };
 }
 
-/* Las tablas por marca de filas YA GUARDADAS de `cquotes`, en el orden del
-   registro (las marcas desconocidas al final, para poder verlas en vez de
-   esconderlas). Todo en USD: el `P. Venta Unitario` guardado es dólares. */
-function _multiPdfTablasRows(filas){
+/* Cuerpo de la tabla desde filas YA GUARDADAS de `cquotes`. Todo en USD: el
+   `P. Venta Unitario` guardado es dólares. Marcas desconocidas al final, para
+   poder verlas en vez de esconderlas. */
+function _multiPdfCuerpoRows(filas){
   var orden = cevenMultiMarcasIds(), vistas = {}, marcas = [];
   orden.forEach(function(b){
     if(filas.some(function(f){ return f['Marca'] === b; })){ vistas[b] = 1; marcas.push(b); }
@@ -105,45 +111,43 @@ function _multiPdfTablasRows(filas){
     if(b && !vistas[b]){ vistas[b] = 1; marcas.push(b); }
   });
 
-  var html = '', total = 0;
+  var cuerpo = '', total = 0;
   marcas.forEach(function(brand){
     var ls = filas.filter(function(f){ return (f['Marca'] || '') === brand; });
     if(!ls.length) return;
-    var rows = '', sub = 0;
+    var sub = 0;
+    ls.forEach(function(r){ sub += parseFloat(r['Total']) || 0; });
+    total += sub;
+    cuerpo += _multiPdfBandaMarca(cevenMultiMarcaLabel(brand), 'USD ' + fI(sub));
     ls.forEach(function(r){
-      var t = parseFloat(r['Total']) || 0;
-      sub += t;
-      rows += '<tr>'
+      cuerpo += '<tr>'
         + '<td class="nowrap" style="font-size:11px;font-family:monospace">' + cevenEsc(r['SKU']) + '</td>'
         + '<td>' + cevenEsc(r['Descripción']) + '</td>'
         + '<td class="nowrap" style="text-align:center">' + cevenEsc(r['Cantidad']) + '</td>'
         + '<td class="nowrap" style="text-align:right">USD ' + fI(parseFloat(r['P. Venta Unitario']) || 0) + '</td>'
-        + '<td class="nowrap" style="text-align:right;font-weight:600">USD ' + fI(t) + '</td>'
+        + '<td class="nowrap" style="text-align:right;font-weight:600">USD ' + fI(parseFloat(r['Total']) || 0) + '</td>'
         + '<td class="nowrap" style="text-align:center">' + cevenEsc(r['IVA'] || '—') + '</td>'
         + '<td class="nowrap" style="text-align:center">' + cevenEsc(r['Nota'] || '—') + '</td>'
         + '</tr>';
     });
-    total += sub;
-    html += _multiPdfTablaMarca(cevenMultiMarcaLabel(brand), rows, 'USD ' + fI(sub));
   });
-  return { html: html, total: total };
+  return { cuerpo: cuerpo, total: total };
 }
 
 /* ── PDF DEL PEDIDO EN VIVO ─────────────────────────────────────────────────── */
 function buildPDF(){
   if(!items.length){ showToast('El pedido está vacío.'); return; }
-  // En ARS sin tipo de cambio, dp() no puede dar un importe: saldría un PDF con
-  // los números de USD rotulados como ARS (1:1).
+  // En ARS sin tipo de cambio, dp() no puede dar un importe.
   if(!cevenTCValido()){ showToast('Cargá el tipo de cambio antes de exportar en ARS.'); return; }
-  // El PDF imprime "Ejecutivo:" y buildPDF() además guarda: si el campo está
-  // vacío el guardado se rechaza, así que se corta acá.
+  // El PDF imprime "Ejecutivo:" y además guarda: sin ejecutivo el guardado se
+  // rechaza, así que se corta acá.
   if(!cevenRequireExec()) return;
   // Igual que en las marcas: exportar también guarda, para que el PDF que se le
   // manda al cliente quede registrado en el historial del equipo.
   doSave(true);
 
   var _v = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
-  var client = _v('client'), proyecto = _v('proyecto'), opg = _v('opg');
+  var client = _v('client'), opg = _v('opg'), proyecto = _v('proyecto');
   var exec = _v('exec'), ob = _v('obs');
   var qn = cevenQNumVisible(qNum);
   var logoTag = _logo
@@ -151,28 +155,21 @@ function buildPDF(){
     : '';
 
   var sortedItems = getSortedItems();
-  /* Con dos opciones el documento lleva un bloque por cada una, con su total, y
-     arriba el aviso de que son excluyentes — mismo criterio que el PDF de Poly. */
+  // Con dos opciones el documento lleva una tabla por cada una, con su total, y
+  // arriba el aviso de que son excluyentes — igual que el PDF de Poly.
   var hayOpcB = cevenOpcFiltrar(items, 2).length > 0;
 
   function _bloque(n){
     var lista = cevenOpcFiltrar(sortedItems, n);
     if(!lista.length) return '';
-    var r = _multiPdfTablasLive(lista);
-    return (hayOpcB ? '<p class="opc-tit">Opción ' + cevenOpcLetra(n) + '</p>' : '')
-      + r.html
-      + '<div class="ptot">Total del pedido' + (hayOpcB ? ' · Opción ' + cevenOpcLetra(n) : '')
-      +   ': ' + dp(r.total) + '</div>';
+    var c = _multiPdfCuerpoLive(lista);
+    return _multiPdfTabla(c.cuerpo, dp(c.total), hayOpcB ? 'Opción ' + cevenOpcLetra(n) : '');
   }
 
-  // "<cliente> - <proyecto> - Ceven - <validez>" (shared/pdf-core.js); si no hay
-  // proyecto se cae al OPG, igual que en Poly.
+  // "<cliente> - <proyecto> - Ceven - <validez>"; si no hay proyecto, el OPG.
   var docTitle = cevenNombreDocumento(client, proyecto || opg, _v('eff-date'));
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + cevenEsc(docTitle) + '</title>'
-    + cevenPdfDocCSS(
-        '.col-sku{width:14%}.col-desc{width:36%}.col-qty{width:7%}.col-pv{width:13%}'
-        + '.col-tot{width:13%}.col-iva{width:8%}.col-nota{width:9%}',
-        CEVEN_MULTI_PDF_CSS)
+    + cevenPdfDocCSS(CEVEN_MULTI_PDF_COLS, CEVEN_MULTI_PDF_CSS)
     + '</head><body>'
     + logoTag
     + '<p class="qn">Pedido ' + cevenEsc(qn) + '</p>'
@@ -188,11 +185,11 @@ function buildPDF(){
     + _bloque(1)
     + _bloque(2);
 
-  // Sin argumento, cevenCondicionesHTML() lee los campos de la pantalla — que es
-  // lo correcto acá: se está exportando el pedido que está en vivo.
+  // Sin argumento, cevenCondicionesHTML() lee los campos de la pantalla.
   html += cevenCondicionesHTML()
     + '<p class="ft">Ceven S.A.</p>'
     + '</body></html>';
+  // Salto de página / landscape + no cortar filas, igual que Poly.
   html = html.replace('</head>',
     '<style>tr,.cb,.sec{page-break-inside:avoid}thead{display:table-header-group}'
     + '@media print{@page{size:A4 landscape;margin:10mm}}</style>'
@@ -205,46 +202,59 @@ function buildPDF(){
 function exportSelectedPDF(){
   var keys = Object.keys(histSel);
   if(!keys.length) return;
+  _multiHistExportarPDF(keys);
+}
+
+// El botón "📄 PDF" de cada tarjeta del historial.
+function exportPedidoPDF(qn){
+  _multiHistExportarPDF([qn]);
+}
+
+function _multiHistExportarPDF(keys){
   var db = getDB(), grouped = {};
   for(var i = 0; i < db.length; i++){
     var k = db[i]['N° Cotización'];
-    if(histSel[k]) (grouped[k] = grouped[k] || []).push(db[i]);
+    if(keys.indexOf(k) >= 0) (grouped[k] = grouped[k] || []).push(db[i]);
   }
+  var orden = keys.filter(function(k){ return grouped[k] && grouped[k].length; });
+  if(!orden.length){ showToast('No se encontró el pedido.'); return; }
+
   var logoTag = _logo
     ? '<img src="' + cevenEsc(_logo) + '" style="height:40px;object-fit:contain;display:block;margin:0 auto 20px">'
     : '';
   var allBlocks = '';
-  for(var ki = 0; ki < keys.length; ki++){
-    var qn = keys[ki], rows = grouped[qn];
-    if(!rows || !rows.length) continue;
-    var first = rows[0];
+  for(var ki = 0; ki < orden.length; ki++){
+    var qn = orden[ki], rows = grouped[qn], first = rows[0];
+    // El OPG puede estar en cualquier fila de Poly, no necesariamente en la 1ª.
+    var opg = '';
+    for(var oi = 0; oi < rows.length; oi++){
+      if(rows[oi]['OPG'] && rows[oi]['OPG'] !== '—'){ opg = rows[oi]['OPG']; break; }
+    }
     var hayOpcB = cevenOpcHayBEnFilas(rows);
-    var bloquesOpc = '';
+    var bloques = '';
     for(var opn = 1; opn <= 2; opn++){
       var filasOpc = rows.filter(function(r){ return cevenOpcDe(r) === opn; });
       if(!filasOpc.length) continue;
-      var r = _multiPdfTablasRows(filasOpc);
-      bloquesOpc += (hayOpcB ? '<p class="opc-tit">Opción ' + cevenOpcLetra(opn) + '</p>' : '')
-        + r.html
-        + '<div class="ptot">Total del pedido' + (hayOpcB ? ' · Opción ' + cevenOpcLetra(opn) : '')
-        +   ': USD ' + fI(r.total) + '</div>';
+      var c = _multiPdfCuerpoRows(filasOpc);
+      bloques += _multiPdfTabla(c.cuerpo, 'USD ' + fI(c.total), hayOpcB ? 'Opción ' + cevenOpcLetra(opn) : '');
     }
     allBlocks += '<div class="qb">'
       + '<p class="qn">Pedido ' + cevenEsc(CEVEN_BRAND.qNumPrefijo + qn) + '</p>'
       + '<h1>Cotización Multimarca</h1>'
       + '<div class="cb">'
       +   (first['Cliente'] && first['Cliente'] !== '—' ? '<p class="cn">' + cevenEsc(first['Cliente']) + '</p>' : '')
+      +   (opg ? '<p class="cm">OPG: ' + cevenEsc(opg) + '</p>' : '')
       +   (first['Proyecto'] && first['Proyecto'] !== '—' ? '<p class="cm">Proyecto: ' + cevenEsc(first['Proyecto']) + '</p>' : '')
       +   (first['Ejecutivo'] && first['Ejecutivo'] !== '—' ? '<p class="cm">Ejecutivo: ' + cevenEsc(first['Ejecutivo']) + '</p>' : '')
       +   (first['Observaciones'] && first['Observaciones'] !== '—' ? '<p class="cm">' + cevenEsc(first['Observaciones']) + '</p>' : '')
       + '</div>'
       + (hayOpcB ? '<p class="opc-nota">' + cevenEsc(cevenOpcLeyenda()) + '</p>' : '')
-      + bloquesOpc
+      + bloques
       // Las condiciones salen de lo que doSave() guardó junto al pedido.
       + cevenCondicionesHTML(first)
       + '</div>';
   }
-  var fname = keys.length === 1 ? 'Pedido_' + keys[0] : 'Pedidos_' + keys.join('-');
+  var fname = orden.length === 1 ? 'Pedido_' + orden[0] : 'Pedidos_' + orden.join('-');
   var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + cevenEsc(fname) + '</title>'
     + cevenPdfListCSS(CEVEN_MULTI_PDF_CSS)
     + '</head><body>'

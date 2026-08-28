@@ -212,6 +212,7 @@ function renderHistory(){
           + (hayOpcB ? ' <span class="opc-chip" style="font-size:10px">2 opciones · vigente '+cevenOpcLetra(opcEf)+'</span>' : '')
         + '</div>'
         + '<div style="font-size:11px;color:var(--ct2)">'+cevenEsc(first['Fecha']||'')+' '+cevenEsc(first['Hora']||'')+'</div>'
+        + '<button class="bs" data-act="pdf" data-qn="'+qnA+'" title="Descargar este pedido en PDF">📄 PDF</button>'
         + (cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bs" data-act="edit" data-qn="'+qnA+'" title="Abrir para editar y re-emitir">✎ Abrir</button>' : '')
         + (cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bsr" data-act="del" data-qn="'+qnA+'">✕</button>' : '')
       + '</div>'
@@ -238,6 +239,7 @@ function _histBindDelegation(){
     if(!el) return;
     var act = el.getAttribute('data-act'), qn = el.getAttribute('data-qn');
     if(act === 'edit') editarPedido(qn);
+    else if(act === 'pdf') exportPedidoPDF(qn);
     else if(act === 'del') deleteQ(qn);
   });
   cevenDelegate('histwrap', 'change', function(ev){
