@@ -242,9 +242,6 @@ function renderPipeline(){
     ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Limpiar filtros".'
     : 'El pipeline está vacío. Cargá una cotización y tocá "Agregar al pipeline".';
   document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
-  // #region agent log
-  (function(){var b=document.querySelectorAll('#pipe-body [data-act="perdido-detalle"]'),x=b[0],r=x&&x.getBoundingClientRect(),s=x&&getComputedStyle(x);fetch('http://127.0.0.1:7518/ingest/56f0602d-45a3-4685-ac87-9704175e562e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2fe917'},body:JSON.stringify({sessionId:'2fe917',runId:'initial',hypothesisId:'H1-H4',location:'src/poly/js/pipeline-view.js:246',message:'Pipeline perdido button render metrics',data:{perdidoRows:filtered.filter(function(r){return (r.estado||'Cotizado')==='Perdido';}).length,buttons:b.length,buttonWidth:r&&r.width,buttonHeight:r&&r.height,buttonDisplay:s&&s.display,buttonVisibility:s&&s.visibility,cellWidth:x&&x.parentElement.getBoundingClientRect().width,cellScrollWidth:x&&x.parentElement.scrollWidth},timestamp:Date.now()})}).catch(()=>{});})();
-  // #endregion
   attachPipeSortHandlers();
   pipeBindDelegation();
 }
@@ -313,7 +310,7 @@ function _pipeTablaHTML(filas, scope, opts){
         var cSt = cevenEstadoPill(estado);
         celdaEstado = '<span class="'+cevenEsc(cevenSpillClass(estado))+'" style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+cSt.fg+';background:'+cSt.bg+'">'+cevenEsc(cevenEstadoLabel(estado))+'</span>'
           + (estado === 'Perdido'
-            ? ' <button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
+            ? '<button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="display:block;margin:4px auto 0;padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7;white-space:nowrap">Ver motivo</button>'
             : '');
         celdaAcc = '<button class="bs" data-act="restore" data-k="'+kA+'" data-mk="'+cevenEsc(opts.monthKey||'')+'" title="Devolver este proyecto al pipeline actual" style="font-size:11px;padding:2px 8px">↩ Restaurar</button>';
       } else {
@@ -321,7 +318,7 @@ function _pipeTablaHTML(filas, scope, opts){
         celdaEstado = '<select data-act="est" data-k="'+kA+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
           + cevenEstadoOptions(estado, false) + '</select>'
           + (estado === 'Perdido'
-            ? ' <button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
+            ? '<button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="display:block;margin:4px auto 0;padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7;white-space:nowrap">Ver motivo</button>'
             : '');
         /* Netsuite. Con link cargado el botón ABRE Netsuite (verde, con la
            flechita de "sale de la app") y al lado aparece un ✎ amarillo chico

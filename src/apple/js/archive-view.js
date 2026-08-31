@@ -167,7 +167,7 @@ function renderArchiveMonth(monthKey, entries){
       +'<td style="font-size:12px">'+mesSel+'</td>'
       +'<td style="text-align:center"><span style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+fg+';background:'+(r.estado==='Facturado'?'#e0f5f1':'#fbbebe')+'">'+cevenEsc(r.estado)+'</span>'
         +(r.estado === 'Perdido'
-          ? ' <button class="bs" data-aact="perdido-detalle"'+idA+' style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
+          ? '<button class="bs" data-aact="perdido-detalle"'+idA+' style="display:block;margin:4px auto 0;padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7;white-space:nowrap">Ver motivo</button>'
           : '')+'</td>'
       +'<td style="text-align:center">'+cevenEsc(r.qMac||'—')+'</td>'
       +'<td style="text-align:center">'+cevenEsc(r.qIph||'—')+'</td>'
