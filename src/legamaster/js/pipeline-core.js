@@ -113,7 +113,7 @@ function cevenNuevoIdFila(){
 }
 
 function clearPipelineFilters(){
-  var ids = ['pipe-search','pipe-exec','pipe-status','archive-month-sel'];
+  var ids = ['pipe-search','pipe-exec','pipe-status'];
   ids.forEach(function(id){
     var el = document.getElementById(id);
     if(el) el.value = '';

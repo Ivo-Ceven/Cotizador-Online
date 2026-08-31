@@ -52,6 +52,8 @@ function cargar(){
     'dash-total-lbl':         nodo(),
     'dash-total':             nodo(),
     'dash-total-sub':         nodo(),
+    'dash-regi-perdidos':     nodo(),
+    'dash-regi-vinculados':   nodo(),
     'dash-by-status':         nodo(),
     'regi-pipe-body':         nodo(),
     'client':                 { value: '' },
@@ -161,11 +163,11 @@ console.log('\n4 · _regiOpgMatcheaVigente (el 🎯 al lado del OPG en el pipeli
 console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado');
 {
   const e = cargar();
-  e._pipelineData = [ filaReal('abc-123'), filaReal('opd2') ];
+  e._pipelineData = [ filaReal('abc-123', {monto:4000}), filaReal('opd2', {monto:6000}) ];
   e._regiPipeRows = [
-    filaRegi('OPD1', 'abc-123', {cliente:'Vinculada SA', monto:5000}),
-    filaRegi('OPD2', '',        {cliente:'Sin REGI SA',  monto:7000}),
-    filaRegi('OPD3', 'zzz-999', {cliente:'Suelta SA',    monto:3000})
+    filaRegi('OPD1', 'abc-123', {cliente:'Vinculada SA', montoArchivo:5000, monto:4000}),
+    filaRegi('OPD2', '',        {cliente:'Sin REGI SA',  montoArchivo:7000, monto:6000}),
+    filaRegi('OPD3', 'zzz-999', {cliente:'Suelta SA',    montoArchivo:3000, monto:3000, forecast:'Perdido'})
   ];
   e._regiMostrarVinculadas = false;
   e._renderRegiPipelineFromCache();
@@ -174,23 +176,27 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   ok(html.indexOf('Sin REGI SA') === -1 && html.indexOf('Suelta SA') !== -1,
      'la oportunidad sin REGI vinculada por OPD se oculta, la suelta sigue visible');
   ok(e._els['regi-vinc-count'].textContent === '(2)', 'el contador incluye vínculos por REGI y OPD', e._els['regi-vinc-count'].textContent);
-  ok(/USD 3\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
-     'el total del dashboard suma SOLO lo visible, no lo vinculado por REGI u OPD');
+  ok(/USD 12\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
+     'el total usa siempre el monto del Excel, sin Perdido e incluyendo vinculadas');
+  ok(/USD 3\.000/.test(e._els['dash-regi-perdidos'].textContent),
+     'el KPI perdido usa el monto del Excel');
+  ok(/USD 10\.000/.test(e._els['dash-regi-vinculados'].textContent),
+     'el KPI vinculado suma el monto del pipeline Ceven');
 }
 {
   // Mismo escenario, con el toggle en "mostrar".
   const e = cargar();
   e._pipelineData = [ filaReal('abc-123') ];
   e._regiPipeRows = [
-    filaRegi('OPD1', 'abc-123', {cliente:'Vinculada SA', monto:5000}),
-    filaRegi('OPD2', 'zzz-999', {cliente:'Suelta SA',    monto:3000})
+    filaRegi('OPD1', 'abc-123', {cliente:'Vinculada SA', montoArchivo:5000, monto:5000}),
+    filaRegi('OPD2', 'zzz-999', {cliente:'Suelta SA',    montoArchivo:3000, monto:3000})
   ];
   e._regiMostrarVinculadas = true;
   e._renderRegiPipelineFromCache();
   const html = e._els['regi-pipe-body'].innerHTML;
   ok(html.indexOf('Vinculada SA') !== -1, 'con el toggle activado, la vinculada vuelve a aparecer');
   ok(/USD 8\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
-     'con el toggle en "mostrar", el total SÍ vuelve a incluir la vinculada');
+     'el total usa el Excel aunque cambie el toggle de vinculadas');
   // El detalle de la fila (badge/botones) solo se pinta con el grupo del
   // cliente desplegado — cevenPipeAbierto() arranca colapsado en una sesión
   // nueva. Se prueba _regiRowHTML() directo, sin depender de esa mecánica.

@@ -209,7 +209,7 @@ function esFOBEntry(r){
 window._pipeLineKeysMap = window._pipeLineKeysMap || {};
 
 function clearPipelineFilters(){
-  var ids = ['pipe-search','pipe-exec','pipe-family','pipe-status','archive-month-sel'];
+  var ids = ['pipe-search','pipe-exec','pipe-family','pipe-status'];
   ids.forEach(function(id){
     var el = document.getElementById(id);
     if(el) el.value = '';

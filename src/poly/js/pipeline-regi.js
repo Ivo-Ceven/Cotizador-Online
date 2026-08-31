@@ -288,6 +288,10 @@ function cevenRegiToggleVista(vista){
   var proyCard = document.getElementById('dash-proy-card');
   if(facturadoCard) facturadoCard.style.display = usaDatosRegi ? 'none' : '';
   if(proyCard) proyCard.style.display = usaDatosRegi ? 'none' : '';
+  ['dash-regi-perdidos-card','dash-regi-vinculados-card'].forEach(function(id){
+    var card = document.getElementById(id);
+    if(card) card.style.display = esRegi ? '' : 'none';
+  });
 
   // exportPipeline() arma el Excel con las columnas del pipeline normal
   // (fecha/ejecutivo/OPG/factura...): no sabe leer una fila de REGI ni de
@@ -463,7 +467,11 @@ function _renderRegiPipelineFromCache(){
   // vinculó un proyecto con "✎" en el pipeline real y se volvió acá— sin que
   // haga falta reimportar ni volver a pedirle nada a Supabase.
   var vinculados = _regiOpgVinculadosSet();
-  rowsTotal.forEach(function(r){ r.vinculada = _regiEsVinculada(r, vinculados); });
+  rowsTotal.forEach(function(r){
+    var codigo = _regiCodigoVinculo(r);
+    r.vinculada = _regiEsVinculada(r, vinculados);
+    r.montoVinculado = r.vinculada ? (Number(vinculados[codigo].monto) || 0) : 0;
+  });
   var nVinculadas = rowsTotal.filter(function(r){ return r.vinculada; }).length;
   _regiPintarToggleVinculadas(nVinculadas);
 
@@ -502,7 +510,7 @@ function _renderRegiPipelineFromCache(){
     return sortDir === 'asc' ? cmp : -cmp;
   });
 
-  _regiPintarDashboard(filtered, forecastFilter);
+  _regiPintarDashboard(rowsTotal, filtered, forecastFilter);
 
   var html = _regiTablaHTML(filtered);
   var _hayFiltros = !!(q || forecastFilter || monthFilter);
@@ -679,19 +687,21 @@ function _regiStatsPintarComparacion(opd){
     + '</tbody></table>';
 }
 
-function _regiPintarDashboard(filtered, forecastFilter){
+function _regiPintarDashboard(rowsTotal, filtered, forecastFilter){
   var dash = document.getElementById('pipe-dashboard');
   if(!dash) return;
   dash.style.display = 'block';
 
-  // Perdido se excluye de la suma — mismo criterio que "Total pipeline" en
-  // el pipeline normal, que tampoco cuenta Perdido ni Facturado
-  // (pipeline-view.js: sumPipeline = sumMonto - facturado - perdido). Acá
-  // no hay Facturado, así que solo se resta Perdido.
-  var sumMonto = 0, sumPerdido = 0, cliVistos = {}, nClientes = 0, byForecast = {};
+  var totalExcel = 0, perdidosExcel = 0, vinculadosCeven = 0;
+  rowsTotal.forEach(function(r){
+    var montoArchivo = Number(r.montoArchivo) || 0;
+    if(r.forecast === 'Perdido') perdidosExcel += montoArchivo;
+    else totalExcel += montoArchivo;
+    if(r.vinculada) vinculadosCeven += Number(r.montoVinculado) || 0;
+  });
+
+  var cliVistos = {}, nClientes = 0, byForecast = {};
   filtered.forEach(function(r){
-    sumMonto += (r.monto || 0);
-    if(r.forecast === 'Perdido') sumPerdido += (r.monto || 0);
     var ck = (r.cliente||'').trim().toLowerCase();
     if(ck && !cliVistos[ck]){ cliVistos[ck] = 1; nClientes++; }
     var fc = r.forecast || '';
@@ -704,8 +714,10 @@ function _regiPintarDashboard(filtered, forecastFilter){
   document.getElementById('dash-count').textContent = nClientes;
   document.getElementById('dash-proyectos').textContent = filtered.length;
   _pipeSetLbl('dash-total-lbl', 'Monto total REGI');
-  document.getElementById('dash-total').textContent = 'USD ' + fI(sumMonto - sumPerdido);
-  _pipeSetLbl('dash-total-sub', 'sin Perdido · con productos asignados, ese monto reemplaza al del archivo de HP');
+  document.getElementById('dash-total').textContent = 'USD ' + fI(totalExcel);
+  _pipeSetLbl('dash-total-sub', 'monto del Excel · sin Perdido · incluye vinculadas');
+  document.getElementById('dash-regi-perdidos').textContent = 'USD ' + fI(perdidosExcel);
+  document.getElementById('dash-regi-vinculados').textContent = 'USD ' + fI(vinculadosCeven);
 
   var pillsHtml = '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Por Forecast</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">';
