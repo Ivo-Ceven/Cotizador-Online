@@ -386,6 +386,7 @@ function _regiRowToPipeRow(r){
   var productosMonto = (window._regiProductosTotales && window._regiProductosTotales[r.opd]) || 0;
   return {
     opd: r.opd, regi: r.regi || '',
+    perdidoMotivo: r.perdido_motivo || null,
     // El forecast a mano (forecast_override) reemplaza al del archivo — no
     // conviven, ver el comentario de cabecera. Incluye "Perdido", que el
     // archivo de HP no contempla. forecastArchivo se guarda aparte para
@@ -414,7 +415,7 @@ function _regiRowToPipeRow(r){
 
 function _cevenRegiPipeFetch(){
   var url = _cevenRegiPipeRest('poly_regi_pipeline')
-    + '?select=opd,regi,dr_expiration,opportunity,forecast,forecast_override,account,primary_partner,amount,close_date'
+    + '?select=opd,regi,dr_expiration,opportunity,forecast,forecast_override,perdido_motivo,account,primary_partner,amount,close_date'
     + '&order=amount.desc';
   // Los productos asignados se traen en la MISMA pasada (no por fila, no
   // hay función de agregación en la base): son pocas filas por proyecto y
@@ -768,6 +769,11 @@ function _regiForecastSelectHTML(r){
   return h;
 }
 
+function _regiMotivoPerdidaHTML(r){
+  if(r.forecast !== 'Perdido') return '';
+  return ' <button class="bs" data-act="regi-perdido-detalle" data-opd="'+cevenEsc(r.opd)+'" style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>';
+}
+
 function _regiRowHTML(r){
   var vencido = r.drExpiration && r.drExpiration < cevenHoyISO();
   // Cuando el monto de la fila viene de los productos asignados (reemplaza
@@ -794,7 +800,7 @@ function _regiRowHTML(r){
     + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+(r.regi ? cevenEsc(r.regi) : '<span style="color:#aeaeb2">sin REGI</span>')+'</td>'
     + '<td style="font-size:12px"><div style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
     + '<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.primaryPartner||'—')+'</td>'
-    + '<td style="text-align:center;overflow:visible">'+_regiForecastSelectHTML(r)+'</td>'
+    + '<td style="text-align:center;overflow:visible">'+_regiForecastSelectHTML(r)+_regiMotivoPerdidaHTML(r)+'</td>'
     + '<td style="font-size:12px;white-space:nowrap'+(vencido?';color:#d70015':'')+'" title="'+(vencido?'Deal Registration vencido':'')+'">'+cevenEsc(r.drExpiration ? _regiFechaDDMMYYYY(r.drExpiration) : '—')+'</td>'
     + '<td style="font-size:12px;white-space:nowrap">'+cevenEsc(r.mesCierre ? _mesLabelPoly(r.mesCierre) : '—')+'</td>'
     + '<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px" title="'+cevenEsc(montoTitle)+'">'+(deProductos?'<span title="Monto de los productos asignados">🎯</span> ':'')+'USD '+fI(r.monto||0)+'</td>'
@@ -826,16 +832,34 @@ function _regiTablaHTML(filas){
 function _regiCambiarForecast(opd, valor){
   if(!opd) return;
   if(!cevenCanUsePipeline()){ showToast('Tu rol no permite editar proyectos REGI.'); renderPipeline(); return; }
+  if(valor === 'Perdido'){
+    abrirModalMotivoPerdida(function(perdidoMotivo){
+      _regiGuardarForecast(opd, valor, perdidoMotivo);
+    }, function(){
+      if(typeof renderPipeline === 'function') renderPipeline();
+    });
+    return;
+  }
+  _regiGuardarForecast(opd, valor, null);
+}
+
+function _regiGuardarForecast(opd, valor, perdidoMotivo){
   cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?opd=eq.' + encodeURIComponent(opd), {
     method: 'PATCH',
     headers: {Prefer: 'return=minimal'},
-    body: JSON.stringify({forecast_override: valor || null})
+    body: JSON.stringify({
+      forecast_override: valor || null,
+      perdido_motivo: valor === 'Perdido' ? perdidoMotivo : null
+    })
   }).then(function(){
     var row = (window._regiPipeRows || []).filter(function(r){ return r.opd === opd; })[0];
     // Limpiar el override (valor === '') no deja la fila en blanco: vuelve
     // a mostrar lo que dice el archivo, igual que hace la base con
     // forecast_override en null (ver el comentario de forecastArchivo).
-    if(row) row.forecast = valor || row.forecastArchivo || '';
+    if(row){
+      row.forecast = valor || row.forecastArchivo || '';
+      row.perdidoMotivo = valor === 'Perdido' ? perdidoMotivo : null;
+    }
     if(typeof renderPipeline === 'function') renderPipeline();
     showToast('✓ Forecast actualizado' + (valor ? (': ' + valor) : ' (vuelve a mostrar el del archivo)') + '.');
   }).catch(function(e){
@@ -896,6 +920,10 @@ function _regiBindDelegation(){
       // el resto del pipeline usa para hooks opcionales.
       else if(act === 'regi-editar' && typeof abrirRegiEditor === 'function') abrirRegiEditor(el.getAttribute('data-opd'));
       else if(act === 'regi-copiar') _regiCopiarAPipeline(el.getAttribute('data-opd'));
+      else if(act === 'regi-perdido-detalle'){
+        var row = (window._regiPipeRows || []).filter(function(r){ return r.opd === el.getAttribute('data-opd'); })[0];
+        abrirDetalleMotivoPerdida(row && row.perdidoMotivo);
+      }
     });
     body.addEventListener('change', function(ev){
       var el = cevenActEl(ev, body);

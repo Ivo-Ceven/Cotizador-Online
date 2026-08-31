@@ -86,6 +86,7 @@ function cargar(){
     showToast(m){ ctx._lastToast = m; },
     cevenCanUsePipeline(){ return ctx._canUse !== false; },
     getPipeline(){ return ctx._pipelineData || []; },
+    SUPABASE_URL: 'https://example.supabase.co',
     CEVEN_BRAND: { pipeColCount: 9, pipeSortDescCols: ['monto','fechaISO'] }
   };
   ctx.window = ctx;
@@ -246,6 +247,33 @@ console.log('\n6 · _regiCopiarAPipeline prellena cliente/proyecto/OPG y avisa s
   e._regiCopiarAPipeline('OPD3');
   ok(e._calls.length === 0, 'sin permiso, no navega ni toca nada del cotizador', JSON.stringify(e._calls));
   ok(/no permite/.test(e._lastToast), 'y avisa que el rol no permite la acción');
+}
+
+/* ═══ 7 · Perdido REGI pide y guarda motivo ════════════════════════════════ */
+console.log('\n7 · Perdido en REGI pide motivo y feedback');
+{
+  const e = cargar();
+  let confirmar, patch;
+  e._regiPipeRows = [filaRegi('OPD1', '', {forecast:'Commit'})];
+  e.abrirModalMotivoPerdida = fn => { confirmar = fn; };
+  e.cevenAuthedFetch = (url, opts) => {
+    patch = JSON.parse(opts.body);
+    return {then: fn => { fn(); return {catch: () => {}}; }};
+  };
+  e._regiCambiarForecast('OPD1', 'Perdido');
+  ok(typeof confirmar === 'function', 'elegir Perdido abre el selector de motivo');
+  ok(!patch, 'no actualiza REGI antes de confirmar el motivo');
+  confirmar({motivo:'Por precio', detalle:'Oferta competidora'});
+  ok(patch.forecast_override === 'Perdido' && patch.perdido_motivo.motivo === 'Por precio'
+    && patch.perdido_motivo.detalle === 'Oferta competidora',
+  'guarda forecast, motivo y feedback');
+  ok(e._regiPipeRows[0].forecast === 'Perdido' && e._regiPipeRows[0].perdidoMotivo.motivo === 'Por precio',
+     'actualiza el estado local al confirmar');
+  ok(/regi-perdido-detalle/.test(e._regiMotivoPerdidaHTML(e._regiPipeRows[0])),
+     'una fila perdida muestra el botón Ver motivo');
+  e._regiCambiarForecast('OPD1', 'Commit');
+  ok(patch.forecast_override === 'Commit' && patch.perdido_motivo === null,
+     'al salir de Perdido elimina el motivo anterior');
 }
 
 console.log('\n' + (fallos

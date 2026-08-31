@@ -58,11 +58,16 @@ ok(JSON.stringify(cargar('apple').PIPE_MOTIVOS_PERDIDA) === JSON.stringify(MOTIV
   ok(/Detalle de pérdida/.test(e.modal.innerHTML) && /Por precio/.test(e.modal.innerHTML)
     && /Oferta &lt;competidora&gt;/.test(e.modal.innerHTML),
   'el detalle muestra motivo y feedback escapado');
+  e.abrirDetalleMotivoPerdida(null);
+  ok(/Sin motivo registrado/.test(e.modal.innerHTML) && /Sin feedback adicional/.test(e.modal.innerHTML),
+     'las pérdidas históricas sin datos también tienen un detalle visible');
 }
 VISTAS.forEach(vista => {
   const src = fs.readFileSync(path.join(ROOT, vista), 'utf8');
-  ok(src.indexOf('Ver motivo') !== -1 && src.indexOf('perdido-detalle') !== -1,
-     vista + ' ofrece el botón para consultar la pérdida');
+  ok(src.indexOf('Ver motivo') !== -1 && src.indexOf('perdido-detalle') !== -1
+    && src.indexOf("estado === 'Perdido' && r.perdidoMotivo") === -1
+    && src.indexOf("estado==='Perdido' && r.perdidoMotivo") === -1,
+  vista + ' ofrece el botón para consultar toda pérdida');
 });
 
 for(const marca of MARCAS){

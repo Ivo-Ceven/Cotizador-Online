@@ -735,7 +735,7 @@ function renderPipeline(){
     // guardado fuera de la lista en vez de cambiarlo en silencio.
     var statusSel = '<select data-pact="status"'+rowA+' style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
       + cevenEstadoOptions(estado, false) + '</select>'
-      + (estado==='Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
+      + (estado==='Perdido'
           ? ' <button class="bs" data-pact="perdido-detalle"'+rowA+' style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
           : '');
 

@@ -309,7 +309,7 @@ function _pipeTablaHTML(filas, scope, opts){
         celdaMes = '<span style="font-size:12px">' + cevenEsc(opts.mesLabel || '—') + '</span>';
         var cSt = cevenEstadoPill(estado);
         celdaEstado = '<span class="'+cevenEsc(cevenSpillClass(estado))+'" style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+cSt.fg+';background:'+cSt.bg+'">'+cevenEsc(cevenEstadoLabel(estado))+'</span>'
-          + (estado === 'Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
+          + (estado === 'Perdido'
             ? ' <button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
             : '');
         celdaAcc = '<button class="bs" data-act="restore" data-k="'+kA+'" data-mk="'+cevenEsc(opts.monthKey||'')+'" title="Devolver este proyecto al pipeline actual" style="font-size:11px;padding:2px 8px">↩ Restaurar</button>';
@@ -317,7 +317,7 @@ function _pipeTablaHTML(filas, scope, opts){
         celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'});
         celdaEstado = '<select data-act="est" data-k="'+kA+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
           + cevenEstadoOptions(estado, false) + '</select>'
-          + (estado === 'Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
+          + (estado === 'Perdido'
             ? ' <button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
             : '');
         /* Netsuite. Con link cargado el botón ABRE Netsuite (verde, con la
