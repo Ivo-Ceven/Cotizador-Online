@@ -7,6 +7,12 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const MARCAS = ['apple', 'poly', 'legamaster'];
 const MOTIVOS = ['Por precio', 'Por stock', 'Por solución no compatible', 'El proyecto se canceló', 'Otro motivo'];
+const VISTAS = [
+  'src/apple/js/pipeline-view.js',
+  'src/apple/js/archive-view.js',
+  'src/poly/js/pipeline-view.js',
+  'src/legamaster/js/pipeline-view.js'
+];
 let fallos = 0, corridas = 0;
 
 function ok(cond, nombre, detalle){
@@ -19,7 +25,12 @@ function ok(cond, nombre, detalle){
 function cargar(marca){
   const ctx = {
     console,
-    document: { getElementById: () => null, createElement: () => ({}), body: {appendChild: () => {}} },
+    cevenEsc: s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'),
+    document: {
+      getElementById: () => null,
+      createElement: () => ({style: {}, querySelector: () => ({}), parentNode: null}),
+      body: {appendChild: el => { el.parentNode = {removeChild: () => {}}; ctx.modal = el; }}
+    },
     cevenCanEditPipelineRow: () => true,
     showToast: () => {},
     pushPipeUndo: id => { ctx.undoId = id; },
@@ -41,6 +52,18 @@ function cargar(marca){
 console.log('\nMotivo de pérdida en pipelines comerciales\n');
 ok(JSON.stringify(cargar('apple').PIPE_MOTIVOS_PERDIDA) === JSON.stringify(MOTIVOS),
    'las opciones requeridas están disponibles en el modal');
+{
+  const e = cargar('apple');
+  e.abrirDetalleMotivoPerdida({motivo: 'Por precio', detalle: 'Oferta <competidora>'});
+  ok(/Detalle de pérdida/.test(e.modal.innerHTML) && /Por precio/.test(e.modal.innerHTML)
+    && /Oferta &lt;competidora&gt;/.test(e.modal.innerHTML),
+  'el detalle muestra motivo y feedback escapado');
+}
+VISTAS.forEach(vista => {
+  const src = fs.readFileSync(path.join(ROOT, vista), 'utf8');
+  ok(src.indexOf('Ver motivo') !== -1 && src.indexOf('perdido-detalle') !== -1,
+     vista + ' ofrece el botón para consultar la pérdida');
+});
 
 for(const marca of MARCAS){
   console.log('\n' + marca.toUpperCase());

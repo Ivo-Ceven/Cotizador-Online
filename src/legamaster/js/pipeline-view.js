@@ -214,14 +214,17 @@ function _pipeTablaHTML(filas, scope, opts){
       if(esArchivo){
         celdaMes = '<span style="font-size:12px">' + cevenEsc(opts.mesLabel || '—') + '</span>';
         var cSt = cevenEstadoPill(estado);
-        celdaEstado = '<span class="'+cevenEsc(cevenSpillClass(estado))+'" style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+cSt.fg+';background:'+cSt.bg+'">'+cevenEsc(cevenEstadoLabel(estado))+'</span>';
+        celdaEstado = '<span class="'+cevenEsc(cevenSpillClass(estado))+'" style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+cSt.fg+';background:'+cSt.bg+'">'+cevenEsc(cevenEstadoLabel(estado))+'</span>'
+          + (estado === 'Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
+            ? ' <button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
+            : '');
         celdaAcc = '<button class="bs" data-act="restore" data-k="'+kA+'" data-mk="'+cevenEsc(opts.monthKey||'')+'" title="Devolver este proyecto al pipeline actual" style="font-size:11px;padding:2px 8px">↩ Restaurar</button>';
       } else {
         celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'});
         celdaEstado = '<select data-act="est" data-k="'+kA+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
           + cevenEstadoOptions(estado, false) + '</select>'
           + (estado === 'Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
-            ? ' <span title="'+cevenEsc(r.perdidoMotivo.motivo + (r.perdidoMotivo.detalle ? ': '+r.perdidoMotivo.detalle : ''))+'" style="cursor:help">💬</span>'
+            ? ' <button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
             : '');
         celdaAcc = (cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rm" data-k="'+kA+'" title="Quitar este proyecto del pipeline">×</button>' : '');
       }
@@ -270,6 +273,7 @@ function pipeBindDelegation(){
 
     if(act === 'opc'){ cambiarOpcionVigente(n.row.id); return; }
     if(act === 'exp')          togglePipeNode(el.getAttribute('data-k'));
+    else if(act === 'perdido-detalle') abrirDetalleMotivoPerdida(n.row.perdidoMotivo);
     else if(act === 'rm')      removePipeline(n.row.id);
     else if(act === 'restore') restoreFromArchive(el.getAttribute('data-mk'), n.row.id);
   });

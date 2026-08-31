@@ -165,7 +165,10 @@ function renderArchiveMonth(monthKey, entries){
       +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+partialBadge+'</div></td>'
       +'<td><div title="'+cevenEsc(r.proyecto||'')+'" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
       +'<td style="font-size:12px">'+mesSel+'</td>'
-      +'<td style="text-align:center"><span style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+fg+';background:'+(r.estado==='Facturado'?'#e0f5f1':'#fbbebe')+'">'+cevenEsc(r.estado)+'</span></td>'
+      +'<td style="text-align:center"><span style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+fg+';background:'+(r.estado==='Facturado'?'#e0f5f1':'#fbbebe')+'">'+cevenEsc(r.estado)+'</span>'
+        +(r.estado === 'Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
+          ? ' <button class="bs" data-aact="perdido-detalle"'+idA+' style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
+          : '')+'</td>'
       +'<td style="text-align:center">'+cevenEsc(r.qMac||'—')+'</td>'
       +'<td style="text-align:center">'+cevenEsc(r.qIph||'—')+'</td>'
       +'<td style="text-align:center">'+cevenEsc(r.qIpad||'—')+'</td>'
@@ -225,6 +228,11 @@ function renderArchiveMonth(monthKey, entries){
     switch(el.getAttribute('data-aact')){
       case 'expand':  togglePipelineRow(el.getAttribute('data-akey')); break;
       case 'restore': restoreFromArchive(el.getAttribute('data-amonth'), el.getAttribute('data-aid')); break;
+      case 'perdido-detalle':
+        var rows = getArchive()[el.getAttribute('data-amonth')] || [];
+        var row = rows.filter(function(r){ return String(r.id) === String(el.getAttribute('data-aid')); })[0];
+        abrirDetalleMotivoPerdida(row && row.perdidoMotivo);
+        break;
       case 'ta':      openTargetAnualEditMonth(el.getAttribute('data-amonth')); break;
     }
   });

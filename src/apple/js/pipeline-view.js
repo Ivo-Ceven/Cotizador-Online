@@ -736,7 +736,7 @@ function renderPipeline(){
     var statusSel = '<select data-pact="status"'+rowA+' style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
       + cevenEstadoOptions(estado, false) + '</select>'
       + (estado==='Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
-          ? ' <span title="'+cevenEsc(r.perdidoMotivo.motivo + (r.perdidoMotivo.detalle ? ': '+r.perdidoMotivo.detalle : ''))+'" style="cursor:help">💬</span>'
+          ? ' <button class="bs" data-pact="perdido-detalle"'+rowA+' style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>'
           : '');
 
     var expanded = window._pipeExpanded && window._pipeExpanded[expandKey];
@@ -881,6 +881,11 @@ function renderPipeline(){
         case 'quote':   openPipelineQuote(el.getAttribute('data-pqnum')); break;
         case 'merge':   mergeBackVirtualRow(c.id, c.key); break;
         case 'opc':     e.stopPropagation(); cambiarOpcionVigente(c.id); break;
+        case 'perdido-detalle':
+          e.stopPropagation();
+          var motivoRow = getPipeline().filter(function(r){ return r.id === c.id; })[0];
+          abrirDetalleMotivoPerdida(motivoRow && motivoRow.perdidoMotivo);
+          break;
         case 'del':     e.stopPropagation(); removePipeline(c.id); break;
       }
     });

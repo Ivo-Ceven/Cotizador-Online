@@ -35,3 +35,26 @@ function abrirModalMotivoPerdida(onConfirm, onCancel){
   wrap.querySelector('[data-cancel]').onclick = function(){ close(); if(onCancel) onCancel(); };
   wrap.onclick = function(ev){ if(ev.target===wrap){ close(); if(onCancel) onCancel(); } };
 }
+
+function abrirDetalleMotivoPerdida(perdidoMotivo){
+  var old = document.getElementById('ceven-generic-modal');
+  if(old) old.parentNode.removeChild(old);
+  var motivo = (perdidoMotivo && perdidoMotivo.motivo) || 'Sin motivo registrado';
+  var detalle = (perdidoMotivo && perdidoMotivo.detalle) || 'Sin feedback adicional.';
+  var wrap = document.createElement('div');
+  wrap.id = 'ceven-generic-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif';
+  wrap.innerHTML =
+    '<div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:22px;width:380px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">'
+      + '<div style="font-size:15px;font-weight:600;color:#1d1d1f;margin-bottom:14px">Detalle de pérdida</div>'
+      + '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Motivo</div>'
+      + '<div style="font-size:14px;font-weight:600;color:#1d1d1f;margin-bottom:14px">'+cevenEsc(motivo)+'</div>'
+      + '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Feedback</div>'
+      + '<div style="font-size:14px;color:#1d1d1f;white-space:pre-wrap;line-height:1.45;margin-bottom:18px">'+cevenEsc(detalle)+'</div>'
+      + '<div style="display:flex;justify-content:flex-end"><button data-close style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit">Cerrar</button></div>'
+    + '</div>';
+  document.body.appendChild(wrap);
+  function close(){ if(wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+  wrap.querySelector('[data-close]').onclick = close;
+  wrap.onclick = function(ev){ if(ev.target === wrap) close(); };
+}
