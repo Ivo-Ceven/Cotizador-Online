@@ -825,6 +825,9 @@ function renderPipeline(){
     ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Limpiar filtros".'
     : 'El pipeline está vacío. Cargá una cotización y tocá "Agregar al pipeline".';
   document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="15" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
+  // #region agent log
+  (function(){var b=document.querySelectorAll('#pipe-body [data-pact="perdido-detalle"]'),x=b[0],r=x&&x.getBoundingClientRect(),s=x&&getComputedStyle(x);fetch('http://127.0.0.1:7518/ingest/56f0602d-45a3-4685-ac87-9704175e562e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2fe917'},body:JSON.stringify({sessionId:'2fe917',runId:'initial',hypothesisId:'H1-H4',location:'src/apple/js/pipeline-view.js:826',message:'Pipeline perdido button render metrics',data:{perdidoRows:filtered.filter(function(r){return (r.estado||'Cotizado')==='Perdido';}).length,buttons:b.length,buttonWidth:r&&r.width,buttonHeight:r&&r.height,buttonDisplay:s&&s.display,buttonVisibility:s&&s.visibility,cellWidth:x&&x.parentElement.getBoundingClientRect().width,cellScrollWidth:x&&x.parentElement.scrollWidth},timestamp:Date.now()})}).catch(()=>{});})();
+  // #endregion
   attachPipeSortHandlers();
 }
 
