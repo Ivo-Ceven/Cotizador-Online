@@ -169,7 +169,7 @@ function renderHistory(){
       trows+='<tr><td>'+cevenEsc(r['SKU'])+'</td><td class="wrap">'+cevenEsc(r['Descripción'])+'</td>'
         +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
         +'<td style="text-align:center">'+cevenEsc(r['Nota']||'—')+'</td>'
-        +'<td style="text-align:center">'+cevenEsc(r['IVA']||'—')+'</td>'
+        +'<td style="text-align:center">'+cevenEsc(cevenFormatoIVA(r['IVA'])||'—')+'</td>'
         +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
         +'<td style="text-align:right;font-weight:500">USD '+fI(parseFloat(r['Total'])||0)+'</td></tr>';
     }

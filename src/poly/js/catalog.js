@@ -191,18 +191,20 @@ function cevenDealTxt(deal){
    Por ahora el porcentaje SOLO se muestra: no se suma a los precios ni se
    discrimina en un total. Los documentos siguen diciendo "Los precios
    expresados NO incluyen Impuestos". */
-var CEVEN_IVA_REDUCIDO = '10.5%';
+var CEVEN_IVA_REDUCIDO = '10,5%';
 var CEVEN_IVA_GENERAL  = '21%';
 
 function cevenIvaPct(programaFiscal){
-  return /reducid/i.test(String(programaFiscal||'')) ? CEVEN_IVA_REDUCIDO : CEVEN_IVA_GENERAL;
+  return cevenFormatoIVA(programaFiscal) === CEVEN_IVA_REDUCIDO
+    ? CEVEN_IVA_REDUCIDO
+    : CEVEN_IVA_GENERAL;
 }
 
 /* El % de un producto del catálogo. `ivaPct` lo escribe el importador; el `||`
    cubre los productos guardados antes de que la columna existiera y los que se
    cargan a mano (que no tienen programa fiscal y caen en la general). */
 function cevenProductoIva(p){
-  return (p && p.ivaPct) || cevenIvaPct(p && p.iva);
+  return cevenFormatoIVA((p && p.ivaPct) || cevenIvaPct(p && p.iva));
 }
 
 /* El IVA de un SKU según el catálogo cargado. Lo usa quotes-db.js al reabrir
@@ -764,7 +766,7 @@ function _catRowHTML(p, idx, idAttr, opts){
        excepción (44 de 564 filas del último archivo). */
     +'<td style="text-align:center;white-space:nowrap;'
       + (ivaPct === CEVEN_IVA_REDUCIDO ? 'color:#7a5800;font-weight:600' : 'color:#6e6e73') + '"'
-      + (p.iva ? ' title="Programa fiscal: '+cevenEsc(p.iva)+'"' : '')
+      + ' title="Alícuota de IVA: '+cevenEsc(ivaPct)+'"'
       + '>'+cevenEsc(ivaPct)+'</td>'
     +'<td style="text-align:center;font-weight:600;color:'+stockColor+'">'+(hasStock?cevenEsc(p.stock):'—')+'</td>'
     +(opts.admin

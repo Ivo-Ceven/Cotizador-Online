@@ -65,6 +65,7 @@ const rows = crudas.slice(1).map(v => {
 
 /* ---- Cargar el importador real, con lo justo del entorno del navegador ----- */
 function cargarCatalogo(){
+  const safe = fs.readFileSync(path.join(ROOT, 'src/shared/safe.js'), 'utf8');
   const opc  = fs.readFileSync(path.join(ROOT, 'src/shared/opciones.js'), 'utf8');
   const core = fs.readFileSync(path.join(ROOT, 'src/shared/catalog-core.js'), 'utf8');
   const cat  = fs.readFileSync(path.join(ROOT, 'src/poly/js/catalog.js'), 'utf8');
@@ -115,6 +116,7 @@ function cargarCatalogo(){
   ctx.window = ctx;
   ctx.globalThis = ctx;
   vm.createContext(ctx);
+  vm.runInContext(safe, ctx);
   vm.runInContext(opc, ctx);
   vm.runInContext(core, ctx);
   vm.runInContext(cat, ctx);
@@ -187,13 +189,13 @@ if(a4) ok(a4.precios['Ceven - Tier 2'] === 4346 && a4.precios['Ceven - Tier 1'] 
    verifica acá es que se aplique sobre el archivo real (520 generales y 44
    reducidos) y que el porcentaje viaje en el producto — es lo que después
    termina en la cotización, en el PDF y en el comprobante. */
-ok(ctx.cevenIvaPct('IVA REDUCIDO') === '10.5%', '"IVA REDUCIDO" → 10.5%', ctx.cevenIvaPct('IVA REDUCIDO'));
+ok(ctx.cevenIvaPct('IVA REDUCIDO') === '10,5%', '"IVA REDUCIDO" → 10,5%', ctx.cevenIvaPct('IVA REDUCIDO'));
 ok(ctx.cevenIvaPct('IVA GENERAL')  === '21%',   '"IVA GENERAL" → 21%',   ctx.cevenIvaPct('IVA GENERAL'));
-ok(ctx.cevenIvaPct('Reducido')     === '10.5%', 'el match no depende de mayúsculas ni del texto entero');
+ok(ctx.cevenIvaPct('Reducido')     === '10,5%', 'el match no depende de mayúsculas ni del texto entero');
 ok(ctx.cevenIvaPct('')             === '21%',   'sin dato fiscal → 21% (la alícuota general)');
 ok(ctx.cevenIvaPct(undefined)      === '21%',   'undefined → 21%, no rompe');
 
-const reducidos = prods.filter(p => p.ivaPct === '10.5%');
+const reducidos = prods.filter(p => p.ivaPct === '10,5%');
 const generales = prods.filter(p => p.ivaPct === '21%');
 ok(reducidos.length + generales.length === prods.length,
    'los 77 productos quedaron con una alícuota (ninguno sin IVA)',

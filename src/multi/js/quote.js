@@ -333,7 +333,7 @@ function renderQ(){
 
 // El IVA de la linea, con el nombre que le da cada marca a ese campo.
 function _ivaDeLinea(it){
-  return it.iva || it.taxes || '—';
+  return cevenFormatoIVA(it.iva || it.taxes) || '—';
 }
 
 /* Aviso cuando se edita la opcion que NO es la vigente: sin el, se carga media

@@ -46,7 +46,7 @@ function cargar(campos){
     'np-desc':  nuevoCampo(campos.desc),
     'np-rubro': nuevoCampo(campos.rubro),
     'np-stock': nuevoCampo(campos.stock),
-    'np-iva':   nuevoCampo(campos.iva || 'IVA GENERAL'),
+    'np-iva':   nuevoCampo(campos.iva || '21%'),
     'nperr':    nuevoCampo(''),
     'np-precios': nuevoCampo(''),
     'np-rubro-list': nuevoCampo(''),
@@ -90,9 +90,10 @@ function cargar(campos){
                        {v:'Ceven - Tier 3',lbl:'Tier 3'},{v:'Negocios Especiales',lbl:'Neg. Especiales'}],
     _rubrosDelCatalogo: () => ['Audio','Video'],
     fD: n => Number(n).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}),
-    CEVEN_IVA_REDUCIDO: '10.5%',
+    CEVEN_IVA_REDUCIDO: '10,5%',
     CEVEN_IVA_GENERAL: '21%',
-    cevenIvaPct: pf => /reducid/i.test(String(pf||'')) ? '10.5%' : '21%'
+    cevenIvaPct: pf => String(pf || '').replace('.', ',') === '10,5%' ? '10,5%' : '21%',
+    cevenProductoIva: p => String((p && p.ivaPct) || (p && p.iva) || '21%').replace('.', ',')
   };
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
@@ -109,7 +110,7 @@ console.log('\nArtículo manual del catálogo de Poly\n');
 /* ---- Alta completa --------------------------------------------------------- */
 let ctx = cargar({
   sku:'CEV-SERV-01', desc:'Servicio de instalación', rubro:'Servicios',
-  stock:'0', iva:'IVA REDUCIDO',
+  stock:'0', iva:'10,5%',
   precios:[['Ceven - Tier 1','1.250,50'], ['Ceven - Tier 2','1200'],
            ['Ceven - Tier 3',''],          ['Negocios Especiales','0']]
 });
@@ -127,7 +128,7 @@ ok(p && !('Ceven - Tier 3' in p.precios), 'el nivel VACÍO no se guarda (≠ gua
    p && JSON.stringify(p.precios));
 ok(p && p.precios['Negocios Especiales'] === 0, 'un 0 escrito a propósito SÍ se guarda (sin cargo)');
 ok(p && p.stock === 0, 'stock 0 = agotado, y se guarda como 0', p && String(p.stock));
-ok(p && p.iva === 'IVA REDUCIDO' && p.ivaPct === '10.5%', 'el IVA elegido se guarda con las dos formas');
+ok(p && p.iva === '10,5%' && p.ivaPct === '10,5%', 'el IVA elegido se guarda como alícuota numérica');
 
 /* ---- Stock vacío ≠ 0 ------------------------------------------------------- */
 ctx = cargar({ sku:'X-1', desc:'Sin stock declarado', stock:'', precios:[] });
@@ -149,7 +150,7 @@ ok(/no es un número válido/.test(ctx._els['nperr'].textContent),
    'y el cartel dice qué nivel está mal', ctx._els['nperr'].textContent);
 
 /* ---- Edición: no se pierden los campos que el formulario no toca ----------- */
-ctx = cargar({ sku:'X-3', desc:'Nuevo nombre', rubro:'Audio', stock:'7', iva:'IVA GENERAL',
+ctx = cargar({ sku:'X-3', desc:'Nuevo nombre', rubro:'Audio', stock:'7', iva:'21%',
                precios:[['Ceven - Tier 1','100']] });
 ctx.products.push({ id:'m9', sku:'X-3', description:'Viejo', manual:true, needsReview:true });
 ctx.editingManualId = 'm9';

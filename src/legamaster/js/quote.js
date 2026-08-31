@@ -49,7 +49,7 @@ function renderQ() {
       /* IVA de la línea: sale directo de la columna IVA del Excel del proveedor
          (legamaster/js/catalog.js). Se muestra, no se edita, y por ahora no
          entra en ningún cálculo. */
-      +'<td style="text-align:center;white-space:nowrap;font-size:12px;color:#6e6e73">'+cevenEsc(it.iva||'—')+'</td>'
+      +'<td style="text-align:center;white-space:nowrap;font-size:12px;color:#6e6e73">'+cevenEsc(cevenFormatoIVA(it.iva)||'—')+'</td>'
       +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc(it.stock||'')+'" placeholder="—" style="width:100%" data-act="nota" data-id="'+idA+'"></td>'
       +'<td style="text-align:center;white-space:nowrap">'
       +'<button class="q-del" data-act="rm" data-id="'+idA+'" title="Eliminar de la cotización">🗑</button>'

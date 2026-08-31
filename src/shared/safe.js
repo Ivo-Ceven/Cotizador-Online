@@ -27,6 +27,17 @@ window.cevenEsc = function(s){
     .replace(/'/g, '&#39;');
 };
 
+/* Convierte las denominaciones históricas de IVA a una alícuota visible. */
+window.cevenFormatoIVA = function(v){
+  var s = String(v == null ? '' : v).trim();
+  if(!s) return '';
+  if(/reducid/i.test(s)) return '10,5%';
+  if(/general/i.test(s)) return '21%';
+  return s
+    .replace(/(\d+)[\.,](\d+)\s*%/g, '$1,$2%')
+    .replace(/(\d+)\s*%/g, '$1%');
+};
+
 /* Escribe en localStorage. Devuelve true si se guardo, false si no.
    NUNCA falla en silencio: ante cuota llena avisa al usuario. */
 window.cevenLsSet = function(key, value){

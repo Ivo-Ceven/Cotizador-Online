@@ -73,7 +73,7 @@ function doSave(overwrite){
   cevenEditandoQNum(qn);
   for(var j=0;j<items.length;j++){
     var it=items[j];
-    db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','IVA':it.taxes||'','Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':it.taxes||'','_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin}, it));
+    db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Disponibilidad':it.stock||'—','IVA':cevenFormatoIVA(it.taxes),'Margen %':it.itemMargin,'P. Venta Unitario':it.salePrice,'Total':it.salePrice*it.qty,'Tipo':'producto','_base':it.sellingBase,'_nac':it.itemNac,'_lob':it.lob||'','_taxes':cevenFormatoIVA(it.taxes),'_estado':estadoQ,'_nacIncluded':!!it.nacIncluded,'_manualMg':!!it.manualMargin}, it));
   }
   for(var k=0;k<warrantyItems.length;k++){
     var w=warrantyItems[k];

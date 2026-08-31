@@ -54,7 +54,7 @@ function exportSelectedPDF(){
             +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
             +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
             +'<td style="text-align:right;font-weight:600">USD '+fI(lineTot)+'</td>'
-            +'<td style="text-align:center">'+cevenEsc(r['IVA']||r['_taxes']||'21%')+'</td>'
+            +'<td style="text-align:center">'+cevenEsc(cevenFormatoIVA(r['IVA']||r['_taxes']||'21%'))+'</td>'
             +'<td style="text-align:center"><span class="badge-'+(String(wCanal).toLowerCase()==='cc'?'cc':'gl')+'">'+cevenEsc(wCanal)+'</span> · '+cevenEsc(wAnios)+' '+(wAnios===1?'año':'años')+'</td></tr>';
           continue;
         }
@@ -68,7 +68,7 @@ function exportSelectedPDF(){
           +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
           +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
           +'<td style="text-align:right;font-weight:600">USD '+fI(lineTot)+'</td>'
-          +'<td style="text-align:center">'+cevenEsc(r['IVA']||r['_taxes']||getIVA(r['_lob']||'')||'—')+'</td>'
+          +'<td style="text-align:center">'+cevenEsc(cevenFormatoIVA(r['IVA']||r['_taxes']||getIVA(r['_lob']||''))||'—')+'</td>'
           +'<td style="text-align:center">'+cevenEsc(r['Disponibilidad']||'—')+'</td></tr>';
       }
       if(!trows && !wrows) continue;
@@ -183,7 +183,7 @@ function buildPDF(){
           +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.qty)+'</td>'
           +'<td class="nowrap" style="text-align:right">'+dp(it.salePrice)+'</td>'
           +'<td class="nowrap" style="text-align:right;font-weight:600">'+dp(it.salePrice*it.qty)+'</td>'
-          +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.taxes||'—')+'</td>'
+          +'<td class="nowrap" style="text-align:center">'+cevenEsc(cevenFormatoIVA(it.taxes)||'—')+'</td>'
           +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.stock||'—')+'</td>'
           +'</tr>';
       }

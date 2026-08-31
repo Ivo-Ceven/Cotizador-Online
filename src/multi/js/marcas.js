@@ -109,12 +109,12 @@ var CEVEN_MULTI_MARCAS = {
            multimarca puede tener A y B, pero a la marca baja la vigente. */
         'Opción': 1, '_opcEf': 1,
         'SKU': it.sku, 'Descripción': it.description, 'Cantidad': it.qty,
-        'Disponibilidad': it.stock || '—', 'IVA': it.taxes || '',
+        'Disponibilidad': it.stock || '—', 'IVA': cevenFormatoIVA(it.taxes),
         'Margen %': it.itemMargin,
         'P. Venta Unitario': it.salePrice, 'Total': it.salePrice * it.qty,
         'Tipo': 'producto',
         '_base': it.sellingBase, '_nac': it.itemNac, '_lob': it.lob || '',
-        '_taxes': it.taxes || '', '_estado': ctx.estado,
+        '_taxes': cevenFormatoIVA(it.taxes), '_estado': ctx.estado,
         '_nacIncluded': !!it.nacIncluded, '_manualMg': !!it.manualMargin,
         // De dónde vino. No lo usa el cotizador de Apple; sirve para rastrear
         // una línea hasta el pedido que la originó.
@@ -175,7 +175,7 @@ var CEVEN_MULTI_MARCAS = {
         'Opción': 1, '_opcEf': 1,
         'Nivel de precio': cevenPolyTierEfectivo(it, ctx.tierGlobal),
         'SKU': it.sku, 'Descripción': it.description, 'Cantidad': it.qty,
-        'Nota': it.stock || '—', 'IVA': it.iva || '',
+        'Nota': it.stock || '—', 'IVA': cevenFormatoIVA(it.iva),
         'P. Venta Unitario': it.salePrice, 'Total': sp * it.qty,
         'Tipo': 'producto', '_estado': ctx.estado,
         '_multi': ctx.multiQNum
@@ -235,7 +235,7 @@ var CEVEN_MULTI_MARCAS = {
         'Opción': 1, '_opcEf': 1,
         'Nivel de precio': cevenLegamasterTierEfectivo(it, ctx.tierGlobal),
         'SKU': it.sku, 'Descripción': it.description, 'Cantidad': it.qty,
-        'Nota': it.stock || '—', 'IVA': it.iva || '',
+        'Nota': it.stock || '—', 'IVA': cevenFormatoIVA(it.iva),
         'P. Venta Unitario': it.salePrice, 'Total': sp * it.qty,
         'Tipo': 'producto', '_estado': ctx.estado,
         '_multi': ctx.multiQNum

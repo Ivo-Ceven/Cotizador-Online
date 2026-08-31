@@ -56,7 +56,7 @@ var CEVEN_APPLE_MODEL_CATEGORY = {
   'iPhone Air':'iphone'
 };
 
-var CEVEN_APPLE_IVA_MAP = {"Accessories":"21%","TV & Home":"21%","Mac":"10.5%","Mac English":"10.5%","Mac Spanish":"10.5%","iPad":"10.5%","iPhone":"10.5% + 21%","Watch":"21%"};
+var CEVEN_APPLE_IVA_MAP = {"Accessories":"21%","TV & Home":"21%","Mac":"10,5%","Mac English":"10,5%","Mac Spanish":"10,5%","iPad":"10,5%","iPhone":"10,5% + 21%","Watch":"21%"};
 
 
 /* ── Precio ──────────────────────────────────────────────────────────────

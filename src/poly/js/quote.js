@@ -63,8 +63,8 @@ function renderQ() {
          Excel del ERP (10,5 % si dice reducido, 21 % si no — ver
          poly/js/catalog.js) y por ahora no entra en ningún cálculo. */
       +'<td style="text-align:center;white-space:nowrap;font-size:12px;'
-        +(it.iva===CEVEN_IVA_REDUCIDO?'color:#7a5800;font-weight:600':'color:#6e6e73')+'">'
-        +cevenEsc(it.iva||'—')+'</td>'
+        +(cevenFormatoIVA(it.iva)===CEVEN_IVA_REDUCIDO?'color:#7a5800;font-weight:600':'color:#6e6e73')+'">'
+        +cevenEsc(cevenFormatoIVA(it.iva)||'—')+'</td>'
       +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc(it.stock||'')+'" placeholder="—" style="width:100%" data-act="nota" data-id="'+idA+'"></td>'
       /* Una sola acción: sacar la línea. Antes había además un ✎ que abría el
          modal de edición de ítem; se sacó porque en esta tabla ya se editan a

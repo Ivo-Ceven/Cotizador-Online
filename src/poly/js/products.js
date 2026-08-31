@@ -59,7 +59,7 @@ function prepAddProd(){
   _npSet('np-desc', '');
   _npSet('np-rubro', '');
   _npSet('np-stock', '');
-  _npSet('np-iva', 'IVA GENERAL');   // la alícuota general es el caso normal
+  _npSet('np-iva', CEVEN_IVA_GENERAL);
   _npPintarRubros();
   _npPintarPrecios(null);
   document.getElementById('nperr').style.display='none';
@@ -78,7 +78,7 @@ function editManualProduct(pid){
   // null = sin dato y 0 = agotado son cosas distintas y se muestran distinto en
   // el catálogo: el campo queda vacío solo cuando de verdad no hay dato.
   _npSet('np-stock', (p.stock === null || p.stock === undefined) ? '' : p.stock);
-  _npSet('np-iva',   /reducid/i.test(String(p.iva||'')) || p.ivaPct === CEVEN_IVA_REDUCIDO ? 'IVA REDUCIDO' : 'IVA GENERAL');
+  _npSet('np-iva', cevenProductoIva(p));
   _npPintarRubros();
   _npPintarPrecios(p.precios);
   document.getElementById('nperr').style.display = 'none';

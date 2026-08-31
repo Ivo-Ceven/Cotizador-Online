@@ -86,19 +86,20 @@ function _regiFechaDDMMYYYY(iso){
    El pipeline REGI tiene que "quedar vacío": toda oportunidad que HP nos
    reconoce tiene que terminar con una cotización real cargada del lado de
    Ceven. El matching es `pipeline.opg` (ya existe, "número de precio
-   especial que asigna la marca") contra la columna `regi` de acá — el
-   código de Deal Registration YA APROBADO por HP, no `opd` (que es la clave
-   interna del archivo pero nunca es el número que el equipo termina usando).
-   Consecuencia aceptada: mientras HP no aprueba el REGI (columna `regi`
-   vacía, pasa en varias filas reales) esa oportunidad no tiene con qué
-   matchear todavía — no hay vuelta que darle sin usar `opd` en su lugar, y
-   esa alternativa se descartó a propósito.
+   especial que asigna la marca") contra `regi` si HP ya lo aprobó. Si no hay
+   REGI, usa `opd`, que es el dato presente en todas las filas del Excel.
+   Así el vínculo existente por REGI no cambia y las oportunidades pendientes
+   de aprobación también se pueden cargar y vincular.
 
    Sin columna nueva ni fetch nuevo a Supabase: getPipeline() ya es la misma
    fuente en memoria que usa toda la vista del pipeline real, mantenida al
    día por shared/sync.js. */
 function _regiNormCodigo(v){
   return String(v == null ? '' : v).trim().toUpperCase();
+}
+
+function _regiCodigoVinculo(r){
+  return _regiNormCodigo(r && (r.regi || r.opd));
 }
 
 // Guarda la FILA completa (no solo el id): la vista de Estadísticas
@@ -114,12 +115,13 @@ function _regiOpgVinculadosSet(){
   return set;
 }
 
-/* Una oportunidad REGI está vinculada si tiene REGI aprobado Y ese código
-   coincide con el OPG de alguna fila real. `vinculados` la arma UNA vez por
-   render (_regiOpgVinculadosSet) para no recorrer getPipeline() por fila. */
+/* Una oportunidad REGI está vinculada si su REGI aprobado —o su OPD cuando
+   todavía no tiene REGI— coincide con el OPG de alguna fila real.
+   `vinculados` la arma UNA vez por render (_regiOpgVinculadosSet) para no
+   recorrer getPipeline() por fila. */
 function _regiEsVinculada(r, vinculados){
-  var v = _regiNormCodigo(r.regi);
-  return !!(v && vinculados[v]);
+  var codigo = _regiCodigoVinculo(r);
+  return !!(codigo && vinculados[codigo]);
 }
 
 /* Usada desde pipeline-view.js (fila del pipeline REAL) para el 🎯 que
@@ -129,7 +131,7 @@ function _regiEsVinculada(r, vinculados){
 function _regiOpgMatcheaVigente(opg){
   var v = _regiNormCodigo(opg);
   if(!v || !window._regiPipeRows) return false;
-  return window._regiPipeRows.some(function(r){ return _regiNormCodigo(r.regi) === v; });
+  return window._regiPipeRows.some(function(r){ return _regiCodigoVinculo(r) === v; });
 }
 
 /* ── Estadísticas REGI: HP vs. Ceven (27/08/2026) ──────────────────────────
@@ -145,8 +147,8 @@ function _regiPairsVinculadas(){
   var vinculados = _regiOpgVinculadosSet();
   var pares = [];
   (window._regiPipeRows || []).forEach(function(hp){
-    var v = _regiNormCodigo(hp.regi);
-    var ceven = v && vinculados[v];
+    var codigo = _regiCodigoVinculo(hp);
+    var ceven = codigo && vinculados[codigo];
     if(ceven) pares.push({hp: hp, ceven: ceven});
   });
   return pares;
@@ -436,7 +438,7 @@ function _cevenRegiPipeFetch(){
 function renderRegiPipeline(){
   if(window._regiPipeRows === null){
     var body = document.getElementById('regi-pipe-body');
-    if(body) body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aeaeb2;padding:24px">Cargando…</td></tr>';
+    if(body) body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">Cargando…</td></tr>';
     var dash = document.getElementById('pipe-dashboard');
     if(dash) dash.style.display = 'none';
     _cevenRegiPipeFetch().then(function(){
@@ -445,7 +447,7 @@ function renderRegiPipeline(){
       if(sel && sel.value === '__regi') _renderRegiPipelineFromCache();
     }).catch(function(e){
       var b = document.getElementById('regi-pipe-body');
-      if(b) b.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#d70015;padding:24px">No se pudo cargar el pipeline REGI'
+      if(b) b.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#d70015;padding:24px">No se pudo cargar el pipeline REGI'
         + ((e && e.message) ? (': ' + cevenEsc(e.message)) : '.') + '</td></tr>';
     });
     return;
@@ -486,7 +488,7 @@ function _renderRegiPipelineFromCache(){
   cevenPintarTopClientes(sinBuscar);
 
   var filtered = !q ? sinBuscar.slice() : sinBuscar.filter(function(r){
-    var hay = ((r.cliente||'')+' '+(r.proyecto||'')+' '+(r.regi||'')+' '+(r.primaryPartner||'')).toLowerCase();
+    var hay = ((r.cliente||'')+' '+(r.proyecto||'')+' '+(r.regi||'')+' '+(r.opd||'')+' '+(r.primaryPartner||'')).toLowerCase();
     return hay.indexOf(q) !== -1;
   });
 
@@ -515,7 +517,7 @@ function _renderRegiPipelineFromCache(){
   } else {
     _vacio = _hayFiltros ? 'Ninguna oportunidad coincide con los filtros. Tocá "✕ Limpiar filtros".' : 'El Excel importado no tiene oportunidades.';
   }
-  document.getElementById('regi-pipe-body').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
+  document.getElementById('regi-pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
   _regiBindDelegation();
 }
@@ -725,7 +727,7 @@ function _regiPintarDashboard(filtered, forecastFilter){
 function _regiGroupRowHTML(g, key, abierto){
   var n = g.n + (g.n === 1 ? ' oportunidad' : ' oportunidades');
   return '<tr class="pipe-grp" data-act="expcli" data-k="'+cevenEsc(key)+'" style="cursor:pointer">'
-    + '<td colspan="8" style="padding:9px 12px;background:#f0f0f3;border-top:0.5px solid #d2d2d7">'
+    + '<td colspan="9" style="padding:9px 12px;background:#f0f0f3;border-top:0.5px solid #d2d2d7">'
       + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
         + '<span style="font-size:11px;width:12px;display:inline-block">'+(abierto?'▼':'▶')+'</span>'
         + '<strong style="font-size:13px">'+cevenEsc(g.label)+'</strong>'
@@ -776,6 +778,7 @@ function _regiRowHTML(r){
       + ' <button class="bs" data-act="regi-copiar" data-opd="'+cevenEsc(r.opd)+'" title="Crear la cotización real en nuestro pipeline a partir de esta oportunidad" style="padding:2px 8px;font-size:12px;background:#e8f4ff;color:#0071e3;border-color:#b8ddff">'
         + ((window._regiCopiadas && window._regiCopiadas[r.opd]) ? '➕ Copiar de nuevo' : '➕ Copiar a Ceven') + '</button>';
   return '<tr'+(r.vinculada ? ' style="opacity:.55"' : '')+'>'
+    + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+cevenEsc(r.opd||'—')+'</td>'
     + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+(r.regi ? cevenEsc(r.regi) : '<span style="color:#aeaeb2">sin REGI</span>')+'</td>'
     + '<td style="font-size:12px"><div style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
     + '<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.primaryPartner||'—')+'</td>'
@@ -835,9 +838,9 @@ function _regiCambiarForecast(opd, valor){
    prellenada, igual que loguea el resto del pipeline hoy (una fila = una
    cotización real) — así no hay que inventar ningún caso especial en
    addToPipeline() ni en el detalle expandible/export del pipeline real. El
-   OPG se prellena con el propio `regi` de la oportunidad: cuando el AM
-   apriete "Agregar al pipeline" con productos reales cargados, ese OPG va a
-   matchear solo y la oportunidad se va a ocultar de acá sin tocar nada más.
+   OPG se prellena con el `regi` de la oportunidad o con su `opd` cuando
+   todavía no fue aprobado: cuando el AM apriete "Agregar al pipeline" con
+   productos reales cargados, la oportunidad va a matchear sola.
 
    window._regiCopiadas es solo para no repetir el mismo botón "Copiar a
    Ceven" sin que el usuario se dé cuenta de que ya lo usó — no persiste
@@ -854,12 +857,12 @@ function _regiCopiarAPipeline(opd){
   if(typeof aplicarTierDelCliente === 'function') aplicarTierDelCliente();
   if(typeof cevenClienteCambio === 'function') cevenClienteCambio();
   document.getElementById('proyecto').value = r.proyecto;
-  document.getElementById('opg').value = r.regi || '';
+  document.getElementById('opg').value = r.regi || r.opd || '';
   if(r.mesCierre && typeof setMesCierre === 'function') setMesCierre(r.mesCierre);
   window._regiCopiadas[opd] = true;
   showToast(r.regi
     ? 'Cotización iniciada desde REGI "'+r.proyecto+'" (OPG '+r.regi+') — cargá los productos reales y usá "Agregar al pipeline".'
-    : 'Cotización iniciada desde REGI "'+r.proyecto+'" — todavía no tiene REGI aprobado: completá el OPG cuando HP lo confirme.');
+    : 'Cotización iniciada desde REGI "'+r.proyecto+'" (OPG '+r.opd+') — cargá los productos reales y usá "Agregar al pipeline".');
 }
 
 /* Delegación propia: #regi-pipe-body y #dash-by-status son contenedores

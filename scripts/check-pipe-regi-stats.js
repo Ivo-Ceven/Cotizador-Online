@@ -171,19 +171,20 @@ console.log('\n3 · _regiTrimestreKey/_regiTrimestreLabel en los bordes del año
   ok(e._regiTrimestreLabel('2026-Q3') === 'Q3 2026', 'la etiqueta se lee "Q3 2026"');
 }
 
-/* ═══ 4 · Pares vinculados: solo entran los que matchean en los dos lados ═══ */
-console.log('\n4 · _regiPairsVinculadas: solo REGI con código aprobado Y OPG cargado del otro lado');
+/* ═══ 4 · Pares vinculados: REGI o OPD si falta REGI ═══════════════════════ */
+console.log('\n4 · _regiPairsVinculadas: vincula por REGI aprobado u OPD sin REGI');
 {
   const e = cargar();
-  e._pipelineData = [ filaReal('abc-1', 1000), filaReal('', 500) ];
+  e._pipelineData = [ filaReal('abc-1', 1000), filaReal('opd2', 2000), filaReal('', 500) ];
   e._regiPipeRows = [
     filaRegi('OPD1', 'abc-1', 1000),      // matchea
-    filaRegi('OPD2', '', 2000),           // sin REGI aprobado: no puede matchear
+    filaRegi('OPD2', '', 2000),           // sin REGI aprobado: matchea por OPD
     filaRegi('OPD3', 'zzz-9', 3000)       // REGI aprobado pero ningún OPG lo tiene
   ];
   const pares = e._regiPairsVinculadas();
-  ok(pares.length === 1, 'solo un par entra', JSON.stringify(pares.map(p=>p.hp.opd)));
+  ok(pares.length === 2, 'entran el par por REGI y el par por OPD', JSON.stringify(pares.map(p=>p.hp.opd)));
   ok(pares[0].hp.opd === 'OPD1', 'y es el que matcheó de verdad');
+  ok(pares[1].hp.opd === 'OPD2', 'la fila sin REGI entra con su OPD');
 }
 
 /* ═══ 5 · KPI totales ═══════════════════════════════════════════════════════ */

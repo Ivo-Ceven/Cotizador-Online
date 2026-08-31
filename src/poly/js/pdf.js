@@ -28,7 +28,7 @@ function exportSelectedPDF(){
           +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
           +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
           +'<td style="text-align:right;font-weight:600">USD '+fI(parseFloat(r['Total'])||0)+'</td>'
-          +'<td style="text-align:center">'+cevenEsc(r['IVA']||'—')+'</td>'
+          +'<td style="text-align:center">'+cevenEsc(cevenFormatoIVA(r['IVA'])||'—')+'</td>'
           +'<td style="text-align:center">'+cevenEsc(r['Nota']||'—')+'</td></tr>';
       }
       bloquesOpc += (hayOpcB ? '<p class="opc-tit">Opción '+cevenOpcLetra(opn)+'</p>' : '')
@@ -124,7 +124,7 @@ function buildPDF(){
         +'<td class="nowrap" style="text-align:right;font-weight:600">'+cevenEsc(dp(sp*it.qty))+'</td>'
         // El % de IVA sale de la columna "Programa fiscal" del Excel del ERP
         // (ver poly/js/catalog.js). Es informativo: no entra en ningún cálculo.
-        +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.iva||'—')+'</td>'
+        +'<td class="nowrap" style="text-align:center">'+cevenEsc(cevenFormatoIVA(it.iva)||'—')+'</td>'
         +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.stock||'—')+'</td>'
         +'</tr>';
     }

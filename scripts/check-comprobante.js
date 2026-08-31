@@ -85,6 +85,7 @@ function cargar(){
   const lee = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
   vm.runInContext(lee('src/vendor/jspdf.umd.min.js'), ctx);
   vm.runInContext(lee('src/vendor/jspdf.plugin.autotable.min.js'), ctx);
+  vm.runInContext(lee('src/shared/safe.js'), ctx);
   vm.runInContext(lee('src/shared/pdf-core.js'), ctx);
   // opciones.js: el comprobante separa las opciones A/B de la cotización, así
   // que necesita cevenOpcDe()/cevenOpcLetra()/cevenOpcLeyenda(). En el navegador
@@ -126,7 +127,7 @@ ok(condApple[5] === 'Entrega: 5 a 7 días hábiles', '"Entrega" sigue siendo la 
 ctx.window.CEVEN_BRAND = { id: 'poly', condicionesFijas: [] };
 
 /* ---- El IVA por línea ----------------------------------------------------- */
-ok(ctx.cevenComprobanteIVA(FILAS[0]) === '10.5%', 'lee el IVA de la columna `IVA`');
+ok(ctx.cevenComprobanteIVA(FILAS[0]) === '10,5%', 'normaliza el IVA de la columna `IVA`');
 ok(ctx.cevenComprobanteIVA(FILAS[1]) === '21%', 'cae a `_taxes` en cotizaciones viejas de Apple');
 ok(ctx.cevenComprobanteIVA({}) === '—', 'sin ningún IVA guardado muestra "—"');
 
@@ -202,7 +203,7 @@ if(doc){
   // Entero y en un solo renglón: con la columna a 26 mm salía "A4LZ8AA#AB" + "M".
   ok(tiene('A4LZ8AA#ABM'), 'el SKU más largo entra sin partirse en dos renglones');
   ok(tiene('875K5AA'), 'el SKU de la segunda línea está');
-  ok(tiene('10.5%') && tiene('21%'), 'las dos alícuotas de IVA están en la tabla');
+  ok(tiene('10,5%') && tiene('21%'), 'las dos alícuotas de IVA están en la tabla');
 
   /* El IVA va ÚLTIMO, después del subtotal. Los encabezados se dibujan en orden,
      así que alcanza con comparar dónde aparece cada uno; ninguna de las dos

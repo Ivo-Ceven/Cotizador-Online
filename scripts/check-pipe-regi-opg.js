@@ -4,10 +4,8 @@
    ----------------------------------------------------------------------------
    Vínculo entre el pipeline real de Poly y el pipeline REGI (Deal
    Registration de HP), agregado el 27/08/2026 — ver docs/HISTORIAL.md de esa
-   fecha. El matching es `pipeline.opg` contra `poly_regi_pipeline.regi` (el
-   REGI YA APROBADO por HP, no `opd`): decisión explícita del usuario,
-   aceptando que una oportunidad sin REGI aprobado no tiene con qué matchear
-   todavía.
+   fecha. El matching es `pipeline.opg` contra `poly_regi_pipeline.regi` si
+   está aprobado, o contra `opd` cuando la fila del Excel no tiene REGI.
 
    Corre las funciones REALES de src/poly/js/pipeline-regi.js contra filas
    armadas a mano, con el mismo patrón de stubs que scripts/check-pipe-pills.js
@@ -130,17 +128,17 @@ console.log('\n2 · _regiOpgVinculadosSet lee getPipeline(), no pide nada a Supa
   ok(Object.keys(set).length === 2, 'las filas sin OPG no ensucian el set', JSON.stringify(set));
 }
 
-/* ═══ 3 · Una oportunidad sin REGI aprobado NUNCA puede quedar vinculada ═══ */
-console.log('\n3 · Sin REGI aprobado (columna vacía) no hay con qué matchear, a propósito');
+/* ═══ 3 · Una oportunidad sin REGI aprobado usa OPD ════════════════════════ */
+console.log('\n3 · Sin REGI aprobado (columna vacía), OPD permite el vínculo');
 {
   const e = cargar();
-  const vinculados = { 'ABC-123': 1 };
-  ok(e._regiEsVinculada(filaRegi('OPD1', ''), vinculados) === false,
-     'REGI vacío nunca es "vinculada", aunque el opd exista');
+  const vinculados = { 'ABC-123': 1, 'OPD1': 1, 'OPD3': 1 };
+  ok(e._regiEsVinculada(filaRegi('OPD1', ''), vinculados) === true,
+     'REGI vacío usa OPD para quedar vinculada');
   ok(e._regiEsVinculada(filaRegi('OPD2', 'abc-123'), vinculados) === true,
      'REGI aprobado que matchea (case/espacios distintos) SÍ queda vinculada');
   ok(e._regiEsVinculada(filaRegi('OPD3', 'otro-codigo'), vinculados) === false,
-     'REGI aprobado que no matchea ningún OPG, no vinculada');
+     'REGI aprobado que no matchea ningún OPG no usa OPD aunque esté cargado');
 }
 
 /* ═══ 4 · El 🎯 de "matchea vigente" en la fila del pipeline real ═══════════ */
@@ -152,8 +150,9 @@ console.log('\n4 · _regiOpgMatcheaVigente (el 🎯 al lado del OPG en el pipeli
 }
 {
   const e = cargar();
-  e._regiPipeRows = [ filaRegi('OPD1', 'abc-123') ];
+  e._regiPipeRows = [ filaRegi('OPD1', 'abc-123'), filaRegi('OPD2', '') ];
   ok(e._regiOpgMatcheaVigente('ABC-123') === true, 'matchea contra una oportunidad REGI vigente');
+  ok(e._regiOpgMatcheaVigente('opd2') === true, 'sin REGI aprobado, matchea contra el OPD vigente');
   ok(e._regiOpgMatcheaVigente('') === false, 'un OPG vacío nunca "matchea"');
   ok(e._regiOpgMatcheaVigente('otro') === false, 'un OPG que no está en ninguna REGI, no matchea');
 }
@@ -162,7 +161,7 @@ console.log('\n4 · _regiOpgMatcheaVigente (el 🎯 al lado del OPG en el pipeli
 console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado');
 {
   const e = cargar();
-  e._pipelineData = [ filaReal('abc-123') ];
+  e._pipelineData = [ filaReal('abc-123'), filaReal('opd2') ];
   e._regiPipeRows = [
     filaRegi('OPD1', 'abc-123', {cliente:'Vinculada SA', monto:5000}),
     filaRegi('OPD2', '',        {cliente:'Sin REGI SA',  monto:7000}),
@@ -172,11 +171,11 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   e._renderRegiPipelineFromCache();
   const html = e._els['regi-pipe-body'].innerHTML;
   ok(html.indexOf('Vinculada SA') === -1, 'la oportunidad vinculada no aparece en la tabla', html);
-  ok(html.indexOf('Sin REGI SA') !== -1 && html.indexOf('Suelta SA') !== -1,
-     'las otras dos (sin REGI y sin match) siguen viéndose');
-  ok(e._els['regi-vinc-count'].textContent === '(1)', 'el contador del toggle dice cuántas hay ocultas', e._els['regi-vinc-count'].textContent);
-  ok(/USD 10\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
-     'el total del dashboard suma SOLO lo visible (7.000 + 3.000), no lo vinculado');
+  ok(html.indexOf('Sin REGI SA') === -1 && html.indexOf('Suelta SA') !== -1,
+     'la oportunidad sin REGI vinculada por OPD se oculta, la suelta sigue visible');
+  ok(e._els['regi-vinc-count'].textContent === '(2)', 'el contador incluye vínculos por REGI y OPD', e._els['regi-vinc-count'].textContent);
+  ok(/USD 3\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
+     'el total del dashboard suma SOLO lo visible, no lo vinculado por REGI u OPD');
 }
 {
   // Mismo escenario, con el toggle en "mostrar".
@@ -231,8 +230,8 @@ console.log('\n6 · _regiCopiarAPipeline prellena cliente/proyecto/OPG y avisa s
   const e = cargar();
   e._regiPipeRows = [ filaRegi('OPD2', '', {cliente:'Cliente Nuevo', proyecto:'Proyecto X'}) ];
   e._regiCopiarAPipeline('OPD2');
-  ok(e._els['opg'].value === '', 'sin REGI aprobado, el OPG queda vacío (no hay nada para prellenar)');
-  ok(/todavía no tiene REGI aprobado/.test(e._lastToast), 'el aviso explica que hay que completar el OPG cuando HP lo apruebe', e._lastToast);
+  ok(e._els['opg'].value === 'OPD2', 'sin REGI aprobado, precarga OPD para vincular la oportunidad');
+  ok(/OPG OPD2/.test(e._lastToast), 'el aviso informa que usa OPD como OPG', e._lastToast);
 }
 {
   const e = cargar();

@@ -358,8 +358,8 @@
       <div>
         <label class="lbl">IVA</label>
         <select id="np-iva">
-          <option value="IVA GENERAL">21% — general</option>
-          <option value="IVA REDUCIDO">10,5% — reducido</option>
+          <option value="21%">21%</option>
+          <option value="10,5%">10,5%</option>
         </select>
       </div>
     </div>
@@ -546,8 +546,9 @@
          que ver — es un snapshot de solo lectura del Excel, sin cotización
          detrás. Oculta por defecto; pipeline-regi.js la muestra/oculta según
          el selector "Vista". -->
-    <table style="min-width:900px;display:none" id="pipe-table-regi">
+    <table style="min-width:1000px;display:none" id="pipe-table-regi">
       <thead><tr>
+        <th class="srt" data-sort="opd">OPD</th>
         <th class="srt" data-sort="regi">REGI</th>
         <th class="srt" data-sort="proyecto">Oportunidad</th>
         <th class="srt" data-sort="primaryPartner">Partner primario</th>

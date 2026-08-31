@@ -117,7 +117,7 @@ function cevenComprobanteFilas(qn){
 function cevenComprobanteIVA(r){
   var v = r['IVA'];
   if(v === undefined || v === null || v === '') v = r['_taxes'];
-  return (v === undefined || v === null || v === '') ? '—' : String(v);
+  return cevenFormatoIVA(v) || '—';
 }
 
 /* ── CARACTERES QUE LAS FUENTES ESTÁNDAR NO TIENEN ──────────────────────────

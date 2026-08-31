@@ -73,7 +73,7 @@ function renderQ() {
         +'</div>'
       +'</td>'
       +'<td style="text-align:right;font-weight:500'+(mgNeg?';color:#d70015':'')+'">'+dp(it.salePrice*it.qty)+'</td>'
-      +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc((it.taxes||'').replace(/(\d),(\d)/g,"$1.$2"))+'" placeholder="—" style="width:70px" data-qact="taxes"'+idA+'></td>'
+      +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc(cevenFormatoIVA(it.taxes))+'" placeholder="—" style="width:70px" data-qact="taxes"'+idA+'></td>'
       +'<td style="text-align:center"><input class="si" type="text" value="'+cevenEsc(it.stock||'')+'" placeholder="—" style="width:60px" data-qact="stock"'+idA+'></td>'
       +'<td style="text-align:center;white-space:nowrap">'
       +'<button class="bs" data-qact="edit"'+idA+' title="Editar SKU/descripción/precio (solo esta cotización)" style="padding:2px 6px;font-size:12px;margin-right:3px">✎</button>'

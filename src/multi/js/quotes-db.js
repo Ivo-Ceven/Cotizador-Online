@@ -97,7 +97,7 @@ function doSave(overwrite){
       'Condición de pago': payMode, 'Propuesta efectiva hasta': effDate, 'Entrega': delivery,
       'Marca': it.brand,
       'SKU': it.sku, 'Descripción': it.description, 'Cantidad': it.qty,
-      'Nota': it.stock || '—', 'IVA': it.iva || it.taxes || '',
+      'Nota': it.stock || '—', 'IVA': cevenFormatoIVA(it.iva || it.taxes),
       // Cada marca llena la suya; la otra queda '—'. Ver COLS en state.js.
       'Nivel de precio': (it.brand === 'poly') ? cevenPolyTierEfectivo(it, tierGlobalMulti()) : '—',
       'Margen %': (it.brand === 'apple') ? it.itemMargin : '—',

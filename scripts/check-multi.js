@@ -104,6 +104,7 @@ function entornoMulti(){
   const ctx = { console };
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
+  vm.runInContext(lee('src/shared/safe.js'), ctx, {filename:'safe.js'});
   // El multimarca solo carga los núcleos, NO los archivos con DOM de cada marca.
   vm.runInContext(lee('src/apple/js/pricing-core.js'), ctx, {filename:'apple/pricing-core.js'});
   vm.runInContext(lee('src/poly/js/pricing-core.js'),  ctx, {filename:'poly/pricing-core.js'});
@@ -525,7 +526,7 @@ console.log('\n8c · La subpantalla de productos ("+ Agregar producto")');
   };
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
-  ['src/apple/js/pricing-core.js','src/poly/js/pricing-core.js','src/multi/js/marcas.js',
+  ['src/shared/safe.js','src/apple/js/pricing-core.js','src/poly/js/pricing-core.js','src/multi/js/marcas.js',
    'src/multi/js/catalogo-multi.js','src/multi/js/quote.js','src/multi/js/catalog-view.js',
    'src/multi/js/picker.js']
     .forEach(f => vm.runInContext(lee(f), ctx, {filename: f}));
