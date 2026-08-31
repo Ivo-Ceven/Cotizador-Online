@@ -313,7 +313,10 @@ function _pipeTablaHTML(filas, scope, opts){
       } else {
         celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'});
         celdaEstado = '<select data-act="est" data-k="'+kA+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
-          + cevenEstadoOptions(estado, false) + '</select>';
+          + cevenEstadoOptions(estado, false) + '</select>'
+          + (estado === 'Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
+            ? ' <span title="'+cevenEsc(r.perdidoMotivo.motivo + (r.perdidoMotivo.detalle ? ': '+r.perdidoMotivo.detalle : ''))+'" style="cursor:help">💬</span>'
+            : '');
         /* Netsuite. Con link cargado el botón ABRE Netsuite (verde, con la
            flechita de "sale de la app") y al lado aparece un ✎ amarillo chico
            para cambiarlo. Sin link, el botón es rojo y lo que hace es pedirlo:

@@ -6,8 +6,28 @@ function updatePipelineStatus(id, newStatus){
   var pipe = getPipeline();
   var row = pipe.find(function(r){ return r.id === id; });
   if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.'); return; }
+  if(newStatus === 'Perdido'){
+    abrirModalMotivoPerdida(function(perdidoMotivo){
+      _guardarEstadoPipeline(id, newStatus, perdidoMotivo);
+    }, function(){
+      renderPipeline();
+    });
+    return;
+  }
+  _guardarEstadoPipeline(id, newStatus, null);
+}
+
+function _guardarEstadoPipeline(id, newStatus, perdidoMotivo){
+  var pipe = getPipeline();
   if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
-  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ pipe[i].estado = newStatus; break; } }
+  for(var i=0;i<pipe.length;i++){
+    if(pipe[i].id === id){
+      pipe[i].estado = newStatus;
+      if(newStatus === 'Perdido') pipe[i].perdidoMotivo = perdidoMotivo;
+      else delete pipe[i].perdidoMotivo;
+      break;
+    }
+  }
   savePipeline(pipe);
   renderPipeline();
 }

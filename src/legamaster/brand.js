@@ -39,12 +39,11 @@ window.CEVEN_BRAND = {
      si aparece un programa de registro de proyecto o un link de seguimiento
      de venta que valga la pena guardar. */
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto',
-    'ejecutivo','mesCierre','estado','monto','moneda'],
+    'ejecutivo','mesCierre','estado','monto','moneda','perdidoMotivo'],
 
   numCols: ['id','qNum','clienteId','monto'],
 
-  // Columnas jsonb: ninguna, mismo criterio que Poly.
-  objCols: [],
+  objCols: ['perdidoMotivo'],
 
   /* Columnas numericas en Supabase que la app guarda como string con ceros a
      la izquierda (col -> ancho). Misma trampa documentada en apple/brand.js

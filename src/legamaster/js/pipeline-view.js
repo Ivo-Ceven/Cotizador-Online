@@ -219,7 +219,10 @@ function _pipeTablaHTML(filas, scope, opts){
       } else {
         celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'});
         celdaEstado = '<select data-act="est" data-k="'+kA+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
-          + cevenEstadoOptions(estado, false) + '</select>';
+          + cevenEstadoOptions(estado, false) + '</select>'
+          + (estado === 'Perdido' && r.perdidoMotivo && r.perdidoMotivo.motivo
+            ? ' <span title="'+cevenEsc(r.perdidoMotivo.motivo + (r.perdidoMotivo.detalle ? ': '+r.perdidoMotivo.detalle : ''))+'" style="cursor:help">💬</span>'
+            : '');
         celdaAcc = (cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rm" data-k="'+kA+'" title="Quitar este proyecto del pipeline">×</button>' : '');
       }
 

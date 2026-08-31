@@ -24,7 +24,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const MARCAS = ['apple', 'poly'];
+const MARCAS = ['apple', 'poly', 'legamaster'];
 
 function cargarBrand(marca){
   const src = fs.readFileSync(path.join(ROOT, 'src', marca, 'brand.js'), 'utf8');

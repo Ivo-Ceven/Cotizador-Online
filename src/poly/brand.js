@@ -39,12 +39,11 @@ window.CEVEN_BRAND = {
 
      Sin familias Apple (qMac/qIph/...) ni margen: eso sigue siendo de Apple. */
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','opg',
-    'ejecutivo','mesCierre','estado','monto','moneda','factura'],
+    'ejecutivo','mesCierre','estado','monto','moneda','factura','perdidoMotivo'],
 
   numCols: ['id','qNum','clienteId','monto'],
 
-  // Columnas jsonb: ninguna desde que se fue `salas`.
-  objCols: [],
+  objCols: ['perdidoMotivo'],
 
   /* Columnas numericas en Supabase que la app guarda como string con ceros a la
      izquierda (col -> ancho). `qNum` se guarda '0071' y la columna es bigint:
