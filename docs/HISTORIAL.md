@@ -148,6 +148,103 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 02/09/2026 · Estadísticas REGI: un mismo REGI en varias cotizaciones de Ceven, agregado
+
+Pedido de Ivo sobre el match y las Estadísticas REGI de la entrada del
+27/08/2026: un mismo REGI (mismo OPG) se trabaja en **varias cotizaciones
+distintas** del pipeline de Poly, y eso en las estadísticas tenía que
+**impactar de forma agregada**.
+
+### El bug de diseño que había
+
+Todo el cruce REGI ↔ pipeline real asumía **1 REGI ↔ 1 cotización**:
+
+- `_regiOpgVinculadosSet()` devolvía `{OPG_NORM: fila}` — un `forEach` sobre
+  `getPipeline()` que **pisaba** la fila anterior cuando dos compartían OPG. La
+  última del array ganaba; el monto/fecha de las demás quedaba fuera de las
+  estadísticas.
+- `_regiPairsVinculadas()` armaba `[{hp, ceven}]`, un solo `ceven` por `hp`.
+- `_regiDiffMonto` / `_regiKpisTotales` / `_regiAgregarPorPeriodo` /
+  `_regiStatsPintarComparacion` leían un único `par.ceven.monto`.
+- La tarjeta `dash-regi-vinculados` del "🎯 Pipeline REGI" (`r.montoVinculado`)
+  también contaba una sola cotización.
+
+Resultado: un REGI de USD 25k cotizado en 3 partes que suman USD 30k mostraba
+una diferencia calculada contra **una** de esas 3, elegida por el orden del
+array.
+
+### Las 3 decisiones (confirmadas con Ivo por `AskUserQuestion`)
+
+1. **Fecha agregada de Ceven** para el KPI `hp − ceven` en meses: **promedio
+   ponderado por monto** de los meses de cierre de las cotizaciones activas.
+   Da un ordinal fraccionario a propósito (se muestra con 1 decimal y prefijo
+   "≈" cuando sale de más de una fila). Se evaluó máx./mín./promedio simple;
+   ponderar por monto refleja "dónde está la plata".
+2. **Cotizaciones en `Perdido` (y `Facturado`)**: **excluidas** del monto
+   agregado y del promedio de fecha. Mismo criterio que el "Total pipeline" del
+   pipeline normal (`sumPipeline = sumMonto − facturado − perdido`,
+   `pipeline-view.js`). Estado ausente cuenta como `'Cotizado'` (activo), igual
+   que ahí. El total crudo (`montoTotal`) igual se guarda, para el desglose.
+3. **Panel "Comparar una oportunidad"**: columna Ceven = totales agregados +
+   **desglose** debajo (una fila por cotización: cliente/proyecto/monto/mes/
+   estado), con las excluidas atenuadas — mismo gris que una fila ya vinculada
+   en la tabla REGI.
+
+### Qué se implementó
+
+Cero migración, cero fetch nuevo — todo sale de `getPipeline()` (ya en memoria)
+y `window._regiPipeRows` (ya se trae para la vista REGI). Todo en
+`src/poly/js/pipeline-regi.js`:
+
+- **`_regiOpgVinculadosSet()`** ahora devuelve `{OPG_NORM: [fila, ...]}` (array,
+  ninguna pisa a la otra).
+- **`_regiCevenAgg(rows)`** nueva: agrega N filas del pipeline real de un OPG en
+  un solo lado "Ceven" — `monto` (Σ activas), `montoTotal` (Σ todas),
+  `mesOrdinal` (promedio ponderado por monto, fraccionario; cae a promedio
+  simple si Σpesos = 0; `null` si ninguna activa tiene fecha), `mesCierre`
+  (`'YYYY-MM'` redondeado, para los lectores que esperan string), `nCotiz` /
+  `nActivas` / `nExcluidas`, `estadosResumen`, `rows`. Reusa `_regiMesOrdinal`
+  y el helper inverso nuevo `_regiOrdinalAMes`. La consumen
+  `_regiPairsVinculadas()` y `_renderRegiPipelineFromCache()`
+  (`r.montoVinculado`).
+- **`_regiEsVinculada()`** ahora chequea `filas.length` (el valor del set es un
+  array).
+- **`_regiDiffFechaMeses()`** prefiere el ordinal numérico fraccionario del
+  agregado; cae al string `'YYYY-MM'` si no viene (una sola fila, o los tests).
+- **`_regiKpisTotales()`** suma `nMulti` (pares con `nCotiz > 1`), que
+  `_regiStatsPintarKpis()` muestra en la sub-línea del KPI de monto.
+- **`_regiStatsOpciones()`** marca cada `<option>` con "· N cotiz." cuando
+  corresponde.
+- **`_regiStatsPintarComparacion()`** usa el agregado en las filas Monto/Cierre/
+  Estado y, si `nCotiz > 1`, agrega `_regiStatsDesgloseHTML(ag)` debajo. La
+  diferencia de fecha pasó de entero (`+N m`) a `.toFixed(1)` para ser
+  consistente con los KPI.
+
+`index.html` no se tocó: todo el render nuevo sale por `innerHTML`/`textContent`.
+
+### Fuera de alcance (a sabiendas)
+
+Dos oportunidades REGI **distintas** con el mismo OPG siguen pisándose entre sí
+como antes (caso patológico, no el que se pidió resolver). `_regiOpgMatcheaVigente`
+(el 🎯 del pipeline real) no usa el set — no cambió.
+
+### Verificación
+
+`node --check src/poly/js/pipeline-regi.js`. `scripts/check-pipe-regi-stats.js`
+(65 chequeos, 14 nuevos: agregación de N cotizaciones, exclusión de Perdido,
+promedio ponderado de fecha, el desglose del comparador, "· N cotiz." en el
+desplegable) y `scripts/check-pipe-regi-opg.js` (46, con casos nuevos: el set
+junta varias filas por OPG y `montoVinculado` suma solo las activas) en verde.
+El resto de `scripts/check-*.js` sin regresiones nuevas (`check-emitir`,
+`check-entrega`, `check-poly-deals`, `check-portal-pricing-parity`,
+`check-precache` ya fallaban en HEAD, sin relación con esto). **No verificado en
+un navegador real** (sin extensión Claude in Chrome en esta sesión): falta abrir
+"📊 Estadísticas REGI" con un REGI que tenga ≥2 cotizaciones reales con el mismo
+OPG y confirmar a ojo el monto agregado, el "≈ mes", el desglose y la tarjeta
+"Vinculados (Ceven)" del "🎯 Pipeline REGI".
+
+---
+
 ## 27/08/2026 · Estadísticas REGI: HP vs. Ceven, uno a uno y por mes/trimestre
 
 Sobre el vínculo por OPG de la entrada anterior (mismo día): pedido de Ivo de

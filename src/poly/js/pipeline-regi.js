@@ -91,6 +91,11 @@ function _regiFechaDDMMYYYY(iso){
    Así el vínculo existente por REGI no cambia y las oportunidades pendientes
    de aprobación también se pueden cargar y vincular.
 
+   Un mismo REGI puede estar en el pipeline de Ceven en VARIAS cotizaciones
+   distintas (el mismo OPG cargado en varias filas). El vínculo es booleano
+   ("¿hay al menos una?"), pero las Estadísticas agregan TODAS esas filas
+   (_regiCevenAgg) para compararlas contra el único dato de HP.
+
    Sin columna nueva ni fetch nuevo a Supabase: getPipeline() ya es la misma
    fuente en memoria que usa toda la vista del pipeline real, mantenida al
    día por shared/sync.js. */
@@ -102,15 +107,17 @@ function _regiCodigoVinculo(r){
   return _regiNormCodigo(r && (r.regi || r.opd));
 }
 
-// Guarda la FILA completa (no solo el id): la vista de Estadísticas
-// (_regiPairsVinculadas) necesita monto/mesCierre/cliente/proyecto del lado
-// Ceven, y nada más consume este set salvo como booleano (_regiEsVinculada),
-// así que no hay ningún otro lugar que romper con el cambio.
+// {OPG_NORMALIZADO: [fila, fila, ...]} — TODAS las filas del pipeline real que
+// tienen ese OPG, no una sola. Antes era {OPG: fila} y un segundo proyecto con
+// el mismo OPG pisaba al primero sin aviso, así que su monto/fecha quedaban
+// fuera de las Estadísticas. Los únicos consumidores son _regiEsVinculada
+// (booleano) y _regiCevenAgg (agrega la lista).
 function _regiOpgVinculadosSet(){
   var set = {};
   (getPipeline() || []).forEach(function(r){
     var v = _regiNormCodigo(r.opg);
-    if(v) set[v] = r;
+    if(!v) return;
+    (set[v] || (set[v] = [])).push(r);
   });
   return set;
 }
@@ -121,7 +128,8 @@ function _regiOpgVinculadosSet(){
    recorrer getPipeline() por fila. */
 function _regiEsVinculada(r, vinculados){
   var codigo = _regiCodigoVinculo(r);
-  return !!(codigo && vinculados[codigo]);
+  var filas = codigo && vinculados[codigo];
+  return !!(filas && filas.length);
 }
 
 /* Usada desde pipeline-view.js (fila del pipeline REAL) para el 🎯 que
@@ -139,17 +147,82 @@ function _regiOpgMatcheaVigente(opg){
    fecha ESTIMADOS, sin hablar con el cliente) contra lo que Ceven tiene
    cargado de verdad en su propio pipeline (con el cliente real hablado).
    Solo entran los pares YA VINCULADOS por OPG — sin eso no hay con qué
-   comparar del otro lado (ver el comentario de _regiOpgVinculadosSet). */
+   comparar del otro lado (ver el comentario de _regiOpgVinculadosSet).
 
-/* [{hp, ceven}] — hp es la fila REGI (shape de _regiRowToPipeRow), ceven la
-   fila real del pipeline (shape de getPipeline()). */
+   Un mismo REGI puede estar en el pipeline de Ceven en VARIAS cotizaciones
+   distintas: el lado "Ceven" de cada par es la AGREGACIÓN de todas ellas
+   (_regiCevenAgg), no una sola fila. */
+
+// Estados que NO suman a la posición viva de Ceven: mismo criterio que el
+// "Total pipeline" del pipeline normal (pipeline-view.js: sumMonto − facturado
+// − perdido). Un estado ausente cuenta como 'Cotizado' (activo), igual que ahí.
+var _REGI_ESTADOS_EXCLUIDOS = { Perdido: 1, Facturado: 1 };
+
+/* year*12 + (mes-1)  ->  'YYYY-MM'. Inverso de _regiMesOrdinal: sirve para
+   pasar el promedio ponderado (fraccionario, se redondea) por _mesLabelPoly. */
+function _regiOrdinalAMes(ord){
+  var o = Math.max(0, Math.round(Number(ord) || 0));
+  var y = Math.floor(o / 12), m = (o % 12) + 1;
+  return y + '-' + (m < 10 ? '0' : '') + m;
+}
+
+/* Agrega N filas del pipeline real (todas con el mismo OPG) en un solo lado
+   "Ceven". `monto`/`mesCierre` llevan los mismos nombres que una fila suelta,
+   así _regiDiffMonto y compañía no se tocan.
+   - `monto`: Σ de las filas ACTIVAS (estado ∉ {Perdido, Facturado}).
+   - `mesOrdinal`: promedio de meses de cierre PONDERADO POR MONTO sobre las
+     filas activas con fecha (fraccionario a propósito); si Σpesos = 0 cae a
+     promedio simple; null si ninguna activa tiene fecha. */
+function _regiCevenAgg(rows){
+  rows = rows || [];
+  var monto = 0, montoTotal = 0, nActivas = 0, nExcluidas = 0;
+  var pesoFecha = 0, sumaPonderada = 0, sumaSimple = 0, nFecha = 0;
+  rows.forEach(function(r){
+    var m = Number(r.monto) || 0;
+    montoTotal += m;
+    if(_REGI_ESTADOS_EXCLUIDOS[r.estado || 'Cotizado']){ nExcluidas++; return; }
+    nActivas++;
+    monto += m;
+    var ord = _regiMesOrdinal(r.mesCierre);
+    if(ord !== null){
+      nFecha++;
+      sumaSimple += ord;
+      pesoFecha += Math.max(m, 0);
+      sumaPonderada += Math.max(m, 0) * ord;
+    }
+  });
+  var mesOrdinal = null;
+  if(nFecha > 0) mesOrdinal = pesoFecha > 0 ? (sumaPonderada / pesoFecha) : (sumaSimple / nFecha);
+
+  var resumen = nActivas
+    ? (nActivas + (nActivas === 1 ? ' cotización activa' : ' cotizaciones activas'))
+    : 'sin cotización activa';
+  if(nExcluidas) resumen += ' · ' + nExcluidas + ' sin contar (Perdido/Facturado)';
+
+  return {
+    monto: monto,
+    montoTotal: montoTotal,
+    mesOrdinal: mesOrdinal,
+    mesCierre: mesOrdinal === null ? '' : _regiOrdinalAMes(mesOrdinal),
+    nCotiz: rows.length,
+    nActivas: nActivas,
+    nExcluidas: nExcluidas,
+    cliente: (rows[0] && rows[0].cliente) || '',
+    proyecto: (rows[0] && rows[0].proyecto) || '',
+    estadosResumen: resumen,
+    rows: rows
+  };
+}
+
+/* [{hp, ceven}] — hp es la fila REGI (shape de _regiRowToPipeRow), ceven es la
+   AGREGACIÓN (_regiCevenAgg) de todas las filas del pipeline real con ese OPG. */
 function _regiPairsVinculadas(){
   var vinculados = _regiOpgVinculadosSet();
   var pares = [];
   (window._regiPipeRows || []).forEach(function(hp){
     var codigo = _regiCodigoVinculo(hp);
-    var ceven = codigo && vinculados[codigo];
-    if(ceven) pares.push({hp: hp, ceven: ceven});
+    var filas = codigo && vinculados[codigo];
+    if(filas && filas.length) pares.push({hp: hp, ceven: _regiCevenAgg(filas)});
   });
   return pares;
 }
@@ -177,8 +250,14 @@ function _regiMesOrdinal(mk){
    al de HP (Ceven pronostica "más lejos"). null si falta la fecha de
    cualquiera de los dos lados — no hay con qué restar. */
 function _regiDiffFechaMeses(par){
-  var oh = _regiMesOrdinal(par.hp.mesCierre), oc = _regiMesOrdinal(par.ceven.mesCierre);
-  if(oh === null || oc === null) return null;
+  var oh = _regiMesOrdinal(par.hp.mesCierre);
+  // El lado Ceven puede ser una agregación de varias cotizaciones: usa el
+  // ordinal fraccionario (promedio ponderado por monto) si viene calculado; si
+  // no, cae a parsear el string 'YYYY-MM' (una sola fila, o los tests).
+  var oc = (par.ceven && par.ceven.mesOrdinal != null)
+    ? par.ceven.mesOrdinal
+    : _regiMesOrdinal(par.ceven.mesCierre);
+  if(oh === null || oc === null || oc === undefined) return null;
   return oh - oc;
 }
 
@@ -202,13 +281,14 @@ function _regiTrimestreLabel(qk){
    muchas oportunidades da un número poco legible), nFecha}. diffFechaProm
    queda null si ningún par tiene fecha de los dos lados. */
 function _regiKpisTotales(pares){
-  var diffMonto = 0, sumFecha = 0, nFecha = 0;
+  var diffMonto = 0, sumFecha = 0, nFecha = 0, nMulti = 0;
   pares.forEach(function(par){
     diffMonto += _regiDiffMonto(par);
     var df = _regiDiffFechaMeses(par);
     if(df !== null){ sumFecha += df; nFecha++; }
+    if(par.ceven && par.ceven.nCotiz > 1) nMulti++;
   });
-  return { n: pares.length, diffMonto: diffMonto, diffFechaProm: nFecha ? (sumFecha / nFecha) : null, nFecha: nFecha };
+  return { n: pares.length, diffMonto: diffMonto, diffFechaProm: nFecha ? (sumFecha / nFecha) : null, nFecha: nFecha, nMulti: nMulti };
 }
 
 /* Agrupa por keyFn(hp.mesCierre) — "por mes" pasa la identidad, "por
@@ -471,7 +551,9 @@ function _renderRegiPipelineFromCache(){
   rowsTotal.forEach(function(r){
     var codigo = _regiCodigoVinculo(r);
     r.vinculada = _regiEsVinculada(r, vinculados);
-    r.montoVinculado = r.vinculada ? (Number(vinculados[codigo].monto) || 0) : 0;
+    // Suma de TODAS las cotizaciones de Ceven con este OPG (posición agregada,
+    // sin Perdido/Facturado) — antes contaba una sola, la última del array.
+    r.montoVinculado = r.vinculada ? (_regiCevenAgg(vinculados[codigo]).monto || 0) : 0;
   });
   var nVinculadas = rowsTotal.filter(function(r){ return r.vinculada; }).length;
   _regiPintarToggleVinculadas(nVinculadas);
@@ -610,6 +692,7 @@ function _regiStatsPintarKpis(kpis){
   }
   if(elMontoSub){
     elMontoSub.textContent = 'sobre ' + kpis.n + (kpis.n === 1 ? ' oportunidad vinculada' : ' oportunidades vinculadas')
+      + (kpis.nMulti ? (' · ' + kpis.nMulti + ' con más de una cotización de Ceven (monto agregado)') : '')
       + ' · negativo = Ceven pronostica MENOS monto que HP';
   }
 
@@ -642,10 +725,11 @@ function _regiStatsFilaPeriodoHTML(g){
 function _regiStatsOpciones(pares){
   var h = '<option value="">— Elegí una oportunidad —</option>';
   pares.forEach(function(par){
+    var multi = (par.ceven && par.ceven.nCotiz > 1) ? (' · ' + par.ceven.nCotiz + ' cotiz.') : '';
     h += '<option value="' + cevenEsc(par.hp.opd) + '">'
       + cevenEsc(par.ceven.cliente || par.hp.cliente || '—') + ' — '
       + cevenEsc(par.hp.proyecto || par.ceven.proyecto || '—')
-      + ' (' + cevenEsc(par.hp.regi) + ')</option>';
+      + ' (' + cevenEsc(par.hp.regi) + ')' + multi + '</option>';
   });
   return h;
 }
@@ -665,27 +749,68 @@ function _regiStatsPintarComparacion(opd){
   var par = opd && (window._regiStatsPares || []).filter(function(p){ return p.hp.opd === opd; })[0];
   if(!par){ box.innerHTML = ''; return; }
 
+  var ag = par.ceven || {};
+  var multi = (ag.nCotiz || 0) > 1;
   var diffMonto = _regiDiffMonto(par);
   var diffFecha = _regiDiffFechaMeses(par);
   var mesHp = par.hp.mesCierre ? _mesLabelPoly(par.hp.mesCierre) : '—';
-  var mesCeven = par.ceven.mesCierre ? _mesLabelPoly(par.ceven.mesCierre) : '—';
-  var estadoCeven = (typeof cevenEstadoLabel === 'function') ? cevenEstadoLabel(par.ceven.estado || 'Cotizado') : (par.ceven.estado || '—');
+  // El mes de Ceven puede ser un promedio ponderado por monto de varias
+  // cotizaciones: se marca con "≈" cuando no sale de una sola fila activa.
+  var mesCeven = ag.mesCierre ? ((ag.nActivas > 1 ? '≈ ' : '') + _mesLabelPoly(ag.mesCierre)) : '—';
+  var fechaDifTxt = diffFecha === null ? '—' : ((diffFecha > 0 ? '+' : '') + diffFecha.toFixed(1) + ' m');
+
+  var montoCevenTxt = 'USD ' + fI(ag.monto || 0)
+    + (multi ? (' <span style="color:#6e6e73">· ' + cevenEsc(ag.estadosResumen) + '</span>') : '');
+
+  var estadoTxt;
+  if(ag.nCotiz === 1){
+    var e0 = (ag.rows && ag.rows[0] && ag.rows[0].estado) || 'Cotizado';
+    estadoTxt = (typeof cevenEstadoLabel === 'function') ? cevenEstadoLabel(e0) : e0;
+  } else {
+    estadoTxt = ag.estadosResumen || '—';
+  }
 
   box.innerHTML = '<table style="width:100%">'
-    + '<thead><tr><th></th><th>HP (Excel)</th><th>Ceven (real)</th><th>Diferencia</th></tr></thead>'
+    + '<thead><tr><th></th><th>HP (Excel)</th><th>Ceven (real' + (multi ? ', ' + ag.nCotiz + ' cotiz.' : '') + ')</th><th>Diferencia</th></tr></thead>'
     + '<tbody>'
       + _regiStatsFilaCompararHTML('Cliente / Proyecto',
           cevenEsc(par.hp.cliente || '—') + ' — ' + cevenEsc(par.hp.proyecto || '—'),
-          cevenEsc(par.ceven.cliente || '—') + ' — ' + cevenEsc(par.ceven.proyecto || '—'),
+          cevenEsc(ag.cliente || '—') + ' — ' + cevenEsc(ag.proyecto || '—'),
           '—', null)
       + _regiStatsFilaCompararHTML('Monto',
           'USD ' + fI(par.hp.montoArchivo || 0),
-          'USD ' + fI(par.ceven.monto || 0),
+          montoCevenTxt,
           (diffMonto < 0 ? '-' : '+') + 'USD ' + fI(Math.abs(diffMonto)), _regiStatsColor(diffMonto))
       + _regiStatsFilaCompararHTML('Cierre estimado', mesHp, mesCeven,
-          diffFecha === null ? '—' : ((diffFecha > 0 ? '+' : '') + diffFecha + ' m'), _regiStatsColor(diffFecha))
-      + _regiStatsFilaCompararHTML('Estado', '—', cevenEsc(estadoCeven), '—', null)
-    + '</tbody></table>';
+          fechaDifTxt, _regiStatsColor(diffFecha))
+      + _regiStatsFilaCompararHTML('Estado', '—', cevenEsc(estadoTxt), '—', null)
+    + '</tbody></table>'
+    + (multi ? _regiStatsDesgloseHTML(ag) : '');
+}
+
+/* Desglose del lado Ceven: una fila por cotización real vinculada a este REGI.
+   Las que no cuentan para la posición viva (Perdido/Facturado) van atenuadas,
+   mismo criterio visual que una fila ya vinculada en la tabla del pipeline
+   REGI. Solo se pinta cuando hay más de una (ver _regiStatsPintarComparacion). */
+function _regiStatsDesgloseHTML(ag){
+  var filas = (ag.rows || []).map(function(r){
+    var estado = r.estado || 'Cotizado';
+    var excl = !!_REGI_ESTADOS_EXCLUIDOS[estado];
+    var lbl = (typeof cevenEstadoLabel === 'function') ? cevenEstadoLabel(estado) : estado;
+    return '<tr' + (excl ? ' style="opacity:.55"' : '') + '>'
+      + '<td>' + cevenEsc(r.cliente || '—') + '</td>'
+      + '<td>' + cevenEsc(r.proyecto || '—') + '</td>'
+      + '<td style="text-align:right;white-space:nowrap">USD ' + fI(Number(r.monto) || 0) + '</td>'
+      + '<td style="white-space:nowrap">' + cevenEsc(r.mesCierre ? _mesLabelPoly(r.mesCierre) : '—') + '</td>'
+      + '<td>' + cevenEsc(lbl) + '</td>'
+    + '</tr>';
+  }).join('');
+  return '<div style="margin-top:12px">'
+    + '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">'
+      + 'Cotizaciones de Ceven para este REGI (' + (ag.rows || []).length + ')</div>'
+    + '<table style="width:100%">'
+      + '<thead><tr><th>Cliente</th><th>Proyecto</th><th style="text-align:right">Monto</th><th>Cierre</th><th>Estado</th></tr></thead>'
+      + '<tbody>' + filas + '</tbody></table></div>';
 }
 
 function _regiPintarDashboard(rowsTotal, filtered, forecastFilter){

@@ -126,22 +126,35 @@ console.log('\n2 · _regiOpgVinculadosSet lee getPipeline(), no pide nada a Supa
   const e = cargar();
   e._pipelineData = [ filaReal('abc-123'), filaReal(''), filaReal(null), filaReal(' xyz-9 ') ];
   const set = e._regiOpgVinculadosSet();
-  ok(set['ABC-123'] !== undefined, 'un OPG cargado entra al set, normalizado');
-  ok(set['XYZ-9'] !== undefined, 'con espacios de más, igual');
-  ok(Object.keys(set).length === 2, 'las filas sin OPG no ensucian el set', JSON.stringify(set));
+  ok(Array.isArray(set['ABC-123']), 'un OPG cargado entra al set (como array), normalizado');
+  ok(Array.isArray(set['XYZ-9']), 'con espacios de más, igual');
+  ok(Object.keys(set).length === 2, 'las filas sin OPG no ensucian el set', JSON.stringify(Object.keys(set)));
+}
+{
+  // Un mismo OPG en VARIAS cotizaciones del pipeline real: el set las junta
+  // todas en un array, ninguna pisa a la otra.
+  const e = cargar();
+  e._pipelineData = [ filaReal('dup-1'), filaReal(' DUP-1 '), filaReal('dup-1'), filaReal('otro') ];
+  const set = e._regiOpgVinculadosSet();
+  ok(set['DUP-1'].length === 3, 'las 3 filas con el mismo OPG quedan en el mismo array', JSON.stringify(set['DUP-1'] && set['DUP-1'].length));
+  ok(set['OTRO'].length === 1, 'el OPG distinto queda aparte');
 }
 
 /* ═══ 3 · Una oportunidad sin REGI aprobado usa OPD ════════════════════════ */
 console.log('\n3 · Sin REGI aprobado (columna vacía), OPD permite el vínculo');
 {
   const e = cargar();
-  const vinculados = { 'ABC-123': 1, 'OPD1': 1, 'OPD3': 1 };
+  // vinculados es {OPG: [filas]} — a _regiEsVinculada solo le importa que el
+  // array exista y tenga al menos una fila.
+  const vinculados = { 'ABC-123': [{}], 'OPD1': [{}], 'OPD3': [{}] };
   ok(e._regiEsVinculada(filaRegi('OPD1', ''), vinculados) === true,
      'REGI vacío usa OPD para quedar vinculada');
   ok(e._regiEsVinculada(filaRegi('OPD2', 'abc-123'), vinculados) === true,
      'REGI aprobado que matchea (case/espacios distintos) SÍ queda vinculada');
   ok(e._regiEsVinculada(filaRegi('OPD3', 'otro-codigo'), vinculados) === false,
      'REGI aprobado que no matchea ningún OPG no usa OPD aunque esté cargado');
+  ok(e._regiEsVinculada(filaRegi('OPD4', ''), { 'OPD4': [] }) === false,
+     'un array vacío no cuenta como vinculada');
 }
 
 /* ═══ 4 · El 🎯 de "matchea vigente" en la fila del pipeline real ═══════════ */
@@ -183,6 +196,24 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
      'el KPI perdido usa el monto del Excel');
   ok(/USD 10\.000/.test(e._els['dash-regi-vinculados'].textContent),
      'el KPI vinculado suma el monto del pipeline Ceven');
+}
+{
+  // Un mismo REGI trabajado en VARIAS cotizaciones reales (mismo OPG): el KPI
+  // "Vinculados (Ceven)" suma todas las activas; una en estado Perdido/Facturado
+  // no cuenta (mismo criterio que "Total pipeline" del pipeline normal).
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('opg-x', {monto:9000, estado:'Cotizado'}),
+    filaReal('opg-x', {monto:6000, estado:'Negociacion'}),
+    filaReal('opg-x', {monto:4000, estado:'Perdido'}),
+    filaReal('opg-x', {monto:8000, estado:'Facturado'})
+  ];
+  e._regiPipeRows = [ filaRegi('OPD1', 'opg-x', {cliente:'Multi SA', montoArchivo:20000, monto:20000}) ];
+  e._regiMostrarVinculadas = false;
+  e._renderRegiPipelineFromCache();
+  ok(/USD 15\.000/.test(e._els['dash-regi-vinculados'].textContent),
+     'suma las cotizaciones activas del mismo OPG (9000 + 6000), sin Perdido (4000) ni Facturado (8000)',
+     e._els['dash-regi-vinculados'].textContent);
 }
 {
   // Mismo escenario, con el toggle en "mostrar".

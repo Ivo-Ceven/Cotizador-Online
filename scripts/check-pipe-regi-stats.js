@@ -253,7 +253,8 @@ console.log('\n7 · renderRegiStats / _renderRegiStatsFromCache pintan lo que co
   const cmp = e._els['stats-compare'].innerHTML;
   ok(/USD 10\.000/.test(cmp) && /USD 8\.000/.test(cmp), 'el comparador muestra el monto de HP y de Ceven para esa oportunidad', cmp);
   ok(/-USD 2\.000/.test(cmp), 'y la diferencia de monto de ESA oportunidad puntual (8000-10000=-2000)');
-  ok(/-2 m/.test(cmp), 'y la diferencia de fecha (agosto a octubre = -2 meses)');
+  ok(/-2\.0 m/.test(cmp), 'y la diferencia de fecha (agosto a octubre = -2.0 meses), con 1 decimal');
+  ok(cmp.indexOf('Cotizaciones de Ceven para este REGI') === -1, 'un REGI con UNA sola cotización no muestra desglose');
 }
 {
   // Sin ningún par vinculado: mensaje de vacío, nada de tablas ni KPI rotos.
@@ -289,6 +290,61 @@ console.log('\n8 · cevenRegiToggleVista("__regi_stats") deja la pantalla en el 
   ok(e._els['pipe-stats'].style.display === '', 'y muestra Estadísticas');
   ok(e._els['regi-vinc-wrap'].style.display === 'none', '"Mostrar vinculadas" no aplica acá, se oculta');
   ok(e._els['pipe-dashboard'].style.display === 'none', 'el dashboard de KPI del pipeline normal/REGI se apaga explícito');
+}
+
+/* ═══ 9 · Un mismo REGI en VARIAS cotizaciones de Ceven: impacto agregado ═══ */
+console.log('\n9 · _regiCevenAgg / _regiPairsVinculadas agregan las N cotizaciones del mismo OPG');
+{
+  // Dos cotizaciones activas con el mismo OPG, meses de cierre distintos.
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('m-1', 8000,  '2026-10', {cliente:'Cli X', proyecto:'Proy A', estado:'Cotizado'}),
+    filaReal('m-1', 12000, '2026-12', {cliente:'Cli X', proyecto:'Proy B', estado:'Negociacion'})
+  ];
+  e._regiPipeRows = [ filaRegi('OPD9', 'm-1', 25000, '2026-11') ];
+  const pares = e._regiPairsVinculadas();
+  ok(pares.length === 1, 'las dos filas del mismo OPG dan UN par (no dos)');
+  const ag = pares[0].ceven;
+  ok(ag.nCotiz === 2 && ag.nActivas === 2, 'el par sabe que agrega 2 cotizaciones', JSON.stringify({nCotiz:ag.nCotiz, nActivas:ag.nActivas}));
+  ok(ag.monto === 20000, 'monto agregado = suma de las dos (8000 + 12000)', ag.monto);
+  ok(e._regiDiffMonto(pares[0]) === -5000, 'diff de monto usa el agregado: 20000 − 25000 = -5000', e._regiDiffMonto(pares[0]));
+  // Promedio de meses PONDERADO POR MONTO: (8000·oct + 12000·dic) / 20000 ≈ 24322.2
+  const df = e._regiDiffFechaMeses(pares[0]);
+  ok(Math.abs(df - (-0.2)) < 1e-6, 'diff de fecha usa el promedio ponderado (nov − 24322.2 ≈ -0.2)', df);
+}
+{
+  // Una activa + una Perdida con el mismo OPG: la Perdida no suma ni pondera.
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('m-2', 10000, '2026-09', {cliente:'C', proyecto:'P1', estado:'Cotizado'}),
+    filaReal('m-2', 4000,  '2026-06', {cliente:'C', proyecto:'P2', estado:'Perdido'})
+  ];
+  e._regiPipeRows = [ filaRegi('OPD10', 'm-2', 12000, '2026-09') ];
+  const ag = e._regiPairsVinculadas()[0].ceven;
+  ok(ag.monto === 10000, 'monto agregado excluye la cotización Perdida (queda 10000, no 14000)', ag.monto);
+  ok(ag.montoTotal === 14000 && ag.nExcluidas === 1, 'igual guarda el total crudo y cuántas quedaron afuera');
+  ok(e._regiDiffFechaMeses(e._regiPairsVinculadas()[0]) === 0,
+     'el promedio de fecha ignora el mes de la Perdida (solo cuenta 2026-09 = el de HP)');
+}
+{
+  // El comparador de una oportunidad multi-cotización: agregado + desglose.
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('m-1', 8000,  '2026-10', {cliente:'Cli X', proyecto:'Proy A', estado:'Cotizado'}),
+    filaReal('m-1', 12000, '2026-12', {cliente:'Cli X', proyecto:'Proy B', estado:'Negociacion'})
+  ];
+  e._regiPipeRows = [ filaRegi('OPD9', 'm-1', 25000, '2026-11') ];
+  e.renderRegiStats();
+  ok(/· 2 cotiz\./.test(e._els['stats-pick'].innerHTML),
+     'el desplegable marca la oportunidad con más de una cotización', e._els['stats-pick'].innerHTML);
+  ok(/con más de una cotización de Ceven/.test(e._els['stats-kpi-monto-sub'].textContent),
+     'la sub-línea del KPI de monto avisa que hay agregación');
+  e._regiStatsPintarComparacion('OPD9');
+  const cmp = e._els['stats-compare'].innerHTML;
+  ok(/USD 20\.000/.test(cmp), 'la columna Ceven muestra el monto agregado (20.000)', cmp);
+  ok(/≈/.test(cmp), 'el mes de Ceven se marca como aproximado (promedio ponderado)');
+  ok(/Cotizaciones de Ceven para este REGI \(2\)/.test(cmp), 'hay un bloque de desglose con las 2 cotizaciones');
+  ok(cmp.indexOf('Proy A') !== -1 && cmp.indexOf('Proy B') !== -1, 'el desglose lista cada cotización por proyecto');
 }
 
 console.log('\n' + (fallos
