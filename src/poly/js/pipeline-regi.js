@@ -33,20 +33,29 @@
    — mismo criterio que ya dejan escrito shared/pipeline-group.js y
    shared/pipeline-ui.js sobre Poly vs Apple.
 
-   25/08/2026: la fila dejó de ser 100% de solo lectura en DOS sentidos —
-   se le puede asignar productos del catálogo (poly_regi_pipeline_productos,
-   ver js/pipeline-regi-productos.js) y se le puede editar el Forecast a
-   mano (columna `forecast_override`, incluye un cuarto estado que el
-   archivo de HP no tiene: "Perdido"). El resto de lo que viene del Excel
-   (regi/account/amount/fechas) sigue sin editarse: la única forma de
-   tocarlo sigue siendo reimportar.
+   03/09/2026 · VUELVE A SER UNA FOTO DEL EXCEL. Entre el 25/08 y esta
+   fecha la fila se pudo editar en dos sentidos —asignarle productos del
+   catálogo (tabla poly_regi_pipeline_productos, js/pipeline-regi-productos.js)
+   y editarle el Forecast a mano (columna `forecast_override`, con un cuarto
+   estado que HP no tiene: "Perdido")—, y el monto de los productos
+   REEMPLAZABA al del archivo. Pedido del jefe: acá no se edita nada, esto
+   tiene que decir exactamente lo que dice el archivo de HP. Se sacó toda la
+   edición y el editor de productos entero.
+
+   Lo que queda escribiendo desde esta vista NO toca la foto: "⬇ Importar
+   Excel REGI" (la reemplaza entera, que es la única forma de actualizarla) y
+   "➕ Copiar a Ceven" (abre una cotización nueva del lado de Ceven).
+
+   Las dos cosas de la base quedaron EN SU LUGAR, sin borrar ni migrar:
+   `poly_regi_pipeline_productos` y `poly_regi_pipeline.forecast_override` /
+   `perdido_motivo` siguen existiendo con sus datos, esta vista simplemente
+   dejó de leerlas. Volver atrás es volver a pedirlas en el select.
 
    `r.monto` es el monto que se VE y se SUMA en toda la UI (fila, grupo,
-   dashboard, orden): si el proyecto tiene productos asignados, es la
-   sumatoria de esos productos; si no, es el `amount` del archivo de HP.
-   Uno reemplaza al otro a propósito (pedido del usuario) — no conviven
-   como dos KPI separados. `r.montoArchivo` guarda el valor crudo del
-   archivo aparte, solo para el tooltip de la fila cuando los dos difieren.
+   dashboard, orden) y es SIEMPRE el `amount` del archivo de HP.
+   `r.montoArchivo` es el mismo número: se conserva como nombre propio
+   porque las Estadísticas REGI comparan explícitamente "lo que dice HP"
+   contra "lo que tiene Ceven" (ver _regiDiffMonto).
 
    Depende de: shared/auth.js (cevenAuthedFetch, cevenMyRole,
    cevenSessionUser, cevenCanUsePipeline), shared/config.js
@@ -64,15 +73,17 @@ window._regiVistaWasActive = false;
 
 function _cevenRegiPipeRest(path){ return SUPABASE_URL + '/rest/v1/' + path; }
 
-// Perdido no viene del archivo de HP (no es una categoría de forecast del
-// partner portal): es el cuarto estado que Ceven puede fijar a mano — ver
-// forecast_override más abajo. Mismo rojo que usa 'Perdido' en el embudo de
-// Estado del pipeline normal (shared/pipeline-status.js), a propósito.
+/* Las TRES categorías de forecast del partner portal de HP, que son las
+   únicas que puede traer la columna `Forecast` del Excel.
+
+   'Perdido' vivía acá como cuarto valor: no salía del archivo, era el
+   override que Ceven fijaba a mano (forecast_override). Se fue con la
+   edición el 03/09/2026 — dejarlo habría pintado para siempre una pastilla
+   apagada de un estado que ya nadie puede fijar. */
 var REGI_FORECAST_COLORS = {
   Commit:   {bg:'#fff8e1', fg:'#7a5800'},
   Pipeline: {bg:'#e8f4ff', fg:'#0071e3'},
-  Upside:   {bg:'#f2e8ff', fg:'#6e36c8'},
-  Perdido:  {bg:'#fbbebe', fg:'#a80011'}
+  Upside:   {bg:'#f2e8ff', fg:'#6e36c8'}
 };
 
 /* 'AAAA-MM-DD' -> 'DD/MM/AAAA', solo para mostrar. DR Expiration se guarda en
@@ -368,10 +379,14 @@ function cevenRegiToggleVista(vista){
   var proyCard = document.getElementById('dash-proy-card');
   if(facturadoCard) facturadoCard.style.display = usaDatosRegi ? 'none' : '';
   if(proyCard) proyCard.style.display = usaDatosRegi ? 'none' : '';
-  ['dash-regi-perdidos-card','dash-regi-vinculados-card'].forEach(function(id){
-    var card = document.getElementById(id);
-    if(card) card.style.display = esRegi ? '' : 'none';
-  });
+  var vincCard = document.getElementById('dash-regi-vinculados-card');
+  if(vincCard) vincCard.style.display = esRegi ? '' : 'none';
+  /* "Monto REGI perdidos" no se muestra más en ninguna vista: contaba las
+     filas con forecast 'Perdido', que solo existía como override a mano y se
+     fue el 03/09/2026. La tarjeta sigue en el HTML (display:none por
+     default) para no tocar el layout de la grilla de KPI. */
+  var perdCard = document.getElementById('dash-regi-perdidos-card');
+  if(perdCard) perdCard.style.display = 'none';
 
   // exportPipeline() arma el Excel con las columnas del pipeline normal
   // (fecha/ejecutivo/OPG/factura...): no sabe leer una fila de REGI ni de
@@ -461,59 +476,39 @@ function _procesarRegiPipelineExcel(filas){
 
 /* ── Traer los datos ──────────────────────────────────────────────────── */
 
+/* Una fila del Excel de HP, tal cual. Todo lo que se lee acá sale del
+   archivo: no hay ningún campo que Ceven pueda pisar a mano. */
 function _regiRowToPipeRow(r){
   var montoArchivo = Number(r.amount) || 0;
-  var productosMonto = (window._regiProductosTotales && window._regiProductosTotales[r.opd]) || 0;
   return {
     opd: r.opd, regi: r.regi || '',
-    perdidoMotivo: r.perdido_motivo || null,
-    // El forecast a mano (forecast_override) reemplaza al del archivo — no
-    // conviven, ver el comentario de cabecera. Incluye "Perdido", que el
-    // archivo de HP no contempla. forecastArchivo se guarda aparte para
-    // poder volver a él si alguna vez se limpia el override (ver
-    // _regiCambiarForecast): sin esto, "— Sin definir —" dejaría la fila en
-    // blanco en vez de volver a mostrar lo que dice el archivo.
-    forecastArchivo: r.forecast || '',
-    forecast: r.forecast_override || r.forecast || '',
+    // Commit / Pipeline / Upside, lo que diga el archivo. Ya no hay override.
+    forecast: r.forecast || '',
     proyecto: r.opportunity || '', primaryPartner: r.primary_partner || '',
     drExpiration: r.dr_expiration || '',
     // cliente/monto/mesCierre: mismos nombres que una fila real, a propósito
     // (ver el comentario del encabezado) — así cevenPipeGroupBy() y
     // compañía las agrupan/ordenan sin que se las toque.
     cliente: r.account || '',
-    // Con productos asignados, `monto` pasa a ser esa sumatoria — reemplaza
-    // al del archivo en TODA la UI (fila, grupo, dashboard, orden). Sin
-    // productos, sigue siendo el `amount` de HP. montoArchivo se guarda
-    // aparte solo para el tooltip de la fila. window._regiProductosTotales
-    // ya está armado por _cevenRegiPipeFetch() antes de mapear estas filas.
+    // Los dos son el mismo número desde que la vista volvió a ser una foto.
+    // `monto` es el que lee la UI compartida; `montoArchivo` es el nombre
+    // que usan las Estadísticas para decir "esto lo dice HP".
     montoArchivo: montoArchivo,
-    productosMonto: productosMonto,
-    monto: productosMonto > 0 ? productosMonto : montoArchivo,
+    monto: montoArchivo,
     mesCierre: r.close_date ? String(r.close_date).slice(0, 7) : ''
   };
 }
 
 function _cevenRegiPipeFetch(){
+  /* Un solo GET, y solo las columnas del archivo. `forecast_override`,
+     `perdido_motivo` y la tabla `poly_regi_pipeline_productos` siguen
+     existiendo en la base con sus datos: esta vista dejó de leerlas el
+     03/09/2026 (ver el comentario de cabecera). */
   var url = _cevenRegiPipeRest('poly_regi_pipeline')
-    + '?select=opd,regi,dr_expiration,opportunity,forecast,forecast_override,perdido_motivo,account,primary_partner,amount,close_date'
+    + '?select=opd,regi,dr_expiration,opportunity,forecast,account,primary_partner,amount,close_date'
     + '&order=amount.desc';
-  // Los productos asignados se traen en la MISMA pasada (no por fila, no
-  // hay función de agregación en la base): son pocas filas por proyecto y
-  // se suman acá — más simple que armar una vista o un rpc solo para esto.
-  // Si ESTE pedido falla, no tira abajo el pipeline entero (que es dato de
-  // producción real): se sigue mostrando con "Productos asignados" en 0 en
-  // vez de con el cartel de error.
-  var urlProd = _cevenRegiPipeRest('poly_regi_pipeline_productos') + '?select=opd,cantidad,precio_unitario';
-  return Promise.all([
-    cevenAuthedFetch(url, {method: 'GET'}),
-    cevenAuthedFetch(urlProd, {method: 'GET'}).catch(function(){ return []; })
-  ]).then(function(res){
-    var totales = {};
-    (Array.isArray(res[1]) ? res[1] : []).forEach(function(p){
-      totales[p.opd] = (totales[p.opd] || 0) + (Number(p.cantidad) || 0) * (Number(p.precio_unitario) || 0);
-    });
-    window._regiProductosTotales = totales;
-    window._regiPipeRows = (Array.isArray(res[0]) ? res[0] : []).map(_regiRowToPipeRow);
+  return cevenAuthedFetch(url, {method: 'GET'}).then(function(res){
+    window._regiPipeRows = (Array.isArray(res) ? res : []).map(_regiRowToPipeRow);
     return window._regiPipeRows;
   });
 }
@@ -818,11 +813,17 @@ function _regiPintarDashboard(rowsTotal, filtered, forecastFilter){
   if(!dash) return;
   dash.style.display = 'block';
 
-  var totalExcel = 0, perdidosExcel = 0, vinculadosCeven = 0;
+  /* "Monto total REGI": la suma CRUDA del Amount de todas las filas del
+     Excel, sin descontar nada (pedido del jefe, 03/09/2026). Sale de
+     `rowsTotal` y no de `filtered`, así que no se mueve al tocar la búsqueda,
+     las pastillas de mes/Forecast ni el toggle de vinculadas — para eso están
+     el subtotal de cada grupo y las pastillas "Por Forecast", que sí filtran.
+
+     Antes descontaba las filas en 'Perdido'. Ese estado no existe más: solo
+     salía del forecast editado a mano, que se fue con la edición. */
+  var totalExcel = 0, vinculadosCeven = 0;
   rowsTotal.forEach(function(r){
-    var montoArchivo = Number(r.montoArchivo) || 0;
-    if(r.forecast === 'Perdido') perdidosExcel += montoArchivo;
-    else totalExcel += montoArchivo;
+    totalExcel += Number(r.montoArchivo) || 0;
     if(r.vinculada) vinculadosCeven += Number(r.montoVinculado) || 0;
   });
 
@@ -841,8 +842,8 @@ function _regiPintarDashboard(rowsTotal, filtered, forecastFilter){
   document.getElementById('dash-proyectos').textContent = filtered.length;
   _pipeSetLbl('dash-total-lbl', 'Monto total REGI');
   document.getElementById('dash-total').textContent = 'USD ' + fI(totalExcel);
-  _pipeSetLbl('dash-total-sub', 'monto del Excel · sin Perdido · incluye vinculadas');
-  document.getElementById('dash-regi-perdidos').textContent = 'USD ' + fI(perdidosExcel);
+  _pipeSetLbl('dash-total-sub', 'todas las filas del Excel · sin descontar nada'
+    + (vinculadosCeven > 0 ? (' · USD ' + fI(vinculadosCeven) + ' ya vinculadas a Ceven') : ''));
   document.getElementById('dash-regi-vinculados').textContent = 'USD ' + fI(vinculadosCeven);
 
   var pillsHtml = '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Por Forecast</div>'
@@ -876,59 +877,42 @@ function _regiGroupRowHTML(g, key, abierto){
     + '</td></tr>';
 }
 
-/* Forecast editable: un <select> coloreado según el valor elegido, no una
-   pastilla fija. "— Sin definir —" cubre el caso —raro— de un archivo con
-   la columna vacía y ningún override cargado todavía; sin esa opción el
-   <select> caería en la primera del array (Commit) y mentiría sobre el
-   valor real. */
-function _regiForecastSelectHTML(r){
+/* Forecast: una pastilla fija con el valor del archivo. Fue un <select>
+   editable entre el 25/08 y el 03/09/2026; ahora es lo que dice HP y nada
+   más. Un valor que no esté en REGI_FORECAST_COLORS (archivo con una
+   categoría nueva) se pinta en gris con su texto crudo, en vez de caer a
+   otra categoría: mostrar lo que hay permite darse cuenta. */
+function _regiForecastPillHTML(r){
   var actual = r.forecast || '';
-  var c = REGI_FORECAST_COLORS[actual] || {bg:'#fff', fg:'#6e6e73'};
-  var h = '<select class="si" name="regi-forecast-'+cevenEsc(r.opd)+'" data-act="regi-forecast-edit" data-opd="'+cevenEsc(r.opd)+'"'
-    + ' style="font-size:11px;font-weight:700;padding:2px 6px;background:'+c.bg+';color:'+c.fg+';border-color:'+c.fg+'">'
-    + '<option value=""'+(!actual?' selected':'')+'>— Sin definir —</option>';
-  Object.keys(REGI_FORECAST_COLORS).forEach(function(fc){
-    h += '<option value="'+fc+'"'+(fc===actual?' selected':'')+'>'+fc+'</option>';
-  });
-  h += '</select>';
-  return h;
-}
-
-function _regiMotivoPerdidaHTML(r){
-  if(r.forecast !== 'Perdido') return '';
-  return ' <button class="bs" data-act="regi-perdido-detalle" data-opd="'+cevenEsc(r.opd)+'" style="padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7">Ver motivo</button>';
+  if(!actual) return '<span style="color:#aeaeb2;font-size:11px">—</span>';
+  var c = REGI_FORECAST_COLORS[actual] || {bg:'#f2f2f7', fg:'#6e6e73'};
+  return '<span style="background:'+c.bg+';color:'+c.fg+';border-radius:980px;padding:2px 10px;'
+    + 'font-size:11px;font-weight:700;white-space:nowrap">'+cevenEsc(actual)+'</span>';
 }
 
 function _regiRowHTML(r){
   var vencido = r.drExpiration && r.drExpiration < cevenHoyISO();
-  // Cuando el monto de la fila viene de los productos asignados (reemplaza
-  // al del archivo, ver el comentario de cabecera), un 🎯 + tooltip avisa
-  // de dónde sale — sin eso, un número que de repente cambió de fuente se
-  // ve idéntico al de siempre y nadie se entera de por qué no coincide con
-  // el archivo de HP.
-  var deProductos = r.productosMonto > 0;
-  var montoTitle = deProductos
-    ? 'Sumatoria de los productos asignados (el archivo de HP dice USD ' + fI(r.montoArchivo||0) + ')'
-    : '';
   // Vinculada: el proyecto real ya existe (mismo OPG que este REGI) y es la
-  // fuente de verdad — no tiene sentido seguir asignándole productos o
-  // forecast a mano acá, así que la celda de Acciones se reduce a decirlo.
-  // La fila se atenúa (mismo criterio que las pastillas apagadas del
-  // dashboard) para que salte a la vista cuál ya está resuelta.
+  // fuente de verdad, así que la celda de Acciones se reduce a decirlo. La
+  // fila se atenúa (mismo criterio que las pastillas apagadas del dashboard)
+  // para que salte a la vista cuál ya está resuelta.
+  //
+  // "➕ Copiar a Ceven" es lo único que queda: no edita esta foto, abre una
+  // cotización nueva del lado de Ceven. El "✎ Editar" que asignaba productos
+  // se fue el 03/09/2026 con el resto de la edición.
   var celdaAcc = r.vinculada
     ? '<span style="background:#e6f7ec;color:#15863a;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✓ Vinculada</span>'
-    : '<button class="bs" data-act="regi-editar" data-opd="'+cevenEsc(r.opd)+'" title="Asignar productos del catálogo a este proyecto" style="padding:2px 8px;font-size:12px">✎ Editar</button>'
-      + ' <button class="bs" data-act="regi-copiar" data-opd="'+cevenEsc(r.opd)+'" title="Crear la cotización real en nuestro pipeline a partir de esta oportunidad" style="padding:2px 8px;font-size:12px;background:#e8f4ff;color:#0071e3;border-color:#b8ddff">'
+    : '<button class="bs" data-act="regi-copiar" data-opd="'+cevenEsc(r.opd)+'" title="Crear la cotización real en nuestro pipeline a partir de esta oportunidad" style="padding:2px 8px;font-size:12px;background:#e8f4ff;color:#0071e3;border-color:#b8ddff">'
         + ((window._regiCopiadas && window._regiCopiadas[r.opd]) ? '➕ Copiar de nuevo' : '➕ Copiar a Ceven') + '</button>';
   return '<tr'+(r.vinculada ? ' style="opacity:.55"' : '')+'>'
     + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+cevenEsc(r.opd||'—')+'</td>'
     + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+(r.regi ? cevenEsc(r.regi) : '<span style="color:#aeaeb2">sin REGI</span>')+'</td>'
     + '<td style="font-size:12px"><div style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
     + '<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.primaryPartner||'—')+'</td>'
-    + '<td style="text-align:center;overflow:visible">'+_regiForecastSelectHTML(r)+_regiMotivoPerdidaHTML(r)+'</td>'
+    + '<td style="text-align:center">'+_regiForecastPillHTML(r)+'</td>'
     + '<td style="font-size:12px;white-space:nowrap'+(vencido?';color:#d70015':'')+'" title="'+(vencido?'Deal Registration vencido':'')+'">'+cevenEsc(r.drExpiration ? _regiFechaDDMMYYYY(r.drExpiration) : '—')+'</td>'
     + '<td style="font-size:12px;white-space:nowrap">'+cevenEsc(r.mesCierre ? _mesLabelPoly(r.mesCierre) : '—')+'</td>'
-    + '<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px" title="'+cevenEsc(montoTitle)+'">'+(deProductos?'<span title="Monto de los productos asignados">🎯</span> ':'')+'USD '+fI(r.monto||0)+'</td>'
+    + '<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px">USD '+fI(r.monto||0)+'</td>'
     + '<td class="stk-act" style="text-align:center;white-space:nowrap">'+celdaAcc+'</td>'
   + '</tr>';
 }
@@ -948,50 +932,12 @@ function _regiTablaHTML(filas){
   return html;
 }
 
-/* ── Editar el Forecast a mano ────────────────────────────────────────────
-   No optimista a propósito: espera la confirmación del PATCH antes de tocar
-   `window._regiPipeRows` y re-renderizar — mismo criterio que
-   guardarRegiProductos() en pipeline-regi-productos.js. Si falla, el
-   re-render deja el <select> como estaba (el objeto en memoria nunca
-   cambió), que es el revert más simple y correcto. */
-function _regiCambiarForecast(opd, valor){
-  if(!opd) return;
-  if(!cevenCanUsePipeline()){ showToast('Tu rol no permite editar proyectos REGI.'); renderPipeline(); return; }
-  if(valor === 'Perdido'){
-    abrirModalMotivoPerdida(function(perdidoMotivo){
-      _regiGuardarForecast(opd, valor, perdidoMotivo);
-    }, function(){
-      if(typeof renderPipeline === 'function') renderPipeline();
-    });
-    return;
-  }
-  _regiGuardarForecast(opd, valor, null);
-}
-
-function _regiGuardarForecast(opd, valor, perdidoMotivo){
-  cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?opd=eq.' + encodeURIComponent(opd), {
-    method: 'PATCH',
-    headers: {Prefer: 'return=minimal'},
-    body: JSON.stringify({
-      forecast_override: valor || null,
-      perdido_motivo: valor === 'Perdido' ? perdidoMotivo : null
-    })
-  }).then(function(){
-    var row = (window._regiPipeRows || []).filter(function(r){ return r.opd === opd; })[0];
-    // Limpiar el override (valor === '') no deja la fila en blanco: vuelve
-    // a mostrar lo que dice el archivo, igual que hace la base con
-    // forecast_override en null (ver el comentario de forecastArchivo).
-    if(row){
-      row.forecast = valor || row.forecastArchivo || '';
-      row.perdidoMotivo = valor === 'Perdido' ? perdidoMotivo : null;
-    }
-    if(typeof renderPipeline === 'function') renderPipeline();
-    showToast('✓ Forecast actualizado' + (valor ? (': ' + valor) : ' (vuelve a mostrar el del archivo)') + '.');
-  }).catch(function(e){
-    showErr('No se pudo actualizar el forecast: ' + ((e && e.message) || 'error desconocido'));
-    if(typeof renderPipeline === 'function') renderPipeline();
-  });
-}
+/* _regiCambiarForecast()/_regiGuardarForecast() vivían acá: hacían un PATCH
+   de `forecast_override`/`perdido_motivo` sobre poly_regi_pipeline. Se fueron
+   el 03/09/2026 con el resto de la edición — esta vista ya no escribe una
+   sola columna de esa tabla, solo la reemplaza entera al importar el Excel.
+   Las columnas siguen en la base con sus datos (ver el comentario de
+   cabecera). */
 
 /* ── Copiar una oportunidad a una cotización real ─────────────────────────
    Confirmado con el usuario antes de construir esto: NO crea una fila
@@ -1040,20 +986,10 @@ function _regiBindDelegation(){
       if(!el) return;
       var act = el.getAttribute('data-act');
       if(act === 'expcli') togglePipeNode(el.getAttribute('data-k'));
-      // La edición vive en pipeline-regi-productos.js (cargado después):
-      // se llama por nombre y no por referencia directa, mismo criterio que
-      // el resto del pipeline usa para hooks opcionales.
-      else if(act === 'regi-editar' && typeof abrirRegiEditor === 'function') abrirRegiEditor(el.getAttribute('data-opd'));
       else if(act === 'regi-copiar') _regiCopiarAPipeline(el.getAttribute('data-opd'));
-      else if(act === 'regi-perdido-detalle'){
-        var row = (window._regiPipeRows || []).filter(function(r){ return r.opd === el.getAttribute('data-opd'); })[0];
-        abrirDetalleMotivoPerdida(row && row.perdidoMotivo);
-      }
     });
-    body.addEventListener('change', function(ev){
-      var el = cevenActEl(ev, body);
-      if(el && el.getAttribute('data-act') === 'regi-forecast-edit') _regiCambiarForecast(el.getAttribute('data-opd'), el.value);
-    });
+    /* No hay listener de 'change': en esta tabla no quedó ni un control que
+       se pueda cambiar. Lo había para el <select> de Forecast (25/08-03/09). */
   }
   var dashByStatus = document.getElementById('dash-by-status');
   if(dashByStatus && !dashByStatus._regiBound){

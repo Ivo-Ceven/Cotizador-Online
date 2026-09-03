@@ -431,6 +431,12 @@ function renderPipelineDetailRow(r, db, pipe){
     var elimBtn = hasOverrides && !ln._isPartialRem
       ? '<button class="bsr" data-dact="clear"'+lineA+' title="Quitar estado/fecha/parcial específicos de este SKU" style="padding:1px 7px;font-size:10px">×</button>'
       : '<button class="bs" disabled style="padding:1px 7px;font-size:10px;color:#d2d2d7;cursor:not-allowed;background:#fafafa">×</button>';
+    /* Sacar el artículo de la cotización (03/09/2026). No va en las filas de
+       resto parcial: esas no son una línea de cquotes, son la porción no
+       facturada de otra que ya está listada arriba. */
+    if(!ln._isPartialRem){
+      elimBtn += ' <button class="bsr" data-dact="sku-rm"'+lineA+' title="Sacar este artículo de la cotización" style="padding:1px 6px;font-size:11px">✂️</button>';
+    }
 
     // Cierre estimado por SKU (default = el de la cotización si no tiene propio)
     var lnMC = skuMesCierre[lineKey] || r.mesCierre || '';
@@ -527,6 +533,7 @@ function renderPipelineDetailRow(r, db, pipe){
       case 'ov-open':       e.stopPropagation(); openSkuOvLink(c.id, c.lk); break;
       case 'ov-edit':       e.stopPropagation(); editSkuOvLink(c.id, c.lk); break;
       case 'clear':         clearSkuOverrides(c.id, c.lk); break;
+      case 'sku-rm':        e.stopPropagation(); quitarLineaDeCotizacion(c.id, c.lk); break;
       case 'partial-start': promptPartialQty(c.id, c.lk, c.qty); break;
     }
   });
@@ -538,6 +545,108 @@ function renderPipelineDetailRow(r, db, pipe){
     if(!isNaN(c.id)) editSkuOvLink(c.id, c.lk);
   });
 })();
+
+/* ── SACAR UN ARTÍCULO DE LA COTIZACIÓN (✂️) ─────────────────────────────────
+   Los artículos NO son del pipeline: son filas de `cquotes`. Sacar uno es
+   editar una cotización guardada sin abrirla, y hay que dejar consistentes las
+   tres cosas que dependen de esas líneas: el historial, los agregados de la
+   fila (monto, cantidades por familia, margen ponderado) y las claves
+   `SKU|índice` de TODOS los overrides por línea.
+
+   Los siete mapas se reindexan juntos, no solo skuStatus: si se corrieran unos
+   sí y otros no, una línea quedaría con el estado de una y el mes de otra.
+
+   Los agregados se recalculan con _pipeAgregados(), la misma función que usa
+   "Agregar al pipeline" — si fueran dos cuentas distintas, la fila diría un
+   total y la cotización otro. */
+var _SKU_MAPS = ['skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',
+                 'skuPartialRemMes','skuArchivedQty','skuOvLinks'];
+
+function quitarLineaDeCotizacion(pipeId, lineKey){
+  var pipe = getPipeline();
+  var row = null;
+  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === pipeId){ row = pipe[i]; break; } }
+  if(!row){ showToast('Ese proyecto ya no está en el pipeline actual.'); return; }
+  if(!cevenCanEditQuote(row.ejecutivo)){ showToast('No tenés permiso para editar esta cotización.'); return; }
+
+  // Un solo getDB(): `lines` tiene que ser las MISMAS referencias que están en
+  // `db`, porque el borrado es por identidad de objeto (así la opción A/B que
+  // no está vigente no se toca ni por casualidad).
+  var db = getDB();
+  var lines = cevenOpcFilasDeCotiz(db, row.qNum, ['producto','garantia']);
+  var idx = -1;
+  for(var j=0;j<lines.length;j++){ if((lines[j]['SKU']||'') + '|' + j === lineKey){ idx = j; break; } }
+  if(idx < 0){ showToast('Ese artículo ya no está en la cotización.'); renderPipeline(); return; }
+
+  /* Sacar el último dejaría una fila de pipeline apuntando a una cotización
+     que ya no existe. Para eso está el ✕ de la fila. */
+  if(lines.length <= 1){
+    showToast('Es el único artículo de la cotización #'+(row.qNum||'—')+' — usá ✕ para quitar el proyecto del pipeline.');
+    return;
+  }
+
+  var target = lines[idx];
+  var sku = target['SKU'] || '—';
+  // Estado previo para el Deshacer. `db` no se muta: el borrado arma un array
+  // nuevo, así que esta misma referencia sirve para volver atrás con el orden
+  // original intacto (importante: el orden ES el índice de los lineKeys).
+  var dbAntes = db;
+  var antes = {};
+  ['monto','margenPond','qMac','qIph','qIpad','qServ','qAcc',
+   'montoMac','montoIph','montoIpad','montoAcc','montoServ'].concat(_SKU_MAPS)
+    .forEach(function(k){ antes[k] = row[k]; });
+  var mapasAntes = JSON.stringify(_SKU_MAPS.map(function(k){ return row[k] || null; }));
+
+  if(!saveDB(db.filter(function(x){ return x !== target; }))){
+    showToast('No se pudo guardar el cambio (almacenamiento lleno): la cotización quedó como estaba.');
+    return;
+  }
+
+  cevenSkuReindex(row, _SKU_MAPS, lines, idx);
+  _pipeAplicarAgregados(row, lines.filter(function(x){ return x !== target; }));
+  savePipeline(pipe);
+  renderPipeline();
+
+  notifyUndo('Sacaste '+sku+' de la cotización #'+(row.qNum||'—')+'.', function(){
+    saveDB(dbAntes);
+    var pipe2 = getPipeline();
+    for(var k=0;k<pipe2.length;k++){
+      if(pipe2[k].id !== pipeId) continue;
+      Object.keys(antes).forEach(function(f){
+        if(antes[f] === undefined) delete pipe2[k][f]; else pipe2[k][f] = antes[f];
+      });
+      var viejos = JSON.parse(mapasAntes);
+      _SKU_MAPS.forEach(function(m, mi){
+        if(viejos[mi]) pipe2[k][m] = viejos[mi]; else delete pipe2[k][m];
+      });
+      break;
+    }
+    savePipeline(pipe2);
+    renderPipeline();
+  });
+}
+
+/* Recalcula monto/cantidades/margen de una fila a partir de las líneas que le
+   quedan en cquotes. Reconstruye los objetos que espera _pipeAgregados() con el
+   mismo mapeo que ya usa la expansión virtual (apple/js/pipeline-view.js). */
+function _pipeAplicarAgregados(row, lineas){
+  var its = [], wrs = [];
+  lineas.forEach(function(l){
+    var qty = parseInt(l['Cantidad'], 10) || 0;
+    var pr  = parseFloat(l['P. Venta Unitario']) || 0;
+    if(l['Tipo'] === 'garantia'){ wrs.push({cantidad: qty, precio: pr}); return; }
+    var mg = parseFloat(l['Margen %']);
+    its.push({
+      description: l['Descripción'] || '',
+      lob: (l['_lob'] || '').trim(),
+      salePrice: pr, qty: qty,
+      itemMargin: isNaN(mg) ? 0 : mg
+    });
+  });
+  var ag = _pipeAgregados(its, wrs);
+  ['qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad',
+   'montoAcc','montoServ','monto','margenPond'].forEach(function(k){ row[k] = ag[k]; });
+}
 
 // Inicia una facturación parcial preguntando cuántas unidades se facturaron
 function promptPartialQty(pipeId, lineKey, totalQty){

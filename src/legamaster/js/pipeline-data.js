@@ -4,8 +4,13 @@
 // shared/pipeline-store.js: son identicos en todas las marcas.
 
 // Al entrar al pipeline: mueve al archivo los proyectos Facturados/Perdidos de
-// meses anteriores. Cada fila de Legamaster es un proyecto y se archiva entera
-// (mismo modelo que Poly, sin desglose por SKU/familia que archivar parcialmente).
+// meses anteriores. Cada fila de Legamaster es un proyecto y se archiva ENTERA
+// (mismo modelo que Poly, sin facturación parcial por SKU).
+//
+// Por eso, desde que un artículo puede tener su propio estado (03/09/2026), una
+// fila solo se va cuando TODOS sus estados efectivos están cerrados. Un proyecto
+// con la mitad facturada y la otra mitad todavía en negociación se archivaría
+// con plata viva adentro, y esa plata desaparecería del pipeline sin aviso.
 function archiveOldEntries(){
   var pipe = getPipeline();
   var archive = getArchive();
@@ -14,11 +19,21 @@ function archiveOldEntries(){
   var moved = 0;
   var meses = {};
 
+  // getDB() hace JSON.parse de varios MB: solo se paga si hay alguna fila con
+  // estados por ítem, que es lo único que necesita mirar las líneas.
+  var _db = null;
+  function _lineasDe(r){
+    if(!cevenSkuTieneOverrides(r)) return null;
+    if(_db === null) _db = getDB();
+    return cevenOpcFilasDeCotiz(_db, r.qNum);
+  }
+
   pipe.forEach(function(r){
-    var estado = r.estado || 'Cotizado';
     var mesC = r.mesCierre || '';
-    var shouldArchive = (estado === 'Facturado' || estado === 'Perdido')
-      && mesC && mesC < curMonth;
+    var cerrados = cevenSkuEstadosDe(r, _lineasDe(r)).every(function(s){
+      return s === 'Facturado' || s === 'Perdido';
+    });
+    var shouldArchive = cerrados && mesC && mesC < curMonth;
     if(shouldArchive){
       if(!archive[mesC]) archive[mesC] = [];
       var exists = archive[mesC].some(function(x){ return x.id === r.id; });

@@ -386,7 +386,7 @@
   </div>
 
   <div class="tw">
-    <table style="min-width:980px" id="pipe-table-normal">
+    <table style="min-width:980px;--stk-act-w:118px" id="pipe-table-normal">
       <thead><tr>
         <th class="srt" data-sort="fechaISO">Fecha</th>
         <th class="srt" data-sort="ejecutivo">Ejecutivo</th>
@@ -395,7 +395,9 @@
         <th class="srt" data-sort="mesCierre">Cierre estimado</th>
         <th class="srt" data-sort="estado" style="text-align:center">Estado</th>
         <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
-        <th class="stk-act" style="width:80px;text-align:center">Acciones</th>
+        <!-- 118px, no 80: desde 03/09/2026 la celda lleva editar la cotización,
+             el comprobante y quitar del pipeline. -->
+        <th class="stk-act" style="width:118px;text-align:center">Acciones</th>
       </tr></thead>
       <tbody id="pipe-body"></tbody>
     </table>
@@ -443,6 +445,9 @@
 <script src="js/pipeline-core.js"></script>
 <script src="js/archive-view.js"></script>
 <script src="../shared/pipeline-status.js"></script>
+<!-- pipeline-sku.js: estado propio por linea de producto. Lee cevenEstadoValores()
+     de pipeline-status.js, asi que va despues; lo usan pipeline-view/detail. -->
+<script src="../shared/pipeline-sku.js"></script>
 <script src="../shared/pipeline-group.js"></script>
 <script src="../shared/pipeline-ui.js"></script>
 <script src="../shared/pipeline-perdido.js"></script>

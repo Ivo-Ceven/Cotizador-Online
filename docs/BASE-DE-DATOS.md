@@ -34,7 +34,14 @@ create table public.pipeline (
   monto           numeric,
   "margenPond"    numeric,
   moneda          text,
-  "skuStatus"        jsonb,   -- overrides de estado por línea de producto
+  "skuStatus"        jsonb,   -- overrides de estado por línea de producto.
+                              -- Desde 03/09/2026 la usan LAS TRES marcas (antes solo
+                              -- Apple): el estado de la fila vale para todos sus
+                              -- artículos menos los que tengan uno propio acá.
+                              -- Clave: "<SKU>|<índice en la opción vigente>".
+                              -- Ver src/shared/pipeline-sku.js. Migración: NINGUNA,
+                              -- la columna ya existía; solo se agregó a pipeCols/objCols
+                              -- de poly/brand.js y legamaster/brand.js.
   "skuMesCierre"     jsonb,   -- overrides de mes de cierre por línea
   "skuPartialQty"    jsonb,   -- entregas parciales: qty facturada por línea
   "skuPartialRemSt"  jsonb,   -- estado del remanente parcial
@@ -54,8 +61,8 @@ create table public.pipeline (
   primary key (brand, id)
 );
 -- Nota: el campo local `skuOvLinks` NO se sincroniza (excluido a propósito en sync.js).
--- Nota: qMac/qIph/qIpad/qServ/qAcc/montoMac.../qNum/margenPond/skuStatus/skuMesCierre/skuPartial*/ovLink
--- son 100% de brand='apple' — para brand='poly' quedan siempre NULL (agregados 2026-07-24, migración aditiva).
+-- Nota: qMac/qIph/qIpad/qServ/qAcc/montoMac.../qNum/margenPond/skuMesCierre/skuPartial*/ovLink
+-- son 100% de brand='apple' (skuStatus YA NO: ver arriba) — para brand='poly' quedan siempre NULL (agregados 2026-07-24, migración aditiva).
 --
 -- 🔴 FALTA "esFOB" (boolean), Y EL CLIENTE LA ESCRIBE.
 -- Este bloque describe la base REAL, verificada contra information_schema el

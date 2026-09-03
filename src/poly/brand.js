@@ -37,13 +37,21 @@ window.CEVEN_BRAND = {
      cierre y link de Netsuite (columna `factura`, ver mas abajo). `salas` ya no
      existe.
 
-     Sin familias Apple (qMac/qIph/...) ni margen: eso sigue siendo de Apple. */
+     Sin familias Apple (qMac/qIph/...) ni margen: eso sigue siendo de Apple.
+
+     `skuStatus` (03/09/2026) es el estado propio de una linea de producto: el
+     estado de la fila vale para todos sus articulos MENOS los que tengan uno
+     configurado en particular (ver shared/pipeline-sku.js). La columna jsonb
+     ya existia en la tabla `pipeline` desde 07/2026 —la usaba solo Apple—, asi
+     que esto es declarativo: no hubo migracion. */
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','opg',
-    'ejecutivo','mesCierre','estado','monto','moneda','factura','perdidoMotivo'],
+    'ejecutivo','mesCierre','estado','monto','moneda','factura','perdidoMotivo','skuStatus'],
 
   numCols: ['id','qNum','clienteId','monto'],
 
-  objCols: ['perdidoMotivo'],
+  // skuStatus va aca ADEMAS de en pipeCols: sin esto pickPipe() lo emite como
+  // string y el jsonb entra roto (ver shared/sync.js).
+  objCols: ['perdidoMotivo','skuStatus'],
 
   /* Columnas numericas en Supabase que la app guarda como string con ceros a la
      izquierda (col -> ancho). `qNum` se guarda '0071' y la columna es bigint:

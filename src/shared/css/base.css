@@ -429,8 +429,13 @@ td.wrap{white-space:normal;overflow:visible;text-overflow:unset;word-break:break
 .no-spin::-webkit-outer-spin-button,.no-spin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .no-spin{-moz-appearance:textfield}
 
-/* Pipeline: columnas pegadas a la derecha cuando hay scroll horizontal */
-#p-pipeline .stk-monto{position:sticky;right:130px;background:#fff;z-index:2;box-shadow:-1px 0 0 #f0f0f0}
+/* Pipeline: columnas pegadas a la derecha cuando hay scroll horizontal.
+   El `right` de Monto tiene que ser EL ANCHO de la columna Acciones, y ese
+   ancho no es el mismo en todas las tablas: cada marca tiene su propio juego de
+   botones, y Poly tiene además dos tablas distintas (la normal y la de REGI).
+   Por eso el valor se declara con `--stk-act-w` en el <table> de cada una,
+   junto al `width` del <th>, que es donde se lo ve y se lo mantiene. */
+#p-pipeline .stk-monto{position:sticky;right:var(--stk-act-w,130px);background:#fff;z-index:2;box-shadow:-1px 0 0 #f0f0f0}
 #p-pipeline .stk-act{position:sticky;right:0;background:#fff;z-index:3;box-shadow:-1px 0 0 #d2d2d7}
 #p-pipeline thead .stk-monto, #p-pipeline thead .stk-act{background:#fafafa;z-index:4}
 /* Pipeline: columnas ordenables */

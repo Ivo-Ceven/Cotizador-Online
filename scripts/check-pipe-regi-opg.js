@@ -107,7 +107,7 @@ const filaReal = (opg, extra) => Object.assign({ id: Math.random(), opg: opg }, 
 // Oportunidad REGI mínima (mismo shape que arma _regiRowToPipeRow).
 const filaRegi = (opd, regi, extra) => Object.assign({
   opd: opd, regi: regi || '', proyecto: 'Proyecto ' + opd, cliente: 'Cliente ' + opd,
-  primaryPartner: '', drExpiration: '', mesCierre: '', montoArchivo: 0, productosMonto: 0, monto: 1000, forecast: ''
+  primaryPartner: '', drExpiration: '', mesCierre: '', montoArchivo: 0, monto: 1000, forecast: ''
 }, extra || {});
 
 console.log('\nVínculo pipeline real <-> pipeline REGI, vía OPG · src/poly/js/pipeline-regi.js\n');
@@ -181,7 +181,7 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   e._regiPipeRows = [
     filaRegi('OPD1', 'abc-123', {cliente:'Vinculada SA', montoArchivo:5000, monto:4000}),
     filaRegi('OPD2', '',        {cliente:'Sin REGI SA',  montoArchivo:7000, monto:6000}),
-    filaRegi('OPD3', 'zzz-999', {cliente:'Suelta SA',    montoArchivo:3000, monto:3000, forecast:'Perdido'})
+    filaRegi('OPD3', 'zzz-999', {cliente:'Suelta SA',    montoArchivo:3000, monto:3000, forecast:'Upside'})
   ];
   e._regiMostrarVinculadas = false;
   e._renderRegiPipelineFromCache();
@@ -190,10 +190,9 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   ok(html.indexOf('Sin REGI SA') === -1 && html.indexOf('Suelta SA') !== -1,
      'la oportunidad sin REGI vinculada por OPD se oculta, la suelta sigue visible');
   ok(e._els['regi-vinc-count'].textContent === '(2)', 'el contador incluye vínculos por REGI y OPD', e._els['regi-vinc-count'].textContent);
-  ok(/USD 12\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
-     'el total usa siempre el monto del Excel, sin Perdido e incluyendo vinculadas');
-  ok(/USD 3\.000/.test(e._els['dash-regi-perdidos'].textContent),
-     'el KPI perdido usa el monto del Excel');
+  ok(/USD 15\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
+     'el total suma el Excel CRUDO: todas las filas, vinculadas incluidas y sin descontar nada',
+     e._els['dash-total'].textContent);
   ok(/USD 10\.000/.test(e._els['dash-regi-vinculados'].textContent),
      'el KPI vinculado suma el monto del pipeline Ceven');
 }
@@ -236,8 +235,8 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   ok(vinculada.vinculada === true, '_renderRegiPipelineFromCache marcó la fila como vinculada');
   const filaHtml = e._regiRowHTML(vinculada);
   ok(/✓ Vinculada/.test(filaHtml), 'y se muestra con la pastilla "✓ Vinculada" en vez de los botones de acción', filaHtml);
-  ok(!/data-act="regi-copiar"/.test(filaHtml) && !/data-act="regi-editar"/.test(filaHtml),
-     'una fila vinculada no ofrece "Copiar a Ceven" ni "Editar": ya tiene proyecto real');
+  ok(!/data-act="regi-copiar"/.test(filaHtml),
+     'una fila vinculada no ofrece "Copiar a Ceven": ya tiene proyecto real');
 }
 {
   // Todo vinculado: el mensaje de vacío tiene que ser el bueno, no "limpiá filtros".
@@ -280,31 +279,45 @@ console.log('\n6 · _regiCopiarAPipeline prellena cliente/proyecto/OPG y avisa s
   ok(/no permite/.test(e._lastToast), 'y avisa que el rol no permite la acción');
 }
 
-/* ═══ 7 · Perdido REGI pide y guarda motivo ════════════════════════════════ */
-console.log('\n7 · Perdido en REGI pide motivo y feedback');
+/* ═══ 7 · La vista REGI es una FOTO del Excel: no se edita nada ══════ */
+/* Hasta el 03/09/2026 el Forecast se podía editar a mano (columna
+   forecast_override) y había un cuarto valor, 'Perdido', que el archivo de HP
+   no trae. El jefe pidió que esta vista diga exactamente lo que dice el Excel,
+   así que acá se verifica lo contrario de lo que se verificaba antes: que NO
+   quede ningún control que escriba sobre la foto. */
+console.log('\n7 · El pipeline REGI no tiene nada editable');
 {
   const e = cargar();
-  let confirmar, patch;
-  e._regiPipeRows = [filaRegi('OPD1', '', {forecast:'Commit'})];
-  e.abrirModalMotivoPerdida = fn => { confirmar = fn; };
-  e.cevenAuthedFetch = (url, opts) => {
-    patch = JSON.parse(opts.body);
-    return {then: fn => { fn(); return {catch: () => {}}; }};
-  };
-  e._regiCambiarForecast('OPD1', 'Perdido');
-  ok(typeof confirmar === 'function', 'elegir Perdido abre el selector de motivo');
-  ok(!patch, 'no actualiza REGI antes de confirmar el motivo');
-  confirmar({motivo:'Por precio', detalle:'Oferta competidora'});
-  ok(patch.forecast_override === 'Perdido' && patch.perdido_motivo.motivo === 'Por precio'
-    && patch.perdido_motivo.detalle === 'Oferta competidora',
-  'guarda forecast, motivo y feedback');
-  ok(e._regiPipeRows[0].forecast === 'Perdido' && e._regiPipeRows[0].perdidoMotivo.motivo === 'Por precio',
-     'actualiza el estado local al confirmar');
-  ok(/regi-perdido-detalle/.test(e._regiMotivoPerdidaHTML(e._regiPipeRows[0])),
-     'una fila perdida muestra el botón Ver motivo');
-  e._regiCambiarForecast('OPD1', 'Commit');
-  ok(patch.forecast_override === 'Commit' && patch.perdido_motivo === null,
-     'al salir de Perdido elimina el motivo anterior');
+  const fila = filaRegi('OPD1', '', {forecast:'Commit'});
+  const html = e._regiRowHTML(fila);
+
+  ok(!/<select/.test(html), 'la fila no tiene ningún <select> (el Forecast es una pastilla fija)', html);
+  ok(!/data-act="regi-forecast-edit"/.test(html), 'no queda el handler de edición del Forecast');
+  ok(!/data-act="regi-editar"/.test(html), 'no queda el botón de asignar productos');
+  ok(/Commit/.test(html), 'pero el Forecast del archivo se sigue mostrando');
+  ok(/data-act="regi-copiar"/.test(html), 'y "Copiar a Ceven" sigue estando: no escribe sobre la foto');
+
+  ok(typeof e._regiCambiarForecast === 'undefined' && typeof e._regiGuardarForecast === 'undefined',
+     'las funciones que hacían el PATCH de forecast_override ya no existen');
+  ok(typeof e.REGI_FORECAST_COLORS.Perdido === 'undefined',
+     '"Perdido" salió de la lista de forecast: no es una categoría del archivo de HP');
+
+  // Un forecast que el archivo traiga y no esté en la lista se muestra crudo,
+  // no se cae a otra categoría ni desaparece.
+  ok(/Categoria Nueva/.test(e._regiRowHTML(filaRegi('OPD9', '', {forecast:'Categoria Nueva'}))),
+     'un forecast desconocido del archivo se pinta tal cual, en vez de esconderse');
+}
+{
+  // El monto de la fila es el del archivo, siempre: ya no hay productos
+  // asignados que lo reemplacen.
+  const e = cargar();
+  e._regiPipeRows = [ filaRegi('OPD1', '', {cliente:'Foto SA', montoArchivo:4321, monto:4321}) ];
+  e._regiMostrarVinculadas = false;
+  e._renderRegiPipelineFromCache();
+  ok(/USD 4\.321/.test(e._els['dash-total'].textContent),
+     'el KPI "Monto total REGI" es el Amount del Excel', e._els['dash-total'].textContent);
+  ok(/sin descontar nada/.test(e._els['dash-total-sub'].textContent),
+     'y el subtítulo dice que no descuenta nada', e._els['dash-total-sub'].textContent);
 }
 
 console.log('\n' + (fallos

@@ -148,6 +148,169 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 03/09/2026 · El REGI vuelve a ser una foto del Excel, y el pipeline de Ceven se opera por artículo
+
+Seis pedidos del jefe sobre las dos vistas del pipeline, en una sola pasada.
+
+### 1. Pipeline REGI: solo lectura
+
+Entre el 25/08 y hoy la vista dejó de decir lo que dice el archivo de HP: se le
+podía editar el Forecast a mano (columna `forecast_override`, con un cuarto
+valor —"Perdido"— que el partner portal no tiene) y asignarle productos del
+catálogo cuya sumatoria **reemplazaba** el `Amount` del archivo. El pedido fue
+explícito: *"debe ser una foto de lo que viene en el excel, no debe poder
+editarse nada allí"*.
+
+Se sacó toda la edición: la pastilla de Forecast volvió a ser fija, se fueron
+`_regiCambiarForecast`/`_regiGuardarForecast` y se **eliminó**
+`src/poly/js/pipeline-regi-productos.js` (391 líneas) junto con su modal
+`#regi-prod-modal`. `_regiRowToPipeRow()` ya no mira productos: `monto` es
+siempre el `Amount`, y `_cevenRegiPipeFetch()` bajó de dos GET a uno.
+
+**Nada se borró de la base.** `poly_regi_pipeline_productos` y las columnas
+`forecast_override`/`perdido_motivo` siguen ahí con sus datos; esta vista dejó
+de leerlas. Volver atrás es volver a pedirlas en el `select=`. Sin migración.
+
+Lo que **sí** quedó, porque no escribe sobre la foto: "⬇ Importar Excel REGI"
+(la única forma de actualizarla) y "➕ Copiar a Ceven".
+
+### 2. KPI "Monto total REGI" sin descontar nada
+
+La tarjeta ya existía pero restaba las filas en "Perdido". Como ese estado solo
+salía del override a mano, se fue con la edición y la resta perdió sentido: en
+vez de agregar una tarjeta nueva que mostraría el mismo número, la que hay pasó
+a ser el KPI pedido — **la suma cruda del `Amount` de todas las filas del
+Excel**, vinculadas incluidas, sobre `rowsTotal` y no sobre lo filtrado, así que
+no se mueve al tocar la búsqueda ni las pastillas. La sub-línea lo dice ("todas
+las filas del Excel · sin descontar nada") y, cuando corresponde, agrega cuánto
+de eso ya está vinculado a Ceven. `#dash-regi-perdidos-card` se ocultó.
+
+### 3-4. Nivel de precio y estado propio POR ARTÍCULO (Poly + Legamaster)
+
+El nivel salía gratis: cada línea de `cquotes` ya guarda `'Nivel de precio'`
+desde 08/2026 y `cevenTierLabel()` ya estaba cargado antes del pipeline. Columna
+nueva en la fila desplegada, y listo. Apple queda afuera: `priceTiers: []`, no
+cotiza por niveles.
+
+El estado propio es lo que tenía miga. **Sin migración**: la columna
+`pipeline."skuStatus"` (jsonb) existía desde 07/2026 y la usaba solo Apple —
+alcanzó con sumarla a `pipeCols` **y** `objCols` de `poly/brand.js` y
+`legamaster/brand.js` (sin `objCols`, `pickPipe()` la emite como string y el
+jsonb entra roto).
+
+La lógica se sacó de Apple a `src/shared/pipeline-sku.js` (nuevo), sin arrastrar
+su facturación parcial: herencia, los dos colapsos que evitan overrides
+redundantes (una cotización de una sola línea no tiene "estado particular"; si
+todas las líneas quedan iguales, eso ES el estado del proyecto), el reindexado
+de las claves `SKU|índice` y el reparto del monto.
+
+**Afecta los montos**, que es lo que se pidió: el dashboard dejó de sumar
+`r.monto` entero a `r.estado` y pasa por `cevenSkuRepartoPorEstado()`. De ahí
+salen las pastillas "Por estado", Facturado, "Forecast del mes" y el "Total
+pipeline". El filtro de estado deja entrar una fila si **alguno** de sus estados
+efectivos matchea (si no, filtrar por "Facturado" escondería el proyecto que
+tiene la mitad facturada y su plata desaparecería del KPI).
+
+Dos decisiones que vale la pena tener escritas:
+
+- **La tabla sigue con UNA fila por proyecto.** No se replicó la "expansión
+  virtual" de Apple (`apple/js/pipeline-view.js`), que multiplica filas y
+  arrastra facturación parcial, archivado por línea y `target.js`. La fila lleva
+  una chapita "N ítems propios" para que se vea que el `<select>` de arriba no
+  es el de todos sus artículos.
+- **El reparto suma EXACTAMENTE `row.monto`.** El monto de la fila es una foto
+  del momento de agregarla al pipeline y la cotización pudo editarse después (el
+  detalle ya avisa de ese descuadre); la diferencia se le imputa al estado del
+  proyecto en vez de aparecer o desaparecer del dashboard.
+
+El **archivado automático** también cambió: una fila se va al archivo solo
+cuando TODOS sus estados efectivos son Facturado/Perdido. Antes miraba solo
+`r.estado`, y un proyecto con la mitad facturada se habría archivado con plata
+viva adentro. El export a Excel suma una columna "Estados por ítem".
+
+En un **mes archivado el detalle es de solo lectura**: la fila no vive en
+`getPipeline()`, así que un `<select>` o la tijera no la encontrarían y el clic
+quedaría mudo — el mismo bug que ya documentaba el ✎ del OPG. Para eso
+`_pipeTablaHTML()` le pasa su `esArchivo` a `renderPipelineDetailRow()`, cuyo
+segundo parámetro no se usaba.
+
+### 5. Botones por proyecto, y "Netsuite" pasa a "OV"
+
+`📝` abre la cotización para editarla (`editQuoteFromHistory`, que ya estaba
+cableada: hasta ahora solo se disparaba desde el `#0071` azul, que no parece un
+botón) y `🧾` baja el comprobante (`cevenImprimirComprobante`, el mismo del
+historial: es autocontenido, no necesita la cotización cargada). Los dos andan
+también en un mes archivado, porque `cquotes` no se archiva —solo `cpipeline`—.
+El comprobante no lleva gate de permiso: es de solo lectura.
+
+Van en las tres marcas. En Apple el "✎ Editar cotización" ya existía y se
+unificó a `📝`.
+
+El botón de Netsuite de Poly dice **"OV"** y es más chico: la celda pasó a tener
+cinco botones y el rótulo largo se comía el espacio. Es el mismo rótulo que
+Apple ya usa para su link de Orden de Venta por línea. El sistema sigue siendo
+Netsuite (lo dice el `title`) y la clave sigue siendo `factura`.
+
+Efecto de layout: `.stk-monto` (sticky al scrollear horizontal) necesita que su
+`right` sea el ancho de la columna Acciones, y ese ancho ya no es el mismo en
+todas las tablas. Pasó a salir de una variable CSS `--stk-act-w` declarada en el
+`<table>` de cada una, al lado del `width` del `<th>`, que es donde se lo ve.
+
+### 6. Tijera ✂️: sacar un artículo desde el pipeline
+
+Lo más delicado de la pasada, porque **los artículos no son del pipeline: son
+filas de `cquotes`**. Sacar uno es editar una cotización guardada sin abrirla, y
+hay que dejar consistentes tres cosas: el historial, el monto de la fila y las
+claves `SKU|índice` de los overrides.
+
+El molde es `cambiarOpcionVigente()`, que ya toca `cquotes` y recalcula con la
+MISMA función que usa "Agregar al pipeline" (`_pipeMontoDeItems` en
+Poly/Legamaster, `_pipeAgregados` en Apple, que además recalcula cantidades por
+familia y margen ponderado). Si fueran dos cuentas distintas, la fila diría un
+total y la cotización otro.
+
+Detalles que importan:
+
+- El borrado es **por identidad de objeto**, no por índice: `cquotes` se lee UNA
+  vez y `cevenOpcFilasDeCotiz()` devuelve esas mismas referencias, así que la
+  opción A/B que no está vigente no se toca ni por casualidad.
+- **`saveDB()` primero, pipeline después.** Devuelve `false` si `localStorage`
+  está lleno; si falla, se corta antes de tocar la fila.
+- **El reindexado va antes de recalcular el monto.** En Poly/Legamaster es un
+  mapa (`skuStatus`); en Apple son **siete** y se corren juntos — si se movieran
+  unos sí y otros no, una línea quedaría con el estado de una y el mes de otra.
+- **Sacar el último artículo se bloquea** con un aviso que nombra el botón real
+  (✕): dejaría una fila apuntando a una cotización que ya no existe.
+- El "Deshacer" restaura `cquotes` con el orden original (el orden ES el índice
+  de los lineKeys) más el monto y los mapas previos.
+
+### Verificación
+
+- **`scripts/check-pipeline-sku.js`** (nuevo, patrón `vm` de
+  `check-pipe-pills.js`): 32 asserts sobre las funciones reales — herencia, los
+  dos colapsos, que el reparto sume exactamente `row.monto` incluso con la
+  cotización descuadrada, el reindexado al borrar la primera / la del medio / la
+  última, varios mapas a la vez, y el caso del mismo SKU repetido en dos líneas.
+- `scripts/check-pipe-regi-opg.js` se actualizó: su bloque 7 probaba que el
+  Forecast fuera editable y ahora prueba lo contrario (que no quede ni un
+  `<select>` ni un handler que escriba sobre la foto). 49/49.
+- `check-globals.js` en verde en las cinco páginas: confirma que
+  `pipeline-sku.js` está en los tres bundles y que ninguna función quedó
+  colgada.
+- `node --check` sobre todos los JS tocados.
+- De paso se taparon dos huecos reales del precache (`shared/pipeline-perdido.js`
+  y `shared/portal-regi-admin.js` no estaban en `ASSETS` de `sw.js` y sus páginas
+  sí se cachean). Los ~14 que quedan son de `portal/`, que **no** es PWA a
+  propósito. `APP_VERSION` 6.8 → 6.9.
+
+**NO verificado en un navegador real.** Falta el recorrido completo, que esta
+vez importa más que de costumbre porque se tocó el dashboard: ver que poner una
+línea en Facturado mueva la pastilla justo por el monto de esa línea, dejar la
+vista abierta 20 s (el poll redibuja cada 15 s), probar la tijera con Deshacer,
+y confirmar que el rol lector no ve ni `📝` ni `✂️` ni los selects.
+
+---
+
 ## 02/09/2026 · Estadísticas REGI: un mismo REGI en varias cotizaciones de Ceven, agregado
 
 Pedido de Ivo sobre el match y las Estadísticas REGI de la entrada del

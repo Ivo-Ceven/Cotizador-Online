@@ -542,7 +542,7 @@
   </div>
 
   <div class="tw">
-    <table style="min-width:1400px">
+    <table style="min-width:1400px;--stk-act-w:160px">
       <thead><tr>
         <th class="srt" data-sort="fechaISO">Fecha</th>
         <th class="srt" data-sort="fechaMod" style="text-align:center" title="Última modificación real de la entrada">Modificado</th>
@@ -558,7 +558,10 @@
         <th class="srt" data-sort="qAcc" style="text-align:center" title="Cantidad de Accesorios (todo lo que no es Mac, iPhone, iPad ni Servicio)">Acc.</th>
         <th class="srt" data-sort="margenPond" style="text-align:right" title="Margen ponderado por línea de producto">Margen</th>
         <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
-        <th class="stk-act" style="width:130px;text-align:center">Acciones</th>
+        <!-- 160px, no 130: desde 03/09/2026 la celda lleva tambien el
+             comprobante. El `right` de .stk-monto sale de --stk-act-w,
+             declarado arriba en el <table>. -->
+        <th class="stk-act" style="width:160px;text-align:center">Acciones</th>
       </tr></thead>
       <tbody id="pipe-body"></tbody>
     </table>
@@ -656,6 +659,9 @@
 <script src="js/pipeline-core.js"></script>
 <script src="js/archive-view.js"></script>
 <script src="../shared/pipeline-status.js"></script>
+<!-- pipeline-sku.js: estado propio por linea de producto. Lee cevenEstadoValores()
+     de pipeline-status.js, asi que va despues; lo usan pipeline-view/detail. -->
+<script src="../shared/pipeline-sku.js"></script>
 <!-- clientes.js ANTES de pipeline-group.js: define cevenNormClient(), con la
      que el pipeline agrupa por cliente. -->
 <script src="../shared/clientes.js"></script>

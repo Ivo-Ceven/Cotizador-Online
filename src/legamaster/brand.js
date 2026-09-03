@@ -37,13 +37,20 @@ window.CEVEN_BRAND = {
      de fábrica ni un sistema de seguimiento de venta equivalente al Netsuite
      de Poly. Son columnas ADITIVAS — se pueden sumar después sin migrar nada
      si aparece un programa de registro de proyecto o un link de seguimiento
-     de venta que valga la pena guardar. */
+     de venta que valga la pena guardar.
+
+     `skuStatus` (03/09/2026) es el estado propio de una linea de producto: el
+     estado de la fila vale para todos sus articulos MENOS los que tengan uno
+     configurado en particular (ver shared/pipeline-sku.js). La columna jsonb ya
+     existia en la tabla `pipeline` desde 07/2026, asi que no hubo migracion. */
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto',
-    'ejecutivo','mesCierre','estado','monto','moneda','perdidoMotivo'],
+    'ejecutivo','mesCierre','estado','monto','moneda','perdidoMotivo','skuStatus'],
 
   numCols: ['id','qNum','clienteId','monto'],
 
-  objCols: ['perdidoMotivo'],
+  // skuStatus va aca ADEMAS de en pipeCols: sin esto pickPipe() lo emite como
+  // string y el jsonb entra roto (ver shared/sync.js).
+  objCols: ['perdidoMotivo','skuStatus'],
 
   /* Columnas numericas en Supabase que la app guarda como string con ceros a
      la izquierda (col -> ancho). Misma trampa documentada en apple/brand.js

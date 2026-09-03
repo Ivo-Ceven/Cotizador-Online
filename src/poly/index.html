@@ -540,7 +540,7 @@
   </div>
 
   <div class="tw">
-    <table style="min-width:1100px" id="pipe-table-normal">
+    <table style="min-width:1100px;--stk-act-w:172px" id="pipe-table-normal">
       <thead><tr>
         <th class="srt" data-sort="fechaISO">Fecha</th>
         <th class="srt" data-sort="ejecutivo">Ejecutivo</th>
@@ -554,7 +554,10 @@
         <th class="srt" data-sort="mesCierre">Cierre estimado</th>
         <th class="srt" data-sort="estado" style="text-align:center">Estado</th>
         <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
-        <th class="stk-act" style="width:150px;text-align:center">Acciones</th>
+        <!-- 172px, no 150: desde 03/09/2026 la celda lleva OV (+ su ✎ cuando hay
+             link), editar la cotización, el comprobante y quitar del pipeline.
+             El `right` de .stk-monto acompaña este ancho en base.css. -->
+        <th class="stk-act" style="width:172px;text-align:center">Acciones</th>
       </tr></thead>
       <tbody id="pipe-body"></tbody>
     </table>
@@ -563,7 +566,7 @@
          que ver — es un snapshot de solo lectura del Excel, sin cotización
          detrás. Oculta por defecto; pipeline-regi.js la muestra/oculta según
          el selector "Vista". -->
-    <table style="min-width:1000px;display:none" id="pipe-table-regi">
+    <table style="min-width:1000px;display:none;--stk-act-w:150px" id="pipe-table-regi">
       <thead><tr>
         <th class="srt" data-sort="opd">OPD</th>
         <th class="srt" data-sort="regi">REGI</th>
@@ -572,11 +575,10 @@
         <th style="text-align:center">Forecast</th>
         <th class="srt" data-sort="drExpiration">DR Expiration</th>
         <th class="srt" data-sort="mesCierre">Cierre estimado</th>
-        <!-- Con productos asignados, este monto pasa a ser esa sumatoria y
-             reemplaza al que reporta el archivo de HP (pedido del usuario,
-             ver docs/HISTORIAL.md 25/08/2026) — un 🎯 en la celda avisa de
-             dónde sale. stk-monto/stk-act (sticky al scrollear horizontal,
-             #p-pipeline en base.css) van en las ÚLTIMAS dos columnas. -->
+        <!-- El monto es SIEMPRE el `Amount` del archivo de HP: esta vista volvió
+             a ser una foto del Excel el 03/09/2026 (ver js/pipeline-regi.js).
+             stk-monto/stk-act (sticky al scrollear horizontal, #p-pipeline en
+             base.css) van en las ÚLTIMAS dos columnas. -->
         <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>
         <th class="stk-act" style="width:150px;text-align:center">Acciones</th>
       </tr></thead>
@@ -672,13 +674,15 @@
 <script src="js/pipeline-core.js"></script>
 <script src="js/archive-view.js"></script>
 <script src="../shared/pipeline-status.js"></script>
+<!-- pipeline-sku.js: estado propio por linea de producto. Lee cevenEstadoValores()
+     de pipeline-status.js, asi que va despues; lo usan pipeline-view/detail. -->
+<script src="../shared/pipeline-sku.js"></script>
 <script src="../shared/pipeline-group.js"></script>
 <script src="../shared/pipeline-ui.js"></script>
 <script src="../shared/pipeline-perdido.js"></script>
 <script src="js/pipeline-view.js"></script>
 <script src="js/pipeline-detail.js"></script>
 <script src="js/pipeline-regi.js"></script>
-<script src="js/pipeline-regi-productos.js"></script>
 <script src="../shared/backup-folder.js"></script>
 <script src="js/history.js"></script>
 <script src="../shared/papelera.js"></script>
@@ -690,59 +694,12 @@
 <div id="app-ver-bar"><span>Cotizador Ceven · Poly v<span id="app-ver-num"></span></span></div>
 <script src="../shared/init.js"></script>
 
-<!-- ============================================================
-     EDITAR PROYECTO REGI · asignar productos del catálogo a una
-     oportunidad del pipeline REGI (ver js/pipeline-regi-productos.js).
-     Mismo shell visual que #prod-picker (arriba el catálogo con un `+`
-     por producto, abajo lo asignado con cantidades y total), pero es un
-     carrito PROPIO —no `items`— que se guarda en Supabase
-     (poly_regi_pipeline_productos) en vez de convertirse en cotización.
-     ============================================================ -->
-<div id="regi-prod-modal" style="display:none">
-  <div class="pk-card" role="dialog" aria-modal="true" aria-label="Editar proyecto REGI">
-
-    <div class="pk-hd">
-      <div class="h3">Editar proyecto <span id="rp-proyecto-nombre" style="font-weight:400;color:#6e6e73"></span></div>
-      <button type="button" class="pk-x" data-rp-cerrar title="Cerrar">&times;</button>
-    </div>
-    <div id="rp-proyecto-info" style="padding:0 20px 10px;font-size:12px;color:#6e6e73;margin-top:-6px"></div>
-
-    <div class="pk-filtros">
-      <div class="buscador" style="flex:1">
-        <span class="buscador-lupa" aria-hidden="true">🔍</span>
-        <textarea id="rp-search" rows="1" placeholder="Buscar producto por SKU o descripci&oacute;n..."></textarea>
-      </div>
-    </div>
-    <div class="pk-rubros" id="rp-rubro" data-rubro=""></div>
-
-    <div class="pk-lista">
-      <table style="table-layout:fixed;width:100%">
-        <colgroup><col style="width:54px"><col style="width:130px"><col><col style="width:230px"></colgroup>
-        <thead>
-          <tr>
-            <th></th><th>SKU</th><th>Descripci&oacute;n</th>
-            <th style="text-align:right">Precios por nivel</th>
-          </tr>
-        </thead>
-        <tbody id="rp-body"></tbody>
-      </table>
-    </div>
-
-    <div class="pk-pie">
-      <div class="pk-pie-hd">
-        <span class="lbl" style="margin:0">Productos asignados (<span id="rp-cart-n">0</span>)</span>
-      </div>
-      <div id="rp-cart"></div>
-      <div class="pk-cierre">
-        <span>Total productos</span>
-        <b id="rp-total">&mdash;</b>
-        <button type="button" class="bo" data-rp-cerrar>Cancelar</button>
-        <button type="button" class="bd" onclick="guardarRegiProductos()">Guardar</button>
-      </div>
-    </div>
-
-  </div>
-</div>
+<!-- El modal #regi-prod-modal ("Editar proyecto REGI": asignarle productos
+     del catálogo a una oportunidad) vivía acá, con js/pipeline-regi-productos.js
+     detrás. Los dos se eliminaron el 03/09/2026: el pipeline REGI volvió a ser
+     una foto del Excel de HP y no se edita más desde la app. La tabla
+     poly_regi_pipeline_productos sigue existiendo en Supabase con sus datos —
+     ver el comentario de cabecera de js/pipeline-regi.js. -->
 
 <!-- ============================================================
      SUBPANTALLA DE PRODUCTOS  ·  se abre desde "+ Agregar producto"

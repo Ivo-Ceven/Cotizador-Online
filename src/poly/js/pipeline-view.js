@@ -86,6 +86,17 @@ function renderPipeline(){
     execSel.innerHTML = '<option value="">Todos</option>' + execList.map(function(e){ return '<option value="'+cevenEsc(e)+'"'+(e===curExec?' selected':'')+'>'+cevenEsc(e)+'</option>'; }).join('');
   }
 
+  /* getDB() hace JSON.parse de varios MB y el poll redibuja cada 15 s: se
+     parsea UNA vez por render, y SOLO si alguna fila tiene estados por línea
+     (shared/pipeline-sku.js). Sin overrides, el reparto y el filtro de estado
+     no necesitan mirar las líneas de la cotización. El mismo array se le pasa
+     después a _pipeTablaHTML() para que no vuelva a parsear. */
+  var _dbCache = null;
+  function _dbP(){ if(_dbCache === null) _dbCache = getDB(); return _dbCache; }
+  function _lineasDe(r){
+    return cevenSkuTieneOverrides(r) ? cevenOpcFilasDeCotiz(_dbP(), r.qNum) : null;
+  }
+
   var q = (document.getElementById('pipe-search').value||'').toLowerCase().trim();
   var ex = document.getElementById('pipe-exec').value || '';
   /* Única fuente del filtro de estado. El <select> #pipe-status ya escribe acá
@@ -113,7 +124,15 @@ function renderPipeline(){
      sola pastilla en pantalla y no habría forma de saltar a otro cliente. */
   var sinBuscar = pipe.filter(function(r){
     if(ex && r.ejecutivo !== ex) return false;
-    if(_stFilters.length > 0 && _stFilters.indexOf(r.estado||'Cotizado') === -1) return false;
+    /* Una fila con estados por ítem está en VARIOS estados a la vez: entra si
+       alguno matchea. Sin esto, filtrar por "Facturado" escondería el proyecto
+       que tiene la mitad facturada — y su plata desaparecería del KPI. */
+    if(_stFilters.length > 0){
+      var _ests = cevenSkuEstadosDe(r, _lineasDe(r));
+      var _hay = false;
+      for(var _i = 0; _i < _ests.length; _i++){ if(_stFilters.indexOf(_ests[_i]) !== -1){ _hay = true; break; } }
+      if(!_hay) return false;
+    }
     if(monthFilter){
       if(monthFilter === 'sin-fecha'){ if(r.mesCierre) return false; }
       else if(r.mesCierre !== monthFilter) return false;
@@ -151,14 +170,25 @@ function renderPipeline(){
   var cliVistos = {}, nClientes = 0;
   statusOrderPipe.forEach(function(s){ byStatus[s] = {count:0, monto:0}; });
   filtered.forEach(function(r){
-    var estado = r.estado || 'Cotizado';
-    var monto = r.monto || 0;
-    sumMonto += monto;
+    sumMonto += r.monto || 0;
     var ck = (r.cliente||'').trim().toLowerCase();
     if(ck && ck !== '—' && !cliVistos[ck]){ cliVistos[ck] = 1; nClientes++; }
-    if(!byStatus[estado]) byStatus[estado] = {count:0, monto:0};
-    byStatus[estado].count++;
-    byStatus[estado].monto += monto;
+    /* El monto de la fila se REPARTE entre los estados de sus artículos: un
+       proyecto con la mitad facturada suma esa mitad a "Facturado" y el resto
+       a donde esté. Sin overrides el reparto devuelve un solo estado con el
+       monto entero, o sea exactamente lo de antes.
+
+       El reparto suma siempre `r.monto` exacto (shared/pipeline-sku.js), así
+       que `sumMonto` sigue siendo Σ de byStatus y el "Total pipeline" de más
+       abajo no cambia de fórmula. El CONTEO sí cuenta la fila una vez por
+       cada estado en el que tiene plata: es lo que dice la pastilla
+       ("proyectos con algo acá"), no un total de proyectos. */
+    var reparto = cevenSkuRepartoPorEstado(r, _lineasDe(r));
+    Object.keys(reparto).forEach(function(st){
+      if(!byStatus[st]) byStatus[st] = {count:0, monto:0};
+      byStatus[st].count++;
+      byStatus[st].monto += reparto[st];
+    });
   });
   var facturadoData = byStatus['Facturado'] || {count:0, monto:0};
   var perdidoData   = byStatus['Perdido']   || {count:0, monto:0};
@@ -227,7 +257,10 @@ function renderPipeline(){
        grupo se abre solo cuando el match NO fue por el nombre del cliente.
        Es un set derivado del render: NO se escribe en _pipeExpanded, para que al
        limpiar la búsqueda todo se vuelva a plegar sin dejar residuo. */
-    abrirSiMatchea: q
+    abrirSiMatchea: q,
+    // Si el dashboard ya parseó cquotes (hay estados por ítem), se reusa: un
+    // solo JSON.parse de varios MB por render, no dos.
+    db: _dbCache
   });
 
   // Vacío por filtro y vacío de verdad son dos cosas distintas: decir "cargá una
@@ -244,6 +277,26 @@ function renderPipeline(){
   document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
   pipeBindDelegation();
+}
+
+/* Los dos botones que operan sobre la COTIZACIÓN de la fila, no sobre la fila:
+   abrirla para editarla e imprimir su comprobante. Antes lo único que llevaba
+   ahí era el número azul de la columna "Cotiz.", que no parece un botón, y
+   para el PDF había que ir al historial y buscarla.
+
+   Ninguno de los dos necesita `data-k`: viajan con el número de cotización,
+   que es string y es la clave real contra `cquotes` (ver openPipelineQuote).
+   El comprobante no lleva gate de permiso —es de solo lectura, igual que abrir
+   Netsuite—; editar sí, con el mismo criterio que el historial. */
+function _pipeBotonesCotiz(r){
+  if(!r.qNum) return '';
+  var qnA = cevenEsc(r.qNum);
+  var h = '';
+  if(cevenCanEditQuote(r.ejecutivo)){
+    h += '<button class="bs" data-act="openq" data-qn="'+qnA+'" title="Editar la cotización #'+qnA+'" style="padding:1px 5px;font-size:11px;color:#0071e3;border-color:#0071e3">📝</button> ';
+  }
+  h += '<button class="bs" data-act="comp" data-qn="'+qnA+'" title="Descargar el comprobante de la cotización #'+qnA+' en PDF y abrirlo" style="padding:1px 5px;font-size:11px;color:#1f3864;border-color:#1f3864">🧾</button> ';
+  return h;
 }
 
 /* Arma el cuerpo de la tabla agrupado por cliente. Lo usan renderPipeline() y
@@ -268,7 +321,7 @@ function _pipeTablaHTML(filas, scope, opts){
      abierta; desde que la fila muestra la chapita de opción A/B hace falta
      siempre, porque "esta cotización tiene dos opciones" es un dato de
      `cquotes`. Sigue siendo UN parse por render, no uno por fila. */
-  var _db = null;
+  var _db = opts.db || null;
   function db(){ if(_db === null) _db = getDB(); return _db; }
   var q = (opts.abrirSiMatchea || '').toLowerCase().trim();
   var html = '';
@@ -301,6 +354,17 @@ function _pipeTablaHTML(filas, scope, opts){
       if(tint.bg) rowStyle += 'background:'+tint.bg;
       if(tint.fg) rowStyle += (rowStyle?';':'') + 'color:'+tint.fg;
 
+      /* Cuántos artículos tienen HOY un estado distinto al del proyecto: sin
+         este aviso, el <select> de arriba dice "Cotizado" mientras la mitad de
+         la plata ya está en "Facturado" en las pastillas, y no hay forma de
+         darse cuenta sin desplegar la fila. */
+      var _lnsFila = cevenSkuTieneOverrides(r) ? cevenOpcFilasDeCotiz(db(), r.qNum) : null;
+      var nPropios = cevenSkuCuantosPropios(r, _lnsFila);
+      var chipPropios = nPropios
+        ? '<div style="font-size:9px;color:#6e6e73;margin-top:3px;white-space:nowrap" title="El estado del proyecto no se aplica a esos artículos: tienen uno propio">'
+            + nPropios + (nPropios === 1 ? ' ítem propio' : ' ítems propios') + '</div>'
+        : '';
+
       /* El estado y el cierre se editan en el pipeline activo; en un mes ya
          cerrado se muestran de solo lectura (para cambiarlos hay que restaurar
          el proyecto primero, que es lo que hace el botón ↩). */
@@ -309,34 +373,47 @@ function _pipeTablaHTML(filas, scope, opts){
         celdaMes = '<span style="font-size:12px">' + cevenEsc(opts.mesLabel || '—') + '</span>';
         var cSt = cevenEstadoPill(estado);
         celdaEstado = '<span class="'+cevenEsc(cevenSpillClass(estado))+'" style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+cSt.fg+';background:'+cSt.bg+'">'+cevenEsc(cevenEstadoLabel(estado))+'</span>'
+          + chipPropios
           + (estado === 'Perdido'
             ? '<button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="display:block;margin:4px auto 0;padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7;white-space:nowrap">Ver motivo</button>'
             : '');
-        celdaAcc = '<button class="bs" data-act="restore" data-k="'+kA+'" data-mk="'+cevenEsc(opts.monthKey||'')+'" title="Devolver este proyecto al pipeline actual" style="font-size:11px;padding:2px 8px">↩ Restaurar</button>';
+        /* `cquotes` NO se archiva (solo `cpipeline`), así que la cotización de
+           un mes cerrado se sigue pudiendo abrir e imprimir: los dos botones
+           van también acá. Lo que no va es el ✕ ni el OV, que escriben sobre
+           una fila que getPipeline() ya no tiene. */
+        celdaAcc = _pipeBotonesCotiz(r)
+          + '<button class="bs" data-act="restore" data-k="'+kA+'" data-mk="'+cevenEsc(opts.monthKey||'')+'" title="Devolver este proyecto al pipeline actual" style="font-size:11px;padding:2px 8px">↩ Restaurar</button>';
       } else {
         celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'});
-        celdaEstado = '<select data-act="est" data-k="'+kA+'" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
+        celdaEstado = '<select data-act="est" data-k="'+kA+'" title="Cambia el estado de todos los artículos, menos los que tengan uno propio" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
           + cevenEstadoOptions(estado, false) + '</select>'
+          + chipPropios
           + (estado === 'Perdido'
             ? '<button class="bs" data-act="perdido-detalle" data-k="'+kA+'" style="display:block;margin:4px auto 0;padding:2px 7px;font-size:10px;color:#a80011;background:#fff0f0;border-color:#f3b7b7;white-space:nowrap">Ver motivo</button>'
             : '');
-        /* Netsuite. Con link cargado el botón ABRE Netsuite (verde, con la
-           flechita de "sale de la app") y al lado aparece un ✎ amarillo chico
-           para cambiarlo. Sin link, el botón es rojo y lo que hace es pedirlo:
-           ahí el ✎ sobraría, porque el botón grande ya edita.
+        /* La Orden de Venta en Netsuite. Con link cargado el botón la ABRE
+           (verde, con la flechita de "sale de la app") y al lado aparece un ✎
+           amarillo chico para cambiarlo. Sin link, el botón es rojo y lo que
+           hace es pedirlo: ahí el ✎ sobraría, porque el botón grande ya edita.
+
+           Dice "OV" y no "Netsuite" desde el 03/09/2026, y más chico: la celda
+           pasó a tener cinco botones y el rótulo largo se comía el espacio de
+           los otros. Es el mismo rótulo que Apple ya usa para su link de Orden
+           de Venta por línea. El sistema donde vive el link sigue siendo
+           Netsuite y eso lo dice el `title`; la clave sigue siendo `factura`.
 
            El link entero no entra en la etiqueta —es una URL larga—, así que va
            en el `title`. El estado igual se distingue sin hover, por el color y
-           por la flechita, que es lo que faltaba cuando acá iba el número de
-           factura y solo se veía en el tooltip. */
+           por la flechita. */
         var nsUrl = (typeof cevenNetsuiteURL === 'function') ? cevenNetsuiteURL(r.factura) : '';
         celdaAcc = (nsUrl
-            ? '<button class="bs" data-act="ns-open" data-k="'+kA+'" title="Abrir en Netsuite: '+cevenEsc(r.factura)+'" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:2px 8px;font-size:11px;font-weight:600">Netsuite ↗</button>'
+            ? '<button class="bs" data-act="ns-open" data-k="'+kA+'" title="Abrir la Orden de Venta en Netsuite: '+cevenEsc(r.factura)+'" style="background:#34c759;color:#fff;border-color:#2aad4e;padding:1px 6px;font-size:10px;font-weight:600">OV ↗</button>'
               + (cevenCanEditPipelineRow(r.ejecutivo)
-                  ? ' <button class="bs" data-act="ns-edit" data-k="'+kA+'" title="Cambiar el link de Netsuite" style="background:#ffd60a;color:#5c4a00;border-color:#e0b800;padding:2px 5px;font-size:10px;font-weight:700;line-height:1.4">✎</button>'
+                  ? ' <button class="bs" data-act="ns-edit" data-k="'+kA+'" title="Cambiar el link de Netsuite" style="background:#ffd60a;color:#5c4a00;border-color:#e0b800;padding:1px 4px;font-size:10px;font-weight:700;line-height:1.4">✎</button>'
                   : '')
               + ' '
-            : '<button class="bs" data-act="ns-edit" data-k="'+kA+'" title="Cargar el link de Netsuite de este proyecto" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">Netsuite —</button> ')
+            : '<button class="bs" data-act="ns-edit" data-k="'+kA+'" title="Cargar el link de la Orden de Venta en Netsuite" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:1px 6px;font-size:10px;font-weight:600">OV —</button> ')
+          + _pipeBotonesCotiz(r)
           + (cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bsr" data-act="rm" data-k="'+kA+'" title="Quitar este proyecto del pipeline">×</button>' : '');
       }
 
@@ -405,7 +482,10 @@ function _pipeTablaHTML(filas, scope, opts){
       +'</tr>';
 
       if(abiertaFila){
-        html += renderPipelineDetailRow(r, kFila, db());
+        // esArchivo: en un mes cerrado el detalle es de SOLO LECTURA. La fila no
+        // vive en getPipeline(), así que un <select> de estado o la tijera no
+        // encontrarían nada y el clic quedaría mudo.
+        html += renderPipelineDetailRow(r, esArchivo, db());
       }
     });
   });
@@ -418,12 +498,28 @@ function _pipeTablaHTML(filas, scope, opts){
    #pipe-body y en #dash-by-status. */
 function pipeBindDelegation(){
   cevenDelegate('pipe-body', 'click', function(ev){
+    /* Las acciones POR LÍNEA del detalle usan data-dact/data-did/data-lk, un
+       namespace propio: el detalle vive adentro de #pipe-body y con data-act
+       chocarían con las acciones de fila, que resuelven data-k contra el
+       registro de nodos. Se chequean primero y cortan. */
+    var dEl = cevenSkuActEl(ev, this);
+    if(dEl){
+      var dact = dEl.getAttribute('data-dact');
+      var did = Number(dEl.getAttribute('data-did'));
+      var dlk = dEl.getAttribute('data-lk');
+      if(dact === 'sku-est-clear') clearSkuEstadoPipe(did, dlk);
+      else if(dact === 'sku-rm')   quitarLineaDeCotizacion(did, dlk);
+      return;
+    }
+
     var el = cevenActEl(ev, this);
     if(!el) return;
     var act = el.getAttribute('data-act');
 
-    // Abrir la cotización no necesita nodo: el número va en el propio data-*.
+    // Abrir la cotización y su comprobante no necesitan nodo: el número va en
+    // el propio data-*, y es la clave real contra cquotes.
     if(act === 'openq'){ openPipelineQuote(el.getAttribute('data-qn')); return; }
+    if(act === 'comp'){ cevenImprimirComprobante(el.getAttribute('data-qn')); return; }
 
     /* Todo lo demás resuelve la CLAVE contra el registro de nodos, que devuelve
        el objeto original: el id nunca se reconstruye desde un atributo (sería
@@ -445,6 +541,14 @@ function pipeBindDelegation(){
     else if(act === 'restore') restoreFromArchive(el.getAttribute('data-mk'), n.row.id);
   });
   cevenDelegate('pipe-body', 'change', function(ev){
+    // Mismo criterio que el click: primero el namespace por línea del detalle.
+    var dEl = cevenSkuActEl(ev, this);
+    if(dEl){
+      if(dEl.getAttribute('data-dact') === 'sku-est'){
+        updateSkuEstadoPipe(Number(dEl.getAttribute('data-did')), dEl.getAttribute('data-lk'), dEl.value);
+      }
+      return;
+    }
     var el = cevenActEl(ev, this);
     if(!el) return;
     var n = cevenPipeNodeAt(el.getAttribute('data-k'));

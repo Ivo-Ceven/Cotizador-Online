@@ -800,7 +800,13 @@ function renderPipeline(){
             return '<button class="bs" data-pact="ov-edit"'+rowA+' title="Cargar link a Orden de Venta" style="background:#fde8e8;color:#d70015;border-color:#f5b1b1;padding:2px 8px;font-size:11px;font-weight:600">OV</button> ';
           }
         })()
-        +(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bs" data-pact="quote" data-pqnum="'+cevenEsc(r.qNum)+'"'+rowA+' title="Editar cotización" style="padding:2px 8px;font-size:12px">✎</button> ' : '')
+        /* Editar la cotización e imprimir su comprobante. El ✎ pasó a 📝 el
+           03/09/2026 para que sea el mismo botón que en Poly y Legamaster (y
+           para no confundirlo con los ✎ que editan UN campo suelto). El
+           comprobante no lleva gate de permiso: es de solo lectura, igual que
+           abrir la OV. */
+        +(cevenCanEditPipelineRow(r.ejecutivo) ? '<button class="bs" data-pact="quote" data-pqnum="'+cevenEsc(r.qNum)+'"'+rowA+' title="Editar la cotización #'+cevenEsc(r.qNum)+'" style="padding:1px 5px;font-size:11px;color:#0071e3;border-color:#0071e3">📝</button> ' : '')
+        +(r.qNum ? '<button class="bs" data-pact="comp" data-pqnum="'+cevenEsc(r.qNum)+'"'+rowA+' title="Descargar el comprobante de la cotización #'+cevenEsc(r.qNum)+' en PDF y abrirlo" style="padding:1px 5px;font-size:11px;color:#1f3864;border-color:#1f3864">🧾</button> ' : '')
         +(cevenCanEditPipelineRow(r.ejecutivo) ? (isVirtual && r._hasOverrides
           ? '<button class="bsr" data-pact="merge"'+rowA+' title="Volver a unir esta línea con el resto (quita el split)">×</button>'
           : '<button class="bsr" data-pact="del"'+rowA+' title="Eliminar cotización del pipeline">×</button>'
@@ -879,6 +885,7 @@ function renderPipeline(){
         case 'ov-open': e.stopPropagation(); openOVLink(c.id); break;
         case 'ov-edit': e.stopPropagation(); editOVLink(c.id); break;
         case 'quote':   openPipelineQuote(el.getAttribute('data-pqnum')); break;
+        case 'comp':    e.stopPropagation(); cevenImprimirComprobante(el.getAttribute('data-pqnum')); break;
         case 'merge':   mergeBackVirtualRow(c.id, c.key); break;
         case 'opc':     e.stopPropagation(); cambiarOpcionVigente(c.id); break;
         case 'perdido-detalle':
