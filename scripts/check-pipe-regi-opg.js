@@ -60,6 +60,8 @@ function cargar(){
     // (ver el comentario grande sobre _regiEnsureHeaderKpis en pipeline-regi.js).
     'hdr-regi-total':         nodo(),
     'hdr-regi-vinc':          nodo(),
+    'hdr-regi-ceven':         nodo(),
+    'hdr-regi-perdidas':      nodo(),
     'regi-pipe-body':         nodo(),
     'client':                 { value: '' },
     'proyecto':               { value: '' },
@@ -89,8 +91,15 @@ function cargar(){
     cevenClienteCambio(){ ctx._calls.push(['cevenClienteCambio']); },
     setMesCierre(v){ ctx._calls.push(['setMesCierre', v]); },
     showToast(m){ ctx._lastToast = m; },
+    showError(m){ ctx._lastError = m; },
     cevenCanUsePipeline(){ return ctx._canUse !== false; },
     getPipeline(){ return ctx._pipelineData || []; },
+    // Por defecto resuelve OK; un test que quiera simular una falla de red
+    // pisa ctx._fetchImpl antes de llamar a la acción bajo prueba.
+    cevenAuthedFetch(){
+      ctx._lastFetch = Array.prototype.slice.call(arguments);
+      return (ctx._fetchImpl || (function(){ return Promise.resolve({}); }))();
+    },
     SUPABASE_URL: 'https://example.supabase.co',
     CEVEN_BRAND: { pipeColCount: 9, pipeSortDescCols: ['monto','fechaISO'] }
   };
@@ -112,7 +121,8 @@ const filaReal = (opg, extra) => Object.assign({ id: Math.random(), opg: opg }, 
 // Oportunidad REGI mínima (mismo shape que arma _regiRowToPipeRow).
 const filaRegi = (opd, regi, extra) => Object.assign({
   opd: opd, regi: regi || '', proyecto: 'Proyecto ' + opd, cliente: 'Cliente ' + opd,
-  primaryPartner: '', drExpiration: '', mesCierre: '', montoArchivo: 0, monto: 1000, forecast: ''
+  primaryPartner: '', drExpiration: '', mesCierre: '', montoArchivo: 0, monto: 1000, forecast: '',
+  perdidaManual: false
 }, extra || {});
 
 console.log('\nVínculo pipeline real <-> pipeline REGI, vía OPG · src/poly/js/pipeline-regi.js\n');
@@ -195,13 +205,21 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   ok(html.indexOf('Sin REGI SA') === -1 && html.indexOf('Suelta SA') !== -1,
      'la oportunidad sin REGI vinculada por OPD se oculta, la suelta sigue visible');
   ok(e._els['regi-vinc-count'].textContent === '(2)', 'el contador incluye vínculos por REGI y OPD', e._els['regi-vinc-count'].textContent);
-  // Los dos KPI globales (04/09/2026) viven en el header, no en la grilla:
+  // Los cuatro KPI globales (04/09/2026) viven en el header, no en la grilla:
   // no se mueven con el toggle "Mostrar vinculadas" ni con ningún otro filtro.
   ok(/USD 15\.000/.test(e._els['hdr-regi-total'].textContent),
      'el header suma el Excel CRUDO: todas las filas, vinculadas incluidas y sin descontar nada',
      e._els['hdr-regi-total'].textContent);
-  ok(/USD 10\.000/.test(e._els['hdr-regi-vinc'].textContent),
-     'y el header vinculado suma el monto del pipeline Ceven', e._els['hdr-regi-vinc'].textContent);
+  // "REGI vinculados" usa el monto que DECLARA HP (5000 + 7000) de las dos
+  // linkeadas, no el de Ceven — ese es "REGI CEVEN", el KPI de al lado.
+  ok(/USD 12\.000/.test(e._els['hdr-regi-vinc'].textContent),
+     'el header "REGI vinculados" suma el Amount de HP de las oportunidades linkeadas',
+     e._els['hdr-regi-vinc'].textContent);
+  ok(/USD 10\.000/.test(e._els['hdr-regi-ceven'].textContent),
+     'y "REGI CEVEN" suma lo que valen esas mismas oportunidades en el pipeline de Ceven',
+     e._els['hdr-regi-ceven'].textContent);
+  ok(/USD 0\b/.test(e._els['hdr-regi-perdidas'].textContent),
+     'nada está perdido en este escenario', e._els['hdr-regi-perdidas'].textContent);
   // La tarjeta de la grilla que antes mostraba el total fijo ahora es
   // "Monto filtrado": con el toggle apagado, solo entra la suelta (3000) —
   // las dos vinculadas (5000 y 6000 vistos por Ceven) quedan afuera.
@@ -211,10 +229,11 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   ok(e._els['dash-total-lbl'].textContent === 'Monto filtrado', 'con la etiqueta que dice que es filtrado', e._els['dash-total-lbl'].textContent);
 }
 {
-  // Un mismo REGI trabajado en VARIAS cotizaciones reales (mismo OPG): el KPI
-  // "Vinculados (Ceven)" del header suma todas las activas; una en estado
-  // Perdido/Facturado no cuenta (mismo criterio que "Total pipeline" del
-  // pipeline normal).
+  // Un mismo REGI trabajado en VARIAS cotizaciones reales (mismo OPG): "REGI
+  // CEVEN" (celeste) suma todas las activas; una en estado Perdido/Facturado
+  // no cuenta (mismo criterio que "Total pipeline" del pipeline normal). Como
+  // hay cotizaciones activas Y una Facturada de por medio, esto NO cuenta
+  // como "perdida" — no están TODAS en Perdido.
   const e = cargar();
   e._pipelineData = [
     filaReal('opg-x', {monto:9000, estado:'Cotizado'}),
@@ -225,9 +244,77 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   e._regiPipeRows = [ filaRegi('OPD1', 'opg-x', {cliente:'Multi SA', montoArchivo:20000, monto:20000}) ];
   e._regiMostrarVinculadas = false;
   e._renderRegiPipelineFromCache();
-  ok(/USD 15\.000/.test(e._els['hdr-regi-vinc'].textContent),
-     'suma las cotizaciones activas del mismo OPG (9000 + 6000), sin Perdido (4000) ni Facturado (8000)',
+  ok(/USD 15\.000/.test(e._els['hdr-regi-ceven'].textContent),
+     'REGI CEVEN suma las cotizaciones activas del mismo OPG (9000 + 6000), sin Perdido (4000) ni Facturado (8000)',
+     e._els['hdr-regi-ceven'].textContent);
+  ok(/USD 20\.000/.test(e._els['hdr-regi-vinc'].textContent),
+     'REGI vinculados sigue usando el Amount completo de HP (20.000), no el de Ceven',
      e._els['hdr-regi-vinc'].textContent);
+  ok(/USD 0\b/.test(e._els['hdr-regi-perdidas'].textContent),
+     'no cuenta como perdida: hay actividad real y hasta una Facturada', e._els['hdr-regi-perdidas'].textContent);
+}
+{
+  // Ahora SÍ todas las cotizaciones ligadas están en Perdido: el vínculo
+  // existió y no prosperó — cuenta para "REGIs perdidas" con el Amount de HP,
+  // y "REGI CEVEN" queda en 0 (nada activo que mostrar del lado de Ceven).
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('opg-y', {monto:9000, estado:'Perdido'}),
+    filaReal('opg-y', {monto:6000, estado:'Perdido'})
+  ];
+  e._regiPipeRows = [ filaRegi('OPD1', 'opg-y', {cliente:'Perdida Real SA', montoArchivo:12000, monto:12000}) ];
+  e._regiMostrarVinculadas = true;   // si no, la fila queda oculta y no se puede inspeccionar
+  e._renderRegiPipelineFromCache();
+  const fila = e._regiPipeRows[0];
+  ok(fila.linkReal === true, 'sigue teniendo un link real (hubo cotización con ese OPG)');
+  ok(fila.perdidaCeven === true, 'pero TODAS sus cotizaciones ligadas están en Perdido');
+  ok(fila.vinculada === true, 'y sigue contando como "vinculada" — no desaparece del KPI de arriba');
+  ok(/USD 12\.000/.test(e._els['hdr-regi-vinc'].textContent), 'REGI vinculados la sigue contando (Amount de HP)', e._els['hdr-regi-vinc'].textContent);
+  ok(/USD 0\b/.test(e._els['hdr-regi-ceven'].textContent), 'REGI CEVEN da 0: no queda nada activo', e._els['hdr-regi-ceven'].textContent);
+  ok(/USD 12\.000/.test(e._els['hdr-regi-perdidas'].textContent), 'y "REGIs perdidas" la suma completa', e._els['hdr-regi-perdidas'].textContent);
+}
+{
+  // Checkbox "Perdida" a mano: sin ningún link real, declararla perdida la
+  // hace contar igual para "REGI vinculados" y "REGIs perdidas" — el objetivo
+  // es que HP y Ceven terminen viendo el mismo número.
+  const e = cargar();
+  e._pipelineData = [];   // sin ninguna cotización real: no hay forma de linkear por OPG
+  e._regiPipeRows = [ filaRegi('OPD9', '', {cliente:'Nunca cargada SA', montoArchivo:2500, monto:2500}) ];
+  e._regiMostrarVinculadas = false;
+  e._renderRegiPipelineFromCache();
+  ok(e._regiPipeRows[0].vinculada === false, 'sin marcar, no cuenta como vinculada todavía');
+  ok(/USD 0\b/.test(e._els['hdr-regi-vinc'].textContent), 'así que el header todavía no la contempla', e._els['hdr-regi-vinc'].textContent);
+
+  // renderPipeline() está stubeado como no-op en este harness (vive en
+  // pipeline-view.js, que acá no se carga): en la app real, ese llamado es
+  // el que dispara _renderRegiPipelineFromCache() y recalcula `.vinculada`.
+  // Acá hay que pedirlo a mano para simular esa vuelta.
+  e._regiMarcarPerdida('OPD9', true);
+  ok(e._regiPipeRows[0].perdidaManual === true, 'el checkbox marca perdidaManual en la fila (optimista, antes de que vuelva el PATCH)');
+  ok(e._lastFetch[0].indexOf('opd=eq.OPD9') !== -1, 'el PATCH apunta a esa fila por opd', JSON.stringify(e._lastFetch));
+  ok(JSON.parse(e._lastFetch[1].body).forecast_override === 'Perdido', 'y manda forecast_override=Perdido', e._lastFetch[1].body);
+  e._renderRegiPipelineFromCache();
+  ok(e._regiPipeRows[0].vinculada === true, 'y con eso ya cuenta como "vinculada" — no hace falta cotización real');
+  ok(/USD 2\.500/.test(e._els['hdr-regi-vinc'].textContent), 'REGI vinculados ahora la incluye', e._els['hdr-regi-vinc'].textContent);
+  ok(/USD 2\.500/.test(e._els['hdr-regi-perdidas'].textContent), 'y también cuenta para REGIs perdidas', e._els['hdr-regi-perdidas'].textContent);
+  ok(/USD 0\b/.test(e._els['hdr-regi-ceven'].textContent), 'REGI CEVEN sigue en 0: nunca hubo cotización real detrás', e._els['hdr-regi-ceven'].textContent);
+
+  e._regiMarcarPerdida('OPD9', false);
+  ok(e._regiPipeRows[0].perdidaManual === false, 'desmarcarla la saca de perdidaManual');
+  ok(JSON.parse(e._lastFetch[1].body).forecast_override === null, 'el PATCH esta vez manda forecast_override=null', e._lastFetch[1].body);
+  e._renderRegiPipelineFromCache();
+  ok(e._regiPipeRows[0].vinculada === false, 'y vuelve a no contar como vinculada (sin link real detrás)');
+}
+{
+  // Sin permiso de pipeline, ni siquiera intenta el PATCH.
+  const e = cargar();
+  e._pipelineData = [];
+  e._regiPipeRows = [ filaRegi('OPD7', '', {cliente:'Sin Permiso SA'}) ];
+  e._canUse = false;
+  e._regiMarcarPerdida('OPD7', true);
+  ok(e._regiPipeRows[0].perdidaManual === undefined || e._regiPipeRows[0].perdidaManual === false,
+     'sin permiso no se marca la fila', e._regiPipeRows[0].perdidaManual);
+  ok(/no permite/.test(e._lastToast || ''), 'y avisa que el rol no lo permite', e._lastToast);
 }
 {
   // Mismo escenario, con el toggle en "mostrar": el header (global) tiene que

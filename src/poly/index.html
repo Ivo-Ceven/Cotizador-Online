@@ -413,18 +413,28 @@
     <!-- "← Volver"/"+ Nueva cotización" se fueron (04/09/2026): son redundantes
          con "Cotización" de la navbar y el "＋ Nueva" de esa misma vista, y ese
          lugar es el único fijo en toda vista del pipeline (normal, REGI,
-         Estadísticas, mes archivado) — quedó para los dos montos globales de
-         REGI, que antes eran tarjetas grandes de la grilla de KPI y no se
+         Estadísticas, mes archivado) — quedó para los cuatro montos globales
+         de REGI, que antes eran tarjetas grandes de la grilla de KPI y no se
          movían con ningún filtro. Los pinta _regiPintarHeaderKpis(), en
-         TODAS las vistas de este pipeline, no solo en 🎯 Pipeline REGI. -->
-    <div style="display:flex;gap:14px;align-items:center;background:var(--c0);border:0.5px solid var(--cb);border-radius:10px;padding:6px 14px;white-space:nowrap" title="Todo el pipeline REGI importado — no cambia con los filtros">
-      <div style="line-height:1.2">
-        <div style="font-size:9px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">Monto total REGI</div>
-        <strong id="hdr-regi-total" style="font-size:13px;color:var(--ct1)">USD 0</strong>
+         TODAS las vistas de este pipeline, no solo en 🎯 Pipeline REGI.
+         Ver el comentario grande sobre _regiEnsureHeaderKpis (pipeline-regi.js)
+         para el detalle de cómo se calcula cada uno. -->
+    <div style="display:flex;gap:20px;align-items:center;background:var(--c0);border:0.5px solid var(--cb);border-radius:12px;padding:9px 20px;white-space:nowrap" title="Todo el pipeline REGI importado — no cambia con los filtros">
+      <div style="line-height:1.25">
+        <div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">Monto total REGI</div>
+        <strong id="hdr-regi-total" style="font-size:16px;color:var(--ct1)">USD 0</strong>
       </div>
-      <div style="line-height:1.2">
-        <div style="font-size:9px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">REGI vinculados</div>
-        <strong id="hdr-regi-vinc" style="font-size:13px;color:var(--cgreen)">USD 0</strong>
+      <div style="line-height:1.25" title="El monto que declara HP de todo lo que Ceven ya tiene contemplado (link real, activo o perdido, o declarado perdido a mano). El objetivo es que llegue a ser igual a 'Monto total REGI'.">
+        <div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">REGI vinculados</div>
+        <strong id="hdr-regi-vinc" style="font-size:16px;color:var(--cgreen)">USD 0</strong>
+      </div>
+      <div style="line-height:1.25" title="De lo vinculado por un link real, cuánto vale HOY en el pipeline de Ceven (activo, sin Perdido ni Facturado) — el monto de Ceven, no el de HP.">
+        <div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">REGI CEVEN</div>
+        <strong id="hdr-regi-ceven" style="font-size:16px;color:var(--cblue)">USD 0</strong>
+      </div>
+      <div style="line-height:1.25" title="Monto que declara HP de lo que se da por perdido: la cotización real que existía pasó a Perdido, o se marcó perdida a mano con el checkbox de la tabla.">
+        <div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">REGIs perdidas</div>
+        <strong id="hdr-regi-perdidas" style="font-size:16px;color:var(--cred)">USD 0</strong>
       </div>
     </div>
     <h2 class="h2" style="flex:1">🎯 Pipeline</h2>
@@ -483,6 +493,15 @@
           #regi-mostrar-vinc:checked{background:#15863a}
           #regi-mostrar-vinc:checked::after{transform:translateX(16px)}
           #regi-mostrar-vinc:focus-visible{outline:2px solid #0071e3;outline-offset:2px}
+          /* Checkbox "Perdida" de cada fila de la tabla REGI (04/09/2026) — mismo
+             estilo de toggle, por CLASE porque hay uno por fila, no un solo id.
+             Rojo cuando está tildado: es lo contrario de "Mostrar vinculadas" en
+             verde de arriba. */
+          .regi-perdida-toggle{appearance:none;width:32px;height:19px;margin:0;border:0;border-radius:999px;background:#d2d2d7;cursor:pointer;position:relative;transition:background .18s ease;flex-shrink:0;vertical-align:middle}
+          .regi-perdida-toggle::after{content:'';position:absolute;width:13px;height:13px;top:3px;left:3px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s ease}
+          .regi-perdida-toggle:checked{background:#d70015}
+          .regi-perdida-toggle:checked::after{transform:translateX(13px)}
+          .regi-perdida-toggle:focus-visible{outline:2px solid #0071e3;outline-offset:2px}
         </style>
         <label style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;white-space:nowrap;height:36px;padding:0 12px;border:0.5px solid #d2d2d7;border-radius:10px;background:#f5f5f7;cursor:pointer">
           <input type="checkbox" role="switch" id="regi-mostrar-vinc" onchange="window._regiMostrarVinculadas=this.checked;renderPipeline()">
@@ -588,6 +607,12 @@
         <th class="srt" data-sort="proyecto">Oportunidad</th>
         <th class="srt" data-sort="primaryPartner">Partner primario</th>
         <th style="text-align:center">Forecast</th>
+        <!-- Checkbox "Perdida" (04/09/2026): declara a mano que Ceven no va a
+             trabajar esta oportunidad, sin necesidad de cargar una cotización
+             real solo para poder marcarla. No es edición de la foto del Excel
+             (eso sigue sin existir, ver el comentario de arriba) — vive en
+             forecast_override, columna aparte que ya estaba en la base. -->
+        <th style="text-align:center" title="Ceven la da de baja a mano, aunque HP la siga mostrando">Perdida</th>
         <th class="srt" data-sort="drExpiration">DR Expiration</th>
         <th class="srt" data-sort="mesCierre">Cierre estimado</th>
         <!-- El monto es SIEMPRE el `Amount` del archivo de HP: esta vista volvió
