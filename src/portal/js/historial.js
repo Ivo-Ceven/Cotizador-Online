@@ -138,7 +138,7 @@ function _portalHistorialGuardarEstado(id, estadoCliente, motivoPerdida){
     if(fila){ fila.estado_cliente = estadoCliente; fila.motivo_perdida = body.motivo_perdida; }
     _portalHistorialRender();
   }).catch(function(err){
-    showToast((err && err.message) || 'No se pudo guardar el estado.');
+    showError((err && err.message) || 'No se pudo guardar el estado.');
     _portalHistorialRender(); // vuelve el <select> al valor real
   });
 }
@@ -178,7 +178,7 @@ function _portalHistorialVer(id){
         + '</tbody></table>';
       det.style.display = '';
     })
-    .catch(function(err){ showToast((err && err.message) || 'No se pudo abrir el detalle.'); });
+    .catch(function(err){ showError((err && err.message) || 'No se pudo abrir el detalle.'); });
 }
 
 function _portalHistorialBind(){

@@ -27,9 +27,8 @@ function _nextItemId(){ return 'it_' + Date.now() + '_' + (++_itemSeq); }
   if(s && s.length){ products = s; initCat(); return; }
   if(raw){
     // Había algo guardado y no se pudo usar (JSON inválido o forma inesperada).
-    var aviso = '⚠ El price list guardado está corrupto y no se pudo leer. Volvé a importar el Excel.';
-    showErr(aviso);
-    if(typeof showToast === 'function') setTimeout(function(){ showToast(aviso); }, 400);
+    // showErr() ya abre un popup centrado — no hace falta reforzar con un toast.
+    showErr('El price list guardado está corrupto y no se pudo leer. Volvé a importar el Excel.');
   }
 })();
 

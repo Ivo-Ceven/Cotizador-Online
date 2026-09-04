@@ -9,9 +9,8 @@
   if(s && s.length){ products = s; initCat(); _ayudaExcelAuto(); return; }
   _ayudaExcelAuto();
   if(raw){
-    var aviso = '⚠ El catálogo guardado está corrupto y no se pudo leer. Volvé a importar el Excel.';
-    showErr(aviso);
-    if(typeof showToast === 'function') setTimeout(function(){ showToast(aviso); }, 400);
+    // showErr() ya abre un popup centrado — no hace falta reforzar con un toast.
+    showErr('El catálogo guardado está corrupto y no se pudo leer. Volvé a importar el Excel.');
   }
 })();
 

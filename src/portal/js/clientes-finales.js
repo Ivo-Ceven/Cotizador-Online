@@ -82,7 +82,7 @@ function _portalClienteFinalCrear(){
     showToast('✓ Cliente final agregado.');
     _portalClientesFinalesRender();
   }).catch(function(err){
-    showToast((err && err.message) || 'No se pudo guardar el cliente final.');
+    showError((err && err.message) || 'No se pudo guardar el cliente final.');
   });
 }
 
@@ -94,7 +94,7 @@ function _portalClienteFinalEliminar(id){
     showToast('Cliente final eliminado.');
     _portalClientesFinalesRender();
   }).catch(function(err){
-    showToast((err && err.message) || 'No se pudo eliminar.');
+    showError((err && err.message) || 'No se pudo eliminar.');
   });
 }
 

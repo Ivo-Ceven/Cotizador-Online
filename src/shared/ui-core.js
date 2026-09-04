@@ -369,7 +369,16 @@ function dp(u) {
   return 'ARS '+fI(Math.round(u*tc));
 }
 
-function showErr(m) { var e=document.getElementById('errbox'); if(!e) return; e.textContent=m; e.style.display=m?'block':'none'; }
+// El errbox inline (arriba del importador de Excel) se pasaba por alto: quedaba
+// fuera de foco o scrolleado, así que un archivo mal formado fallaba en
+// silencio para el usuario. Ahora, además de escribir el errbox, un error
+// real (m truthy) abre el popup centrado — imposible de no ver. Llamar con
+// '' sigue limpiando el errbox sin abrir nada, como antes.
+function showErr(m) {
+  var e = document.getElementById('errbox');
+  if(e){ e.textContent = m || ''; e.style.display = m ? 'block' : 'none'; }
+  if(m && typeof showErrorPopup === 'function') showErrorPopup(m);
+}
 
 function toggleTC() {
   var tc = document.getElementById('tc');

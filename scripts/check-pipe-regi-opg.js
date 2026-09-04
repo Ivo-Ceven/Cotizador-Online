@@ -55,6 +55,11 @@ function cargar(){
     'dash-regi-perdidos':     nodo(),
     'dash-regi-vinculados':   nodo(),
     'dash-by-status':         nodo(),
+    // Header (04/09/2026): los dos montos globales de REGI que no se mueven
+    // con los filtros viven acá ahora, no en dash-total/dash-regi-vinculados
+    // (ver el comentario grande sobre _regiEnsureHeaderKpis en pipeline-regi.js).
+    'hdr-regi-total':         nodo(),
+    'hdr-regi-vinc':          nodo(),
     'regi-pipe-body':         nodo(),
     'client':                 { value: '' },
     'proyecto':               { value: '' },
@@ -190,16 +195,26 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   ok(html.indexOf('Sin REGI SA') === -1 && html.indexOf('Suelta SA') !== -1,
      'la oportunidad sin REGI vinculada por OPD se oculta, la suelta sigue visible');
   ok(e._els['regi-vinc-count'].textContent === '(2)', 'el contador incluye vínculos por REGI y OPD', e._els['regi-vinc-count'].textContent);
-  ok(/USD 15\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
-     'el total suma el Excel CRUDO: todas las filas, vinculadas incluidas y sin descontar nada',
+  // Los dos KPI globales (04/09/2026) viven en el header, no en la grilla:
+  // no se mueven con el toggle "Mostrar vinculadas" ni con ningún otro filtro.
+  ok(/USD 15\.000/.test(e._els['hdr-regi-total'].textContent),
+     'el header suma el Excel CRUDO: todas las filas, vinculadas incluidas y sin descontar nada',
+     e._els['hdr-regi-total'].textContent);
+  ok(/USD 10\.000/.test(e._els['hdr-regi-vinc'].textContent),
+     'y el header vinculado suma el monto del pipeline Ceven', e._els['hdr-regi-vinc'].textContent);
+  // La tarjeta de la grilla que antes mostraba el total fijo ahora es
+  // "Monto filtrado": con el toggle apagado, solo entra la suelta (3000) —
+  // las dos vinculadas (5000 y 6000 vistos por Ceven) quedan afuera.
+  ok(/USD 3\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
+     'la grilla muestra el monto FILTRADO (solo la suelta), no el total global',
      e._els['dash-total'].textContent);
-  ok(/USD 10\.000/.test(e._els['dash-regi-vinculados'].textContent),
-     'el KPI vinculado suma el monto del pipeline Ceven');
+  ok(e._els['dash-total-lbl'].textContent === 'Monto filtrado', 'con la etiqueta que dice que es filtrado', e._els['dash-total-lbl'].textContent);
 }
 {
   // Un mismo REGI trabajado en VARIAS cotizaciones reales (mismo OPG): el KPI
-  // "Vinculados (Ceven)" suma todas las activas; una en estado Perdido/Facturado
-  // no cuenta (mismo criterio que "Total pipeline" del pipeline normal).
+  // "Vinculados (Ceven)" del header suma todas las activas; una en estado
+  // Perdido/Facturado no cuenta (mismo criterio que "Total pipeline" del
+  // pipeline normal).
   const e = cargar();
   e._pipelineData = [
     filaReal('opg-x', {monto:9000, estado:'Cotizado'}),
@@ -210,24 +225,35 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   e._regiPipeRows = [ filaRegi('OPD1', 'opg-x', {cliente:'Multi SA', montoArchivo:20000, monto:20000}) ];
   e._regiMostrarVinculadas = false;
   e._renderRegiPipelineFromCache();
-  ok(/USD 15\.000/.test(e._els['dash-regi-vinculados'].textContent),
+  ok(/USD 15\.000/.test(e._els['hdr-regi-vinc'].textContent),
      'suma las cotizaciones activas del mismo OPG (9000 + 6000), sin Perdido (4000) ni Facturado (8000)',
-     e._els['dash-regi-vinculados'].textContent);
+     e._els['hdr-regi-vinc'].textContent);
 }
 {
-  // Mismo escenario, con el toggle en "mostrar".
+  // Mismo escenario, con el toggle en "mostrar": el header (global) tiene que
+  // quedarse fijo en el total del Excel sea cual sea el toggle; la grilla
+  // (filtrada) sí tiene que moverse — sin vinculadas solo entra la suelta
+  // (3000), con vinculadas entran las dos (8000).
   const e = cargar();
   e._pipelineData = [ filaReal('abc-123') ];
   e._regiPipeRows = [
     filaRegi('OPD1', 'abc-123', {cliente:'Vinculada SA', montoArchivo:5000, monto:5000}),
     filaRegi('OPD2', 'zzz-999', {cliente:'Suelta SA',    montoArchivo:3000, monto:3000})
   ];
+  e._regiMostrarVinculadas = false;
+  e._renderRegiPipelineFromCache();
+  ok(/USD 8\.000/.test(e._els['hdr-regi-total'].textContent), 'el header usa el Excel completo con el toggle apagado', e._els['hdr-regi-total'].textContent);
+  ok(/USD 3\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
+     'y la grilla filtrada, con el toggle apagado, solo cuenta la suelta');
+
   e._regiMostrarVinculadas = true;
   e._renderRegiPipelineFromCache();
   const html = e._els['regi-pipe-body'].innerHTML;
   ok(html.indexOf('Vinculada SA') !== -1, 'con el toggle activado, la vinculada vuelve a aparecer');
+  ok(/USD 8\.000/.test(e._els['hdr-regi-total'].textContent),
+     'el header NO se mueve: sigue siendo el mismo total del Excel que con el toggle apagado');
   ok(/USD 8\.000/.test(e._els['dash-total'].innerHTML || e._els['dash-total'].textContent),
-     'el total usa el Excel aunque cambie el toggle de vinculadas');
+     'pero la grilla filtrada SÍ se mueve: con el toggle prendido ahora entran las dos');
   // El detalle de la fila (badge/botones) solo se pinta con el grupo del
   // cliente desplegado — cevenPipeAbierto() arranca colapsado en una sesión
   // nueva. Se prueba _regiRowHTML() directo, sin depender de esa mecánica.
@@ -314,10 +340,12 @@ console.log('\n7 · El pipeline REGI no tiene nada editable');
   e._regiPipeRows = [ filaRegi('OPD1', '', {cliente:'Foto SA', montoArchivo:4321, monto:4321}) ];
   e._regiMostrarVinculadas = false;
   e._renderRegiPipelineFromCache();
+  ok(/USD 4\.321/.test(e._els['hdr-regi-total'].textContent),
+     'el KPI global "Monto total REGI" del header es el Amount del Excel', e._els['hdr-regi-total'].textContent);
   ok(/USD 4\.321/.test(e._els['dash-total'].textContent),
-     'el KPI "Monto total REGI" es el Amount del Excel', e._els['dash-total'].textContent);
-  ok(/sin descontar nada/.test(e._els['dash-total-sub'].textContent),
-     'y el subtítulo dice que no descuenta nada', e._els['dash-total-sub'].textContent);
+     'y acá al no haber filtros ni vinculadas, el "Monto filtrado" de la grilla da lo mismo',
+     e._els['dash-total'].textContent);
+  ok(e._els['dash-total-lbl'].textContent === 'Monto filtrado', 'con la etiqueta de filtrado, no la de total global', e._els['dash-total-lbl'].textContent);
 }
 
 console.log('\n' + (fallos

@@ -83,7 +83,7 @@ function _portalLogoSubir(file){
     showToast('✓ Logo actualizado.');
     _portalLogoRefrescarPreview();
   }).catch(function(err){
-    showToast((err && err.message) || 'No se pudo subir el logo.');
+    showError((err && err.message) || 'No se pudo subir el logo.');
   });
 }
 

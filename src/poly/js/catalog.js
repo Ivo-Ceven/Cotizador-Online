@@ -10,9 +10,8 @@
   _ayudaExcelAuto();
   if(raw){
     // Había algo guardado y no se pudo usar (JSON inválido o forma inesperada).
-    var aviso = '⚠ El catálogo guardado está corrupto y no se pudo leer. Volvé a importar el Excel.';
-    showErr(aviso);
-    if(typeof showToast === 'function') setTimeout(function(){ showToast(aviso); }, 400);
+    // showErr() ya abre un popup centrado — no hace falta reforzar con un toast.
+    showErr('El catálogo guardado está corrupto y no se pudo leer. Volvé a importar el Excel.');
   }
 })();
 

@@ -81,7 +81,7 @@ function _portalRegiSolicitar(){
     _portalRegiPintarEstado(r);
     if(r.estado === 'aprobado') _portalCatCargar();
   }).catch(function(err){
-    showToast((err && err.message) || 'No se pudo procesar la solicitud.');
+    showError((err && err.message) || 'No se pudo procesar la solicitud.');
   }).then(function(){
     if(btn){ btn.disabled = false; btn.textContent = 'Solicitar aprobación'; }
   });

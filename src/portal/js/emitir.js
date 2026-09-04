@@ -53,7 +53,7 @@ function _portalEmitir(){
       showToast('Ojo: ' + resp.noEncontrados.length + ' producto(s) no se pudieron cotizar y quedaron afuera del pedido.');
     }
   }).catch(function(err){
-    showToast((err && err.message) || 'No se pudo enviar el pedido.');
+    showError((err && err.message) || 'No se pudo enviar el pedido.');
   }).then(function(){
     if(btn){ btn.disabled = false; btn.textContent = 'Enviar pedido a Ceven'; }
   });

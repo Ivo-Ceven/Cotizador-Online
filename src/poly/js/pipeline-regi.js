@@ -379,8 +379,14 @@ function cevenRegiToggleVista(vista){
   var proyCard = document.getElementById('dash-proy-card');
   if(facturadoCard) facturadoCard.style.display = usaDatosRegi ? 'none' : '';
   if(proyCard) proyCard.style.display = usaDatosRegi ? 'none' : '';
+  /* "Monto REGI vinculados" se fue de la grilla de KPI al header (04/09/2026,
+     junto con "Monto total REGI" — ver el comentario grande sobre
+     _regiEnsureHeaderKpis): es un KPI global que no cambia con los filtros,
+     y ahora vive chico y siempre visible ahí, no solo adentro de esta vista.
+     La tarjeta sigue en el HTML (display:none por default) para no tocar el
+     layout de la grilla, mismo criterio que "Monto REGI perdidos" de acá abajo. */
   var vincCard = document.getElementById('dash-regi-vinculados-card');
-  if(vincCard) vincCard.style.display = esRegi ? '' : 'none';
+  if(vincCard) vincCard.style.display = 'none';
   /* "Monto REGI perdidos" no se muestra más en ninguna vista: contaba las
      filas con forecast 'Perdido', que solo existía como override a mano y se
      fue el 03/09/2026. La tarjeta sigue en el HTML (display:none por
@@ -404,6 +410,12 @@ function cevenRegiToggleVista(vista){
     var dash = document.getElementById('pipe-dashboard');
     if(dash) dash.style.display = 'none';
   }
+
+  // Los dos montos globales del header (arriba de todo, al lado del título)
+  // se pintan acá y no en _regiPintarDashboard: esta función corre en CADA
+  // renderPipeline() sin importar la vista, así que quedan al día se esté
+  // mirando el pipeline normal, REGI, Estadísticas o un mes archivado.
+  if(typeof _regiEnsureHeaderKpis === 'function') _regiEnsureHeaderKpis();
 }
 
 /* ── Importar el Excel ────────────────────────────────────────────────── */
@@ -500,6 +512,12 @@ function _regiRowToPipeRow(r){
 }
 
 function _cevenRegiPipeFetch(){
+  /* Con los KPI globales ahora pintándose en el header de TODAS las vistas
+     del pipeline (_regiEnsureHeaderKpis), esta función puede pedirse dos
+     veces en paralelo apenas se abre "🎯 Pipeline" por primera vez: una desde
+     ahí y otra desde renderRegiPipeline(). El in-flight promise evita el GET
+     duplicado — la segunda llamada recibe el mismo resultado que la primera. */
+  if(window._regiPipeFetchPromise) return window._regiPipeFetchPromise;
   /* Un solo GET, y solo las columnas del archivo. `forecast_override`,
      `perdido_motivo` y la tabla `poly_regi_pipeline_productos` siguen
      existiendo en la base con sus datos: esta vista dejó de leerlas el
@@ -507,10 +525,70 @@ function _cevenRegiPipeFetch(){
   var url = _cevenRegiPipeRest('poly_regi_pipeline')
     + '?select=opd,regi,dr_expiration,opportunity,forecast,account,primary_partner,amount,close_date'
     + '&order=amount.desc';
-  return cevenAuthedFetch(url, {method: 'GET'}).then(function(res){
+  window._regiPipeFetchPromise = cevenAuthedFetch(url, {method: 'GET'}).then(function(res){
+    window._regiPipeFetchPromise = null;
     window._regiPipeRows = (Array.isArray(res) ? res : []).map(_regiRowToPipeRow);
     return window._regiPipeRows;
+  }, function(err){
+    window._regiPipeFetchPromise = null;
+    throw err;
   });
+  return window._regiPipeFetchPromise;
+}
+
+/* ── KPI globales de REGI en el header (04/09/2026) ────────────────────────
+   "Monto total REGI" y "Monto REGI vinculados" son los dos números que el
+   jefe pidió fijos, sin tocar con ningún filtro (ver el comentario de
+   _regiPintarDashboard más abajo). Vivían como tarjetas grandes en la grilla
+   de KPI, solo visibles adentro de 🎯 Pipeline REGI; ahora viven chicos en el
+   header de la barra de arriba, visibles en TODAS las vistas de este
+   pipeline (normal, REGI, Estadísticas, mes archivado) — el mismo lugar
+   fijo donde antes estaban "← Volver" y "+ Nueva cotización". */
+
+// {totalExcel, vinculadosCeven} a partir de TODAS las filas de REGI (sin
+// filtrar). Si `rowsTotal` ya trae `.vinculada`/`.montoVinculado` calculados
+// (_renderRegiPipelineFromCache los pone en cada fila antes de llamar acá),
+// se reusan tal cual; si no —porque todavía no se entró nunca a 🎯 Pipeline
+// REGI esta sesión—, se calculan acá mismo contra el pipeline real actual.
+function _regiTotalesGlobales(rowsTotal){
+  var vinculados = null;
+  var totalExcel = 0, vinculadosCeven = 0;
+  (rowsTotal || []).forEach(function(r){
+    totalExcel += Number(r.montoArchivo) || 0;
+    var vinc = r.vinculada, montoVinc = r.montoVinculado;
+    if(vinc === undefined){
+      if(!vinculados) vinculados = _regiOpgVinculadosSet();
+      var codigo = _regiCodigoVinculo(r);
+      vinc = _regiEsVinculada(r, vinculados);
+      montoVinc = vinc ? (_regiCevenAgg(vinculados[codigo]).monto || 0) : 0;
+    }
+    if(vinc) vinculadosCeven += Number(montoVinc) || 0;
+  });
+  return {totalExcel: totalExcel, vinculadosCeven: vinculadosCeven};
+}
+
+function _regiPintarHeaderKpis(totalExcel, vinculadosCeven){
+  var elTot = document.getElementById('hdr-regi-total');
+  var elVin = document.getElementById('hdr-regi-vinc');
+  if(elTot) elTot.textContent = 'USD ' + fI(totalExcel);
+  if(elVin) elVin.textContent = 'USD ' + fI(vinculadosCeven);
+}
+
+/* Punto de entrada único, llamado en CADA renderPipeline() sin importar la
+   vista activa (ver el final de cevenRegiToggleVista). Si el Excel de REGI
+   ya se pidió esta sesión, pinta directo con lo que hay en memoria — sin
+   fetch, sin esperar. Si todavía no, lo trae en soft-fetch (no bloquea el
+   render de la vista que sí se está mirando) y se repinta sola cuando llega;
+   si falla (sin conexión, sin pipeline REGI importado todavía) los montos
+   quedan en USD 0 sin reventar el resto del pipeline. */
+function _regiEnsureHeaderKpis(){
+  if(!document.getElementById('hdr-regi-total') && !document.getElementById('hdr-regi-vinc')) return;
+  if(window._regiPipeRows){
+    var t = _regiTotalesGlobales(window._regiPipeRows);
+    _regiPintarHeaderKpis(t.totalExcel, t.vinculadosCeven);
+    return;
+  }
+  _cevenRegiPipeFetch().then(function(){ _regiEnsureHeaderKpis(); }, function(){ /* sin datos: se deja en USD 0 */ });
 }
 
 /* ── Render ───────────────────────────────────────────────────────────── */
@@ -588,10 +666,10 @@ function _renderRegiPipelineFromCache(){
     return sortDir === 'asc' ? cmp : -cmp;
   });
 
-  _regiPintarDashboard(rowsTotal, filtered, forecastFilter);
+  var _hayFiltros = !!(q || forecastFilter || monthFilter);
+  _regiPintarDashboard(rowsTotal, filtered, forecastFilter, _hayFiltros);
 
   var html = _regiTablaHTML(filtered);
-  var _hayFiltros = !!(q || forecastFilter || monthFilter);
   var _vacio;
   if(rowsTotal.length === 0){
     _vacio = 'Todavía no se importó ningún Excel de REGI. Tocá "⬇ Importar Excel REGI".';
@@ -808,29 +886,28 @@ function _regiStatsDesgloseHTML(ag){
       + '<tbody>' + filas + '</tbody></table></div>';
 }
 
-function _regiPintarDashboard(rowsTotal, filtered, forecastFilter){
+function _regiPintarDashboard(rowsTotal, filtered, forecastFilter, hayFiltros){
   var dash = document.getElementById('pipe-dashboard');
   if(!dash) return;
   dash.style.display = 'block';
 
-  /* "Monto total REGI": la suma CRUDA del Amount de todas las filas del
-     Excel, sin descontar nada (pedido del jefe, 03/09/2026). Sale de
-     `rowsTotal` y no de `filtered`, así que no se mueve al tocar la búsqueda,
-     las pastillas de mes/Forecast ni el toggle de vinculadas — para eso están
-     el subtotal de cada grupo y las pastillas "Por Forecast", que sí filtran.
+  /* "Monto total REGI" y "Monto REGI vinculados" —la suma CRUDA del Amount
+     de TODAS las filas del Excel, sin descontar nada (pedido del jefe,
+     03/09/2026), y lo que de eso ya está vinculado a una cotización real de
+     Ceven— son los dos KPI globales que NO se mueven con ningún filtro.
+     Antes eran las tarjetas grandes de acá; ahora viven chicas en el header
+     de la barra de arriba, visibles en cualquier vista de este pipeline, no
+     solo en esta (ver _regiEnsureHeaderKpis). Se pintan igual desde acá, con
+     los mismos rowsTotal, para no perder la actualización en cuanto se
+     entra a 🎯 Pipeline REGI. */
+  var t = _regiTotalesGlobales(rowsTotal);
+  _regiPintarHeaderKpis(t.totalExcel, t.vinculadosCeven);
 
-     Antes descontaba las filas en 'Perdido'. Ese estado no existe más: solo
-     salía del forecast editado a mano, que se fue con la edición. */
-  var totalExcel = 0, vinculadosCeven = 0;
-  rowsTotal.forEach(function(r){
-    totalExcel += Number(r.montoArchivo) || 0;
-    if(r.vinculada) vinculadosCeven += Number(r.montoVinculado) || 0;
-  });
-
-  var cliVistos = {}, nClientes = 0, byForecast = {};
+  var cliVistos = {}, nClientes = 0, byForecast = {}, montoFiltrado = 0;
   filtered.forEach(function(r){
     var ck = (r.cliente||'').trim().toLowerCase();
     if(ck && !cliVistos[ck]){ cliVistos[ck] = 1; nClientes++; }
+    montoFiltrado += Number(r.monto) || 0;
     var fc = r.forecast || '';
     if(fc){
       if(!byForecast[fc]) byForecast[fc] = {count:0, monto:0};
@@ -840,11 +917,18 @@ function _regiPintarDashboard(rowsTotal, filtered, forecastFilter){
 
   document.getElementById('dash-count').textContent = nClientes;
   document.getElementById('dash-proyectos').textContent = filtered.length;
-  _pipeSetLbl('dash-total-lbl', 'Monto total REGI');
-  document.getElementById('dash-total').textContent = 'USD ' + fI(totalExcel);
-  _pipeSetLbl('dash-total-sub', 'todas las filas del Excel · sin descontar nada'
-    + (vinculadosCeven > 0 ? (' · USD ' + fI(vinculadosCeven) + ' ya vinculadas a Ceven') : ''));
-  document.getElementById('dash-regi-vinculados').textContent = 'USD ' + fI(vinculadosCeven);
+
+  /* Este KPI sí sigue a los filtros (búsqueda, Forecast, mes, "Mostrar
+     vinculadas"): antes esta misma tarjeta mostraba el total global fijo de
+     arriba; liberada esa tarjeta, queda para el número que faltaba —cuánto
+     suman las oportunidades que se ven en pantalla ahora mismo—, mismo
+     criterio que "Total pipeline"/"Total filtrado" del pipeline normal
+     (pipeline-view.js). */
+  _pipeSetLbl('dash-total-lbl', 'Monto filtrado');
+  document.getElementById('dash-total').textContent = 'USD ' + fI(montoFiltrado);
+  _pipeSetLbl('dash-total-sub', hayFiltros
+    ? 'según los filtros aplicados'
+    : (window._regiMostrarVinculadas ? 'incluye las ya vinculadas' : 'de las oportunidades sin vincular'));
 
   var pillsHtml = '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Por Forecast</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">';

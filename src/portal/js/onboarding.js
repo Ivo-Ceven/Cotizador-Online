@@ -78,7 +78,7 @@ function _portalOnboardingGuardar(){
     document.getElementById('pg-onboarding').style.display = 'none';
     _portalAppMostrar();
   }).catch(function(err){
-    showToast((err && err.message) || 'No se pudo guardar el perfil.');
+    showError((err && err.message) || 'No se pudo guardar el perfil.');
   }).then(function(){
     if(btn){ btn.disabled = false; btn.textContent = 'Guardar y continuar'; }
   });

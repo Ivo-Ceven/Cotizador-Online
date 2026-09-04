@@ -159,7 +159,7 @@ function _portalCatCargar(){
   }).catch(function(err){
     var msg = (err && err.message) || 'No se pudo cargar el catálogo.';
     if(cuerpo) cuerpo.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--ct3);padding:22px">' + cevenEsc(msg) + '</td></tr>';
-    showToast(msg);
+    showError(msg);
   });
 }
 
