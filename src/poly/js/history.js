@@ -215,7 +215,7 @@ function _histBindDelegation(){
     var act = el.getAttribute('data-act'), qn = el.getAttribute('data-qn');
     if(act === 'edit')      editQuoteFromHistory(qn);
     else if(act === 'copy') copiarCotizacionHist(qn);
-    else if(act === 'comp') cevenImprimirComprobante(qn);
+    else if(act === 'comp') cevenImprimirComprobante(qn, _polyComprobanteOpts());
     else if(act === 'del')  deleteQ(qn);
   });
   cevenDelegate('histwrap', 'change', function(ev){

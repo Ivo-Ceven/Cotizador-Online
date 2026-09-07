@@ -176,13 +176,26 @@ var CEVEN_COMP_COLS = {
   5: { cellWidth: 16, halign: 'center' }
 };
 
-// El pie navy es sólo "TOTAL" + importe (columnas 3 y 4). Las otras van en
-// blanco, o la barra terminaría en un bloque de color sin nada adentro.
+// El pie navy es sólo "TOTAL" + importe (columnas 3 y 4, SIEMPRE esas dos: el
+// footLabel/total se arman así más abajo pase lo que pase con las demás
+// columnas). Las otras van en blanco, o la barra terminaría en un bloque de
+// color sin nada adentro.
 function _compPieBlanco(data){
-  if(data.section === 'foot' && (data.column.index < 3 || data.column.index === 5)){
+  if(data.section === 'foot' && data.column.index !== 3 && data.column.index !== 4){
     data.cell.styles.fillColor = [255, 255, 255];
     data.cell.styles.lineColor = [255, 255, 255];
   }
+}
+
+/* Ancho/alineación de la columna opcional (7ma) que algunas marcas agregan:
+   Nota/Disponibilidad en Poly/Legamaster/Apple. Sin `opts.extraCol` la tabla
+   sale exactamente igual que siempre (6 columnas). */
+function _compColsConExtra(extraCol){
+  if(!extraCol) return CEVEN_COMP_COLS;
+  var c = {};
+  for(var k in CEVEN_COMP_COLS) c[k] = CEVEN_COMP_COLS[k];
+  c[6] = { cellWidth: extraCol.width || 24, halign: extraCol.halign || 'center' };
+  return c;
 }
 
 /* La tabla del detalle: cabecera navy, filas con el IVA al final y la barra de
@@ -190,17 +203,52 @@ function _compPieBlanco(data){
 
    Extraída para que el multimarca pueda dibujar UN cuadro por marca sin
    duplicar ni un color: el comprobante de una sola marca la llama una vez por
-   opción, exactamente igual que antes. */
-function _compTablaDetalle(doc, filasGrupo, startY, footLabel){
+   opción, exactamente igual que antes.
+
+   `opts` (todos opcionales, sin ellos sale la tabla de siempre):
+     · extraCol    {header, get(r), width?} — 7ma columna (Nota/Disponibilidad).
+     · familyOf    r -> nombre de familia; agrupa las filas con un separador
+                   entre grupos (como la vista en pantalla de Apple). Con un
+                   solo grupo no se dibuja separador.
+     · familyOrder orden preferido de las familias (las que no están al final).
+     · sectionTitle/sectionSub  título (y subtítulo) arriba de la tabla, para
+                   una sección aparte dentro del mismo documento (las
+                   garantías CevenCare de Apple). */
+function _compTablaDetalle(doc, filasGrupo, startY, footLabel, opts){
+  opts = opts || {};
+  var y = startY;
+
+  if(opts.sectionTitle){
+    y = _compEspacio(doc, y + 4, 20);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(CEVEN_COMP_NAVY[0], CEVEN_COMP_NAVY[1], CEVEN_COMP_NAVY[2]);
+    _compTxt(doc, opts.sectionTitle, CEVEN_COMP_M, y);
+    y += 4.5;
+    if(opts.sectionSub){
+      doc.setFont('times', 'italic');
+      doc.setFontSize(8.5);
+      doc.setTextColor(CEVEN_COMP_GRIS[0], CEVEN_COMP_GRIS[1], CEVEN_COMP_GRIS[2]);
+      var subLineas = doc.splitTextToSize(cevenCompSan(opts.sectionSub), CEVEN_COMP_AU);
+      _compTxt(doc, subLineas, CEVEN_COMP_M, y);
+      y += subLineas.length * 4 + 2;
+    }
+    doc.setTextColor(0, 0, 0);
+  }
+
+  var head = ['SKU', 'Descripción', 'Cantidad', 'Precio unitario', 'Subtotal', 'IVA'];
+  if(opts.extraCol) head.push(opts.extraCol.header);
+
   var total = 0;
-  var cuerpo = filasGrupo.map(function(r){
+  var cuerpo = [];
+  function _fila(r){
     var qty  = parseFloat(r['Cantidad']) || 0;
     var unit = parseFloat(r['P. Venta Unitario']) || 0;
     var sub  = parseFloat(r['Total']) || 0;
     total += sub;
     /* El IVA va ÚLTIMO, después del subtotal: es informativo y no tiene por qué
        separar la cantidad del precio, que es lo que se lee junto. */
-    return [
+    var fila = [
       cevenCompSan(r['SKU'] || ''),
       cevenCompSan(r['Descripción'] || ''),
       String(qty),
@@ -208,13 +256,43 @@ function _compTablaDetalle(doc, filasGrupo, startY, footLabel){
       'USD ' + fD(sub),
       cevenCompSan(cevenComprobanteIVA(r))
     ];
-  });
+    if(opts.extraCol) fila.push(cevenCompSan(opts.extraCol.get(r) || '—'));
+    cuerpo.push(fila);
+  }
+
+  if(typeof opts.familyOf === 'function'){
+    var orden = opts.familyOrder || [];
+    var grupos = {}, claves = [];
+    filasGrupo.forEach(function(r){
+      var f = opts.familyOf(r) || '';
+      if(!grupos[f]){ grupos[f] = []; claves.push(f); }
+      grupos[f].push(r);
+    });
+    var usadas = orden.filter(function(f){ return grupos[f]; });
+    for(var f in grupos){ if(usadas.indexOf(f) < 0) usadas.push(f); }
+    var mostrarSep = usadas.length > 1;
+    usadas.forEach(function(fam){
+      if(mostrarSep){
+        cuerpo.push([{
+          content: cevenCompSan(fam), colSpan: head.length,
+          styles: { fillColor: [240, 240, 243], textColor: [58, 58, 60], fontStyle: 'bold', fontSize: 8 }
+        }]);
+      }
+      grupos[fam].forEach(_fila);
+    });
+  } else {
+    filasGrupo.forEach(_fila);
+  }
+
+  var pie = new Array(head.length).fill('');
+  pie[3] = footLabel;
+  pie[4] = 'USD ' + fD(total);
 
   doc.autoTable({
-    startY: startY,
-    head: [['SKU', 'Descripción', 'Cantidad', 'Precio unitario', 'Subtotal', 'IVA']],
+    startY: y,
+    head: [head],
     body: cuerpo,
-    foot: [['', '', '', footLabel, 'USD ' + fD(total), '']],
+    foot: [pie],
     margin: { left: CEVEN_COMP_M, right: CEVEN_COMP_M },
     styles: { font: 'times', fontSize: 9.5, cellPadding: 2, lineColor: [183, 196, 221], lineWidth: 0.1 },
     headStyles: {
@@ -227,7 +305,7 @@ function _compTablaDetalle(doc, filasGrupo, startY, footLabel){
       halign: 'right'
     },
     alternateRowStyles: { fillColor: CEVEN_COMP_TINT },
-    columnStyles: CEVEN_COMP_COLS,
+    columnStyles: _compColsConExtra(opts.extraCol),
     didParseCell: _compPieBlanco
   });
 
@@ -257,12 +335,26 @@ function _compBarraTotal(doc, startY, label, total){
 /* Arma el documento. Separado del botón para poder generarlo sin DOM ni
    navegador — lo usa scripts/check-comprobante.js.
 
-   `opts` es opcional y lo usa sólo el multimarca (src/multi/js/pdf.js):
+   `opts` es opcional. Lo usa el multimarca (src/multi/js/pdf.js):
      · numeroLabel   rótulo del N° en la caja ('Cotización N°: ' por defecto)
      · grupoDeFila   fila -> clave de grupo; activa "un cuadro por marca"
      · grupoLabel    clave -> texto del rótulo del cuadro
      · doc           jsPDF ya empezado: se le agrega una página en vez de crear
                      uno nuevo (para meter varios pedidos en un archivo)
+
+   Y lo usan Poly/Legamaster/Apple (cada uno arma el suyo una sola vez, en su
+   propio pdf.js, y lo pasa TANTO a buildPDF() como al botón 🧾 del historial
+   — mismo documento en los dos lugares):
+     · extraCol      {header, get(r), width?} — 7ma columna (Nota en Poly y
+                     Legamaster, Disponibilidad en Apple).
+     · familyOf      fila -> familia de producto (Apple: agrupa MacBook Pro,
+                     iPhone... con un separador, como en pantalla).
+     · familyOrder   orden preferido de esas familias.
+     · warrantyOf    fila -> true si es una garantía CevenCare (Apple): esas
+                     filas se sacan de la tabla de productos y salen en su
+                     propia tabla, con su propio total — igual que en pantalla,
+                     para no mezclar un total que nunca se factura junto.
+     · warrantySectionTitle/warrantySectionSub  título y bajada de esa tabla.
    Sin `opts`, el documento sale exactamente igual que antes. */
 function cevenComprobanteDoc(qn, filas, emisor, opts){
   var PDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf && window.jspdf.default);
@@ -457,8 +549,18 @@ function cevenComprobanteDoc(qn, filas, emisor, opts){
   var etiquetaGrupo = (typeof opts.grupoLabel === 'function')
     ? opts.grupoLabel : function(k){ return String(k == null ? '' : k); };
 
+  // Garantías CevenCare (Apple): se separan ANTES de armar la tabla de
+  // productos, para que ni la agrupación por familia ni el total de la tabla
+  // principal las vean — llevan su propia tabla y su propio total, más abajo.
+  var hayGarantias = typeof opts.warrantyOf === 'function';
+
   opcs.forEach(function(nOpc){
     var deOpc = filas.filter(function(r){ return cevenOpcDe(r) === nOpc; });
+    var warrOpc = [];
+    if(hayGarantias){
+      warrOpc = deOpc.filter(opts.warrantyOf);
+      deOpc = deOpc.filter(function(r){ return !opts.warrantyOf(r); });
+    }
     if(hayOpcB){
       y = _compEspacio(doc, y + 4, 30);
       doc.setFont('times', 'bold');
@@ -469,7 +571,18 @@ function cevenComprobanteDoc(qn, filas, emisor, opts){
     }
 
     if(!agrupar){
-      y = _compTablaDetalle(doc, deOpc, y, hayOpcB ? 'TOTAL ' + cevenOpcLetra(nOpc) : 'TOTAL').finalY;
+      y = _compTablaDetalle(doc, deOpc, y, hayOpcB ? 'TOTAL ' + cevenOpcLetra(nOpc) : 'TOTAL', {
+        extraCol: opts.extraCol,
+        familyOf: opts.familyOf,
+        familyOrder: opts.familyOrder
+      }).finalY;
+      if(warrOpc.length){
+        y = _compTablaDetalle(doc, warrOpc, y,
+          hayOpcB ? 'TOTAL GARANTÍAS ' + cevenOpcLetra(nOpc) : 'TOTAL GARANTÍAS', {
+            sectionTitle: opts.warrantySectionTitle || 'Garantías Extendidas',
+            sectionSub: opts.warrantySectionSub
+          }).finalY;
+      }
       return;
     }
 
@@ -592,8 +705,12 @@ function cevenComprobanteNombre(fila){
   ) + '.pdf';
 }
 
-/* Punto de entrada del botón del historial. */
-function cevenImprimirComprobante(qn){
+/* Punto de entrada del botón del historial. `opts` es el mismo que toma
+   cevenComprobanteDoc() — cada marca pasa el suyo (extraCol/familyOf/
+   warrantyOf) para que ESTE botón y el "📄 PDF" de la cotización en vivo den
+   exactamente el mismo documento. Sin `opts` sale el comprobante genérico de
+   siempre. */
+function cevenImprimirComprobante(qn, opts){
   var filas = cevenComprobanteFilas(qn);
   if(!filas.length){
     if(typeof showToast === 'function') showToast('No se encontraron líneas para la cotización #' + qn + '.');
@@ -608,7 +725,7 @@ function cevenImprimirComprobante(qn){
     if(typeof showToast === 'function') showToast('Error: el plugin autotable de jsPDF no cargó.');
     return;
   }
-  var doc = cevenComprobanteDoc(qn, filas);
+  var doc = cevenComprobanteDoc(qn, filas, null, opts);
   if(!doc) return;
   cevenDescargarYAbrir(doc.output('blob'), cevenComprobanteNombre(filas[0]));
 }

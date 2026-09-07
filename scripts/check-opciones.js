@@ -301,6 +301,11 @@ function fuente(f){ return fs.readFileSync(path.join(ROOT, f), 'utf8'); }
   const quote = fuente('src/'+m+'/js/quote.js');
   const pipe  = fuente('src/'+m+'/js/pipeline-core.js');
   const pdf   = fuente('src/'+m+'/js/pdf.js');
+  // Desde que Poly/Apple pasaron su PDF al mismo motor que el comprobante
+  // del historial (shared/comprobante.js), la leyenda de "opciones
+  // excluyentes" ya no se imprime desde el pdf.js de cada marca: la imprime
+  // UNA vez cevenComprobanteDoc(), y pdf.js delega ahí.
+  const comp  = fuente('src/shared/comprobante.js');
   const html  = fuente('src/'+m+'/index.html');
   ok(/cevenOpcSellarFila\(/.test(qdb),        label + ': doSave() sella cada fila con su opción');
   ok(/cevenOpcCargarDeFilas\(/.test(qdb),     label + ': abrir del historial recupera las opciones');
@@ -311,7 +316,8 @@ function fuente(f){ return fs.readFileSync(path.join(ROOT, f), 'utf8'); }
   ok(/cevenOpcFiltrar\(items, opc\)/.test(quote), label + ': renderQ() muestra solo la opción activa');
   ok(/cevenOpcEfectiva\(\)/.test(pipe),       label + ': addToPipeline() usa la opción vigente');
   ok(/function cambiarOpcionVigente/.test(pipe), label + ': se puede cambiar la vigente desde el pipeline');
-  ok(/cevenOpcLeyenda\(\)/.test(pdf),         label + ': el PDF avisa que las opciones son excluyentes');
+  ok(/cevenComprobanteDoc\(/.test(pdf) && /cevenOpcLeyenda\(\)/.test(comp),
+                                              label + ': el PDF avisa que las opciones son excluyentes');
   ok(/opc-bar-box/.test(html) && /shared\/opciones\.js/.test(html),
                                               label + ': el index.html tiene la barra y carga el módulo');
   ok(/'Opción'/.test(fuente('src/'+m+'/js/state.js')), label + ': "Opción" es una columna del Excel');

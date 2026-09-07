@@ -348,7 +348,7 @@ function pipeBindDelegation(){
     var act = el.getAttribute('data-act');
 
     if(act === 'openq'){ openPipelineQuote(el.getAttribute('data-qn')); return; }
-    if(act === 'comp'){ cevenImprimirComprobante(el.getAttribute('data-qn')); return; }
+    if(act === 'comp'){ cevenImprimirComprobante(el.getAttribute('data-qn'), _legaComprobanteOpts()); return; }
 
     var n = cevenPipeNodeAt(el.getAttribute('data-k'));
     if(!n) return;

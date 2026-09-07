@@ -70,6 +70,11 @@
 window._regiPipeRows = null;         // null = todavía no se pidió a Supabase
 window._regiForecastFilter = '';
 window._regiVistaWasActive = false;
+// OPD marcados "Perdida" que siguen 3 s en la tabla antes de que el filtro
+// "ya vinculadas" los saque (ver _regiMarcarPerdida). `...T` guarda el timer
+// de cada uno para poder cancelarlo si se destilda o falla el PATCH.
+window._regiPerdidaGracia = window._regiPerdidaGracia || {};
+window._regiPerdidaGraciaT = window._regiPerdidaGraciaT || {};
 
 function _cevenRegiPipeRest(path){ return SUPABASE_URL + '/rest/v1/' + path; }
 
@@ -685,7 +690,11 @@ function _renderRegiPipelineFromCache(){
   var nVinculadas = rowsTotal.filter(function(r){ return r.vinculada; }).length;
   _regiPintarToggleVinculadas(nVinculadas);
 
-  var rows = window._regiMostrarVinculadas ? rowsTotal : rowsTotal.filter(function(r){ return !r.vinculada; });
+  // Las que acaban de marcarse "Perdida" siguen 3 s en la tabla aunque ya
+  // cuenten como vinculadas: _regiMarcarPerdida las mete en _regiPerdidaGracia
+  // y las saca al vencer la ventana (efecto regi-row-saliendo, poly/index.html).
+  var _gracia = window._regiPerdidaGracia || {};
+  var rows = window._regiMostrarVinculadas ? rowsTotal : rowsTotal.filter(function(r){ return !r.vinculada || _gracia[r.opd]; });
 
   var q = (document.getElementById('pipe-search').value || '').toLowerCase().trim();
   var forecastFilter = window._regiForecastFilter || '';
@@ -1055,7 +1064,11 @@ function _regiRowHTML(r){
       ? '<span style="background:#fde8e6;color:#d70015;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✕ Perdida (declarada)</span>'
       : '<button class="bs" data-act="regi-copiar" data-opd="'+cevenEsc(r.opd)+'" title="Crear la cotización real en nuestro pipeline a partir de esta oportunidad" style="padding:2px 8px;font-size:12px;background:#e8f4ff;color:#0071e3;border-color:#b8ddff">'
           + ((window._regiCopiadas && window._regiCopiadas[r.opd]) ? '➕ Copiar de nuevo' : '➕ Copiar a Ceven') + '</button>');
-  return '<tr'+(r.vinculada ? ' style="opacity:.55"' : '')+'>'
+  // regi-row-saliendo: recién marcada "Perdida", en su ventana de 3 s antes de
+  // que el filtro la retire. Gana sobre el opacity:.55 de vinculada (el
+  // keyframe la desvanece igual).
+  var _saliendo = !!(window._regiPerdidaGracia && window._regiPerdidaGracia[r.opd]);
+  return '<tr'+(_saliendo ? ' class="regi-row-saliendo"' : (r.vinculada ? ' style="opacity:.55"' : ''))+'>'
     + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+cevenEsc(r.opd||'—')+'</td>'
     + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+(r.regi ? cevenEsc(r.regi) : '<span style="color:#aeaeb2">sin REGI</span>')+'</td>'
     + '<td style="font-size:12px"><div style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
@@ -1144,6 +1157,34 @@ function _regiMarcarPerdida(opd, marcar){
   if(!r) return;
   var anterior = r.perdidaManual;
   r.perdidaManual = marcar;
+
+  /* Al marcarla, la fila pasa a contar como "vinculada" y el filtro por
+     defecto la saca de la tabla. Antes se iba en el mismo frame del click y no
+     se llegaba a ver ni que el toggle quedaba en rojo. Ahora se la retiene 3 s
+     con un lavado rojo que se desvanece (clase regi-row-saliendo, keyframes en
+     poly/index.html) y recién ahí se re-renderiza para que el filtro "ya
+     vinculadas" la retire. Solo aplica al MARCAR y con el filtro activo: al
+     destildar —o con "Mostrar vinculadas" prendido— la fila se queda igual y
+     no hay nada que retener. */
+  window._regiPerdidaGracia = window._regiPerdidaGracia || {};
+  window._regiPerdidaGraciaT = window._regiPerdidaGraciaT || {};
+  _regiCancelarGracia(opd);
+  // `typeof setTimeout`: fuera del browser (los checks corren en un vm sin
+  // timers) se cae al comportamiento directo de siempre — la fila sale en el
+  // mismo render, sin ventana de gracia.
+  if(marcar && !window._regiMostrarVinculadas && typeof setTimeout === 'function'){
+    window._regiPerdidaGracia[opd] = true;
+    window._regiPerdidaGraciaT[opd] = setTimeout(function(){
+      delete window._regiPerdidaGracia[opd];
+      delete window._regiPerdidaGraciaT[opd];
+      // Si mientras tanto se cambió de vista, no forzar el render de otra.
+      var sel = document.getElementById('archive-month-sel');
+      if(sel && sel.value === '__regi') renderPipeline();
+    }, 3000);
+  } else {
+    delete window._regiPerdidaGracia[opd];
+  }
+
   renderPipeline();
   cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?opd=eq.' + encodeURIComponent(opd), {
     method: 'PATCH',
@@ -1151,9 +1192,21 @@ function _regiMarcarPerdida(opd, marcar){
     body: JSON.stringify({forecast_override: marcar ? 'Perdido' : null})
   }).catch(function(e){
     r.perdidaManual = anterior;
+    _regiCancelarGracia(opd);
     renderPipeline();
     showError('No se pudo guardar el cambio: ' + ((e && e.message) || 'error desconocido'));
   });
+}
+
+/* Saca un OPD de la ventana de gracia post-"Perdida" y mata su timer, si lo
+   tiene. Se usa al re-marcar, al destildar y cuando el PATCH falla. */
+function _regiCancelarGracia(opd){
+  if(window._regiPerdidaGracia) delete window._regiPerdidaGracia[opd];
+  var t = window._regiPerdidaGraciaT && window._regiPerdidaGraciaT[opd];
+  if(t){
+    if(typeof clearTimeout === 'function') clearTimeout(t);
+    delete window._regiPerdidaGraciaT[opd];
+  }
 }
 
 /* Delegación propia: #regi-pipe-body y #dash-by-status son contenedores

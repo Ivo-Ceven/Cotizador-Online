@@ -885,7 +885,7 @@ function renderPipeline(){
         case 'ov-open': e.stopPropagation(); openOVLink(c.id); break;
         case 'ov-edit': e.stopPropagation(); editOVLink(c.id); break;
         case 'quote':   openPipelineQuote(el.getAttribute('data-pqnum')); break;
-        case 'comp':    e.stopPropagation(); cevenImprimirComprobante(el.getAttribute('data-pqnum')); break;
+        case 'comp':    e.stopPropagation(); cevenImprimirComprobante(el.getAttribute('data-pqnum'), _appleComprobanteOpts()); break;
         case 'merge':   mergeBackVirtualRow(c.id, c.key); break;
         case 'opc':     e.stopPropagation(); cambiarOpcionVigente(c.id); break;
         case 'perdido-detalle':

@@ -148,6 +148,131 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 07/09/2026 · Todos los PDF con el mismo motor: la cotización en vivo deja html2canvas
+
+Pedido de Ivo: *"Todos los botones de generar PDF deben dar el mismo pdf, o
+sea, mismo estilo. Cuando se esta en la ventana de cotizacion, el pdf que da
+el boton es horrible, no lo quiero mas ese formato, quiero el que dan los
+otro botones."*
+
+### El diagnóstico
+
+Convivían DOS motores de PDF distintos para el mismo documento:
+
+- El botón "📄 PDF" de la ventana de cotización (`buildPDF()`, en Poly/Apple/
+  Legamaster) armaba un HTML propio por marca y lo rasterizaba con
+  html2canvas (`downloadQuotePDF`, shared/pdf-core.js) — el resultado es una
+  IMAGEN metida en el PDF: texto no seleccionable, se ve blando impreso. Es
+  justo lo que ya explicaba el comentario de `shared/comprobante.js` sobre
+  por qué el comprobante NO usa ese camino.
+- El botón "🧾" del historial/pipeline (`cevenImprimirComprobante`) dibuja con
+  jsPDF + autotable (vectorial, nítido, texto seleccionable) — el documento
+  que Ivo quiere en todos lados.
+- **Multi ya había migrado** su propio `buildPDF()` a este segundo motor
+  (`src/multi/js/pdf.js`, con un comentario que dice explícitamente "el MISMO
+  comprobante que emite cada marca desde el historial"). Ese fue el patrón a
+  seguir para Poly/Apple/Legamaster.
+
+### Dos decisiones confirmadas con Ivo (`AskUserQuestion`)
+
+1. **Qué hacer con los datos que el documento genérico no tenía**: Poly y
+   Legamaster imprimen una columna "Nota" (disponibilidad/stock que tipea el
+   vendedor por línea) y Apple imprime "Disponibilidad" + una tabla APARTE de
+   garantías extendidas CevenCare con su propio total + separadores por
+   familia de producto (MacBook Pro, iPhone…). Ninguna de las dos existía en
+   el motor genérico. Se eligió **preservar todo**, extendiendo el motor
+   compartido en vez de resignar esa información.
+2. **La moneda**: el PDF viejo podía salir en ARS (toma el TC de pantalla);
+   el motor nuevo lee los montos ya guardados en `cquotes`, que se guardan
+   SIEMPRE en dólares (ver el comentario de `cevenCondicionesDetalle` en
+   shared/pdf-core.js — es deliberado: un documento que se puede volver a
+   descargar mañana no debería quedar congelado al TC del momento de
+   guardarlo). Se eligió igualar el comportamiento a Multi: el PDF de la
+   cotización en vivo pasa a salir siempre en USD. Se pierde la posibilidad
+   de exportar en pesos desde ese botón.
+
+### Qué se implementó
+
+- **`shared/comprobante.js`**: `_compTablaDetalle()` (antes fija a 6
+  columnas) ahora acepta `opts` opcionales — `extraCol` (una 7ma columna,
+  Nota/Disponibilidad), `familyOf`/`familyOrder` (agrupa las filas con un
+  separador, como la vista en pantalla de Apple) y `sectionTitle`/
+  `sectionSub` (un título propio arriba de la tabla). `cevenComprobanteDoc()`
+  suma `warrantyOf`: separa esas filas ANTES de armar la tabla de productos y
+  las dibuja en su propia tabla con su propio total, para que ni el
+  agrupamiento por familia ni el total de productos las vean — un cliente no
+  puede leer un total que mezcle "lo que compra" con "lo que es opcional".
+  `_compPieBlanco()` se generalizó (de "columnas 0,1,2,5 en blanco" a
+  "cualquier columna que no sea el rótulo/el total", índices 3 y 4) para que
+  la barra de TOTAL siga funcionando con cualquier cantidad de columnas.
+  `cevenImprimirComprobante()` ahora acepta un segundo parámetro `opts` y lo
+  reenvía — así el 🧾 del historial también puede pintar Nota/Disponibilidad/
+  garantías cuando la marca se lo pide.
+- **`src/{poly,legamaster,apple}/js/pdf.js`**: reescritos siguiendo el patrón
+  de `multi/js/pdf.js`. `buildPDF()` guarda con `doSave(true)` (fuerza
+  sobreescritura, como Multi — antes llamaba `doSave()` a secas, que en
+  Poly/Legamaster fallaba en silencio si la cotización ya existía y no
+  estaba "en edición") y relee las filas recién guardadas de `cquotes`, así
+  el PDF sale de la MISMA fuente que el 🧾 y que `exportSelectedPDF()`. Cada
+  archivo arma sus `opts` UNA sola vez (`_polyComprobanteOpts()`,
+  `_legaComprobanteOpts()`, `_appleComprobanteOpts()`) y los tres puntos de
+  entrada del archivo los usan — más los call-sites de `history.js`/
+  `pipeline-view.js`, actualizados para pasarlos también al 🧾. Apple define
+  `_appleFamiliaDeFila()` (adapta `getProductFamily()` de catalog.js, que
+  trabaja sobre un ítem en pantalla, a una fila ya guardada de `cquotes`, que
+  no tiene `modelCol`) y usa que la Descripción de una garantía YA incluye el
+  canal y los años ("MacBook Pro — Complete Care (3 años)", ver `doSave()` en
+  quotes-db.js), así que no hizo falta una columna aparte para eso.
+- **`exportSelectedPDF()`** ("PDF seleccionadas" del historial) en las tres
+  marcas dejó de descargar un `.html` suelto (bug real: el botón decía "PDF"
+  y nunca lo era) — ahora encadena `cevenComprobanteDoc(..., {doc})` como ya
+  hacía Multi, un PDF real con una página por cotización.
+- **`shared/pdf-core.js`**: `cevenPdfListCSS()` quedó sin ningún llamador
+  (era exclusiva del `exportSelectedPDF()` viejo) — se borró. `downloadQuotePDF`/
+  `cevenPdfDocCSS` siguen: los sigue usando `src/portal/js/pdf.js` (el
+  documento de reventa del cliente-canal, que sigue siendo HTML armado con
+  strings; no valía la pena reescribirlo con autotable para un solo lugar).
+  Comentarios de cabecera actualizados para no seguir diciendo que "el PDF de
+  la cotización" pasa por acá.
+
+### Verificación
+
+`node --check` sobre los 11 archivos tocados. `scripts/check-globals.js`
+encontró un bug real antes de terminar: el nuevo `apple/js/pdf.js` llamaba
+`cevenRequireExec()`, copiado del patrón de Poly/Legamaster, pero esa función
+NUNCA existió en el bundle de Apple (su `buildPDF()` viejo tampoco la
+llamaba) — sacada. `scripts/check-opciones.js` tenía dos asserts que
+grepeaban `pdf.js` buscando `cevenOpcLeyenda()` literal: como esa lógica se
+mudó a `shared/comprobante.js`, el assert quedó obsoleto (la leyenda de
+"opciones excluyentes" SIGUE imprimiéndose, solo que desde otro archivo) —
+actualizado para chequear que `pdf.js` delegue en `cevenComprobanteDoc` y que
+`comprobante.js` siga teniendo la leyenda.
+
+Nuevo **`scripts/check-pdf-unificado.js`** (20 chequeos, mismo patrón de
+`check-comprobante.js`: genera un PDF real con jsPDF+autotable en un
+contexto `vm` y lee su texto con regex): la columna `extraCol` sola (Nota),
+`familyOf`+`warrantyOf` combinados (separadores de familia, tabla de
+garantías con su propio total que NO se mezcla con el de productos, título
+de sección) y que `grupoDeFila` de Multi siga andando igual después de
+generalizar `_compPieBlanco`. Los 48 chequeos de `check-comprobante.js` y los
+139 de `check-multi.js` siguen en verde sin tocarlos — la generalización no
+cambió el documento que ya emitían.
+
+`check-emitir`, `check-entrega`, `check-poly-deals`, `check-precache` y
+`check-portal-pricing-parity` siguen fallando exactamente igual que en HEAD
+(confirmado con `git stash`: el mismo error, en el mismo lugar, sin tocar
+nada de esto) — gaps preexistentes de esos scripts, no regresiones de esta
+sesión.
+
+**No verificado en un navegador real** (sin extensión Claude in Chrome
+conectada en esta sesión): falta abrir la ventana de cotización de cada
+marca, generar el PDF en vivo y confirmar a ojo que se ve igual que el 🧾 del
+historial — en particular la tabla de garantías CevenCare de Apple (colores,
+salto de página si no entra en una hoja) y que el archivo se descarga Y se
+abre en una pestaña nueva como siempre.
+
+---
+
 ## 03/09/2026 · El REGI vuelve a ser una foto del Excel, y el pipeline de Ceven se opera por artículo
 
 Seis pedidos del jefe sobre las dos vistas del pipeline, en una sola pasada.

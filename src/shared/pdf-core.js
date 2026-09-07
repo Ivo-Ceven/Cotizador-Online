@@ -1,17 +1,32 @@
 /* ============================================================
    PDF · NUCLEO COMPARTIDO  ·  todas las marcas
    ------------------------------------------------------------
-   Dos cosas que eran identicas byte a byte en las dos marcas:
-   el rasterizado a PDF y la hoja de estilos base del documento.
+   El rasterizado a PDF con html2canvas (downloadQuotePDF/
+   cevenPdfDocCSS/cevenPdfListCSS) que vivía acá lo usan HOY solo
+   src/portal/js/pdf.js (el documento de reventa que el cliente-
+   canal le manda a SU cliente) y exportSelectedPDF() de Poly/
+   Apple/Legamaster desde el 07/09/2026 en adelante ya NO — ver
+   docs/HISTORIAL.md, entrada "Todos los PDF con el mismo motor":
+   el botón "📄 PDF" de la cotización en vivo y el "PDF
+   seleccionadas" del historial pasaron al motor de
+   shared/comprobante.js (jsPDF + autotable, nítido, sin rasterizar),
+   igual que ya hacía Multi. La rasterización queda para el portal
+   porque ahí el documento SIGUE siendo HTML armado con strings
+   (dos logos superpuestos, precios de reventa) y no vale la pena
+   reescribirlo con autotable para un solo lugar.
 
-   Lo que NO esta aca es el ARMADO del HTML: Apple imprime margen,
-   IVA/Imp.Int., disponibilidad, separadores por familia y una
-   tabla aparte de garantias CevenCare; Poly imprime OPG, Proyecto y
-   una columna de Nota. Son documentos distintos para clientes
-   distintos, no un template con banderitas.
+   Lo que SIGUE viviendo acá y usan TODOS los caminos (el rasterizado
+   del portal Y el vectorial de comprobante.js): las condiciones
+   comerciales (cevenCondiciones*), el nombre de archivo
+   (cevenNombreDocumento) y descargar-y-abrir (cevenDescargarYAbrir).
 
    Depende de: vendor/html2canvas + vendor/jspdf, notify.js
-   (showToast). Se carga ANTES de <marca>/js/pdf.js.
+   (showToast). Se carga ANTES de <marca>/js/pdf.js. shared/
+   comprobante.js también depende de las funciones de acá (las
+   condiciones comerciales, cevenNombreDocumento, cevenDescargarYAbrir),
+   pero se carga ANTES que este archivo — no importa: son llamadas
+   a función, no lecturas al cargar, así que el orden entre los dos
+   no rompe nada.
    ============================================================ */
 
 /* ── CONDICIONES COMERCIALES ────────────────────────────────────────────────
@@ -150,11 +165,13 @@ function cevenNombreDocumento(cliente, proyecto, validez){
 
 /* ── DESCARGAR + ABRIR ──────────────────────────────────────────────────────
    Un solo objectURL sirve para las dos cosas: se descarga con un <a download> y
-   se abre en una pestana. Lo usan el PDF de la cotizacion y el comprobante.
+   se abre en una pestana. Lo usan TODOS los caminos que terminan en un PDF:
+   el del portal (rasterizado, más abajo) y el de comprobante.js (vectorial,
+   Poly/Apple/Legamaster/Multi).
 
    ── EL PROBLEMA DE LA PESTANA ──────────────────────────────────────────────
    El navegador solo permite `window.open` DENTRO del gesto del usuario. El PDF
-   de la cotizacion se arma con html2canvas, que es asincrono y tarda uno o dos
+   del portal se arma con html2canvas, que es asincrono y tarda uno o dos
    segundos: para cuando termina, el gesto ya se consumio y Chrome bloquea la
    pestana — comprobado, incluso apretando el boton a mano.
 
@@ -162,8 +179,9 @@ function cevenNombreDocumento(cliente, proyecto, validez){
    un cartel de "generando", y recien mandarla al PDF cuando esta listo. Eso es
    cevenPestanaEnEspera(): el que la necesita la abre temprano y la pasa aca.
 
-   El comprobante no la necesita: se dibuja con jsPDF de forma sincronica y su
-   `window.open` cae dentro del gesto.
+   El comprobante (y, desde 07/09/2026, el PDF de la cotización de las tres
+   marcas y el pedido de Multi) no la necesita: se dibuja con jsPDF de forma
+   sincronica y su `window.open` cae dentro del mismo gesto del click.
 
    Si igual no hay pestana (el usuario tiene los emergentes bloqueados del todo)
    NO se insiste: el archivo ya se descargo y el cartel ofrece un boton "Abrir",
@@ -219,10 +237,11 @@ function cevenDescargarYAbrir(blob, fileName, ventana){
   });
 }
 
-/* Hoja de estilos del PDF de UNA cotizacion (buildPDF).
-   `cols`  = anchos de columna, que dependen de cuantas tiene cada marca.
-   `extra` = reglas propias de la marca (badges de garantia, separador de
-             familia, nota al pie de Complete Care...). */
+/* Hoja de estilos del documento rasterizado con html2canvas. Hoy la usa
+   solo src/portal/js/pdf.js (Poly/Apple/Legamaster pasaron su buildPDF() al
+   motor vectorial de shared/comprobante.js — ver el comentario de arriba).
+   `cols`  = anchos de columna.
+   `extra` = reglas extra que quiera agregar quien la llame. */
 function cevenPdfDocCSS(cols, extra){
   return '<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;padding:32px;color:#1d1d1f;font-size:13px}'
     +'.qn{font-size:11px;color:#aeaeb2;text-align:center;margin-bottom:4px}h1{font-size:17px;font-weight:600;text-align:center;margin-bottom:16px}'
@@ -247,30 +266,6 @@ function cevenPdfDocCSS(cols, extra){
     +(extra||'')
     +'.ft{margin-top:20px;font-size:10px;color:#aeaeb2;text-align:center}'
     +'@media print{body{padding:18px}}</style>';
-}
-
-/* Hoja de estilos del PDF de VARIAS cotizaciones (exportSelectedPDF, desde el
-   historial). No lleva anchos de columna: es una descarga HTML, no una captura
-   a canvas, y ahi conviene que la tabla se acomode sola. */
-function cevenPdfListCSS(extra){
-  return '<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;padding:32px;color:#1d1d1f;font-size:13px}'
-    +'.qb{margin-bottom:40px;page-break-inside:avoid}'
-    +'.qn{font-size:11px;color:#aeaeb2;text-align:center;margin-bottom:4px}'
-    +'h1{font-size:17px;font-weight:600;text-align:center;margin-bottom:16px}'
-    +'.cb{margin-bottom:14px}.cn{font-size:15px;font-weight:700;margin-bottom:3px}.cm{font-size:12px;color:#6e6e73;margin-bottom:2px}'
-    +'table{width:100%;border-collapse:collapse;margin-bottom:12px}'
-    +'.opc-tit{background:#1d1d1f;color:#fff;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:6px 10px;border-radius:6px;margin:16px 0 9px}'
-    +'.opc-nota{background:#fffbea;border:1px solid #f5c400;border-radius:6px;padding:7px 10px;font-size:11px;color:#5c4a00;margin-bottom:12px}'
-    +'th{text-align:left;border-bottom:1.5px solid #d2d2d7;padding:7px 8px;font-size:10px;color:#6e6e73;font-weight:600;text-transform:uppercase;letter-spacing:.4px}'
-    +'td{padding:7px 8px;border-bottom:0.5px solid #f0f0f0}'
-    +'.tr td{border-top:1.5px solid #d2d2d7;border-bottom:none;font-weight:700;font-size:14px;padding-top:9px}'
-    +'.sec{font-size:13px;font-weight:700;margin:16px 0 8px;padding-top:14px;border-top:0.5px solid #d2d2d7}'
-    +'.cd{font-size:12px;font-weight:700;margin-bottom:6px}'
-    +'.cd-ok{color:#0f7a35;background:#e6f6ec;display:inline-block;padding:2px 9px;border-radius:5px}'
-    +(extra||'')
-    +'.ft{margin-top:20px;font-size:10px;color:#aeaeb2;text-align:center}'
-    +'@media print{.qb{page-break-after:always}.qb:last-child{page-break-after:avoid}body{padding:18px}}'
-    +'</style>';
 }
 
 // Genera y descarga el PDF de la cotización en HORIZONTAL (A4 landscape, 1 sola hoja)

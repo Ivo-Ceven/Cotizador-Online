@@ -1,297 +1,118 @@
-// Reglas CSS de la seccion de garantias CevenCare. Se usan en los dos PDF de
-// Apple (el del historial y el de la cotizacion activa); el resto de la hoja
-// sale de cevenPdfDocCSS()/cevenPdfListCSS() en shared/pdf-core.js.
-var APPLE_PDF_CSS_WARRANTY =
-   '.opt-sec{font-size:13px;font-weight:700;margin:20px 0 4px;padding-top:16px;border-top:1.5px dashed #d2d2d7}'
-  +'.opt-sub{font-size:11px;color:#6e6e73;margin-bottom:10px}'
-  +'.badge-cc{background:#fff0e8;color:#c84e00;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700}'
-  +'.badge-gl{background:#e8f4ff;color:#0071e3;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700}';
+/* ============================================================
+   PDF · Apple
+   ------------------------------------------------------------
+   El MISMO documento que ya da el botón 🧾 del historial/pipeline
+   (shared/comprobante.js: jsPDF + autotable, serif azul marino,
+   nítido y con texto seleccionable) — nada de html2canvas. Antes
+   este archivo armaba su propio HTML y lo rasterizaba: dos
+   caminos que terminaban dando dos documentos distintos para la
+   misma cotización.
 
+   Un solo lugar arma los `opts` de la marca y los usan los TRES
+   puntos de entrada, así los tres dan exactamente el mismo documento:
+     buildPDF()          · la cotización en vivo → PDF (se guarda y se relee)
+     exportSelectedPDF() · las tildadas del historial → un PDF, una página c/u
+     cevenImprimirComprobante(qn, _appleComprobanteOpts()) · el 🧾 de cada
+                            tarjeta (history.js / pipeline-view.js)
 
-function exportSelectedPDF(){
-  var keys=Object.keys(histSel);
-  if(!keys.length) return;
-  var db=getDB();
-  var grouped={};
-  for(var i=0;i<db.length;i++){
-    var k=db[i]['N° Cotización'];
-    if(!histSel[k]) continue;
-    // Las filas meta_* (overrides de % Nac por cotización) son metadata, no
-    // productos: antes las filtraba el propio saveDB por no tener SKU, y ahora
-    // que persisten hay que excluirlas acá o salen como una fila vacía.
-    var tipo = db[i]['Tipo'];
-    if(typeof tipo === 'string' && tipo.indexOf('meta') === 0) continue;
-    if(!grouped[k])grouped[k]=[];
-    grouped[k].push(db[i]);
+   Lo propio de Apple, todo dentro de _appleComprobanteOpts() (ver
+   shared/comprobante.js para lo que hace cada clave):
+     · extraCol   columna "Disponibilidad" (lo que tipea el vendedor por línea).
+     · familyOf   agrupa por familia (MacBook Pro, iPhone…) con un separador,
+                  igual que la vista en pantalla.
+     · warrantyOf saca las garantías CevenCare (Tipo==='garantia') de la tabla
+                  de productos: van en su propia tabla con su propio total —
+                  la Descripción ya trae el canal y los años ("MacBook Pro —
+                  Complete Care (3 años)", ver doSave() en quotes-db.js), así
+                  que no hace falta una columna aparte para eso.
+
+   Como el documento sale de las filas YA GUARDADAS en `cquotes` (siempre en
+   USD — ver shared/pdf-core.js), el PDF de la cotización en vivo también sale
+   siempre en dólares, aunque la pantalla esté mostrando ARS. Mismo criterio
+   que ya aceptó Multi al migrar (src/multi/js/pdf.js).
+
+   Depende de: shared/comprobante.js (cevenComprobanteDoc, cevenComprobanteNombre),
+   shared/pdf-core.js (cevenDescargarYAbrir), js/quotes-db.js (doSave/getDB),
+   js/catalog.js (FAMILY_ORDER/getProductFamily).
+   ============================================================ */
+
+/* jsPDF + autotable tienen que estar cargados. */
+function _applePdfListo(){
+  var PDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF || (window.jspdf && window.jspdf.default);
+  if(!PDF){ showToast('Error: jsPDF no cargó. Verificá tu conexión a internet.'); return false; }
+  if(!PDF.API || typeof PDF.API.autoTable !== 'function'){
+    showToast('Error: el plugin autotable de jsPDF no cargó.'); return false;
   }
-  var logoTag=_logo?'<img src="'+cevenEsc(_logo)+'" style="height:40px;object-fit:contain;display:block;margin:0 auto 20px">':'';
-  var allBlocks='';
-  for(var ki=0;ki<keys.length;ki++){
-    var qn=keys[ki], rows=grouped[qn]; if(!rows||!rows.length) continue;
-    var first=rows[0];
-    // Las garantías van en su propia tabla, igual que en buildPDF() y en la
-    // grilla: antes se mezclaban con los productos y el "Total" del PDF del
-    // historial no coincidía con el de la cotización original.
-    /* Una cotización puede llevar dos opciones alternativas: cada una va con su
-       tabla y su total, igual que en buildPDF(). Sin separarlas, las líneas de
-       las dos caían en la misma tabla y el total era la suma de algo que nunca
-       se va a facturar junto. */
-    var hayOpcB = cevenOpcHayBEnFilas(rows);
-    var bloquesOpc = '';
-    for(var opn=1; opn<=2; opn++){
-      var filasOpc = rows.filter(function(r){ return cevenOpcDe(r) === opn; });
-      if(!filasOpc.length) continue;
-      var trows='', wrows='', gtProd=0, gtWarr=0;
-      for(var ri=0;ri<filasOpc.length;ri++){
-        var r=filasOpc[ri];
-        var lineTot = parseFloat(r['Total'])||0;
-        if(r['Tipo']==='garantia'){
-          gtWarr += lineTot;
-          var wd=null; try{ wd=JSON.parse(r['_wdata']); }catch(e){}
-          var wCanal = wd&&wd.canal ? wd.canal : 'GL';
-          var wAnios = wd&&wd.años ? wd.años : 3;
-          wrows+='<tr><td>'+cevenEsc(r['SKU'])+'</td><td class="wrap">'+cevenEsc(r['Descripción'])+'</td>'
-            +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
-            +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
-            +'<td style="text-align:right;font-weight:600">USD '+fI(lineTot)+'</td>'
-            +'<td style="text-align:center">'+cevenEsc(cevenFormatoIVA(r['IVA']||r['_taxes']||'21%'))+'</td>'
-            +'<td style="text-align:center"><span class="badge-'+(String(wCanal).toLowerCase()==='cc'?'cc':'gl')+'">'+cevenEsc(wCanal)+'</span> · '+cevenEsc(wAnios)+' '+(wAnios===1?'año':'años')+'</td></tr>';
-          continue;
-        }
-        gtProd += lineTot;
-        // El IVA está en la columna 'IVA' desde 08/2026; '_taxes' es donde lo
-        // escribía doSave() antes y sigue estando en lo ya guardado. El modelo va
-        // en '_lob' y sirve para recalcularlo si la cotización es más vieja que
-        // las dos. Este bloque llegó a leer 'IVA/Imp.Int.' / 'taxes' / 'LOB',
-        // claves que nunca existieron: la columna salía siempre en "—".
-        trows+='<tr><td>'+cevenEsc(r['SKU'])+'</td><td class="wrap">'+cevenEsc(r['Descripción'])+'</td>'
-          +'<td style="text-align:center">'+cevenEsc(r['Cantidad'])+'</td>'
-          +'<td style="text-align:right">USD '+fI(parseFloat(r['P. Venta Unitario'])||0)+'</td>'
-          +'<td style="text-align:right;font-weight:600">USD '+fI(lineTot)+'</td>'
-          +'<td style="text-align:center">'+cevenEsc(cevenFormatoIVA(r['IVA']||r['_taxes']||getIVA(r['_lob']||''))||'—')+'</td>'
-          +'<td style="text-align:center">'+cevenEsc(r['Disponibilidad']||'—')+'</td></tr>';
-      }
-      if(!trows && !wrows) continue;
-      bloquesOpc += (hayOpcB ? '<p class="opc-tit">Opción '+cevenOpcLetra(opn)+'</p>' : '')
-        +'<table><thead><tr>'
-          +'<th>SKU</th><th>Descripción</th>'
-          +'<th style="text-align:center">Qty</th>'
-          +'<th style="text-align:right">P. Venta</th>'
-          +'<th style="text-align:right">Total</th>'
-          +'<th style="text-align:center">IVA/Imp.Int.</th>'
-          +'<th style="text-align:center">Disponibilidad</th>'
-        +'</tr></thead>'
-        +'<tbody>'+trows
-          +'<tr class="tr"><td colspan="4" style="text-align:right">Total'+(hayOpcB?' Opción '+cevenOpcLetra(opn):'')+'</td><td style="text-align:right">USD '+fI(gtProd)+'</td><td></td><td></td></tr>'
-        +'</tbody></table>'
-        +(wrows?
-          '<p class="opt-sec">🛡 Garantías Extendidas — CevenCare</p>'
-          +'<p class="opt-sub">Las garantías a continuación son opcionales y se presentan separadas de la cotización principal</p>'
-          +'<table><thead><tr>'
-            +'<th>SKU</th><th>Descripción</th>'
-            +'<th style="text-align:center">Qty</th>'
-            +'<th style="text-align:right">P. Venta</th>'
-            +'<th style="text-align:right">Total</th>'
-            +'<th style="text-align:center">IVA/Imp.Int.</th>'
-            +'<th style="text-align:center">Canal / Años</th>'
-          +'</tr></thead><tbody>'+wrows
-            +'<tr class="tr"><td colspan="4" style="text-align:right">Total garantías</td><td style="text-align:right">USD '+fI(gtWarr)+'</td><td></td><td></td></tr>'
-          +'</tbody></table>'
-        :'');
-    }
-    allBlocks+='<div class="qb">'
-      +'<p class="qn">Cotización #'+cevenEsc(qn)+'</p>'
-      +'<h1>Productos recomendados para su operación</h1>'
-      +'<div class="cb">'
-        +(first['Cliente']&&first['Cliente']!=='—'?'<p class="cn">'+cevenEsc(first['Cliente'])+'</p>':'')
-        +(first['Ejecutivo']&&first['Ejecutivo']!=='—'?'<p class="cm">Ejecutivo: '+cevenEsc(first['Ejecutivo'])+'</p>':'')
-        +(first['Observaciones']&&first['Observaciones']!=='—'?'<p class="cm">'+cevenEsc(first['Observaciones'])+'</p>':'')
-      +'</div>'
-      +(hayOpcB ? '<p class="opc-nota">'+cevenEsc(cevenOpcLeyenda())+'</p>' : '')
-      +bloquesOpc
-      /* Las condiciones se arman en shared/pdf-core.js, a partir de lo que
-         doSave() guardó con la cotización. Antes estaban escritas acá y el
-         bloque ENTERO se omitía cuando faltaban los tres campos editables —
-         incluidas las líneas fijas, que son ciertas siempre. */
-      +cevenCondicionesHTML(first)
-    +'</div>';
-  }
-  var fname=keys.length===1?'Cotizacion_'+keys[0]:'Cotizaciones_'+keys.join('-');
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+cevenEsc(fname)+'</title>'
-    // Reglas propias de Apple: la seccion opcional de garantias CevenCare.
-    +cevenPdfListCSS(APPLE_PDF_CSS_WARRANTY)
-    +'</head><body>'
-    +logoTag
-    +allBlocks
-    +'<p class="ft">Ceven S.A. · Apple Business Partner · Authorized Service Provider · Argentina &amp; Uruguay</p>'
-    +'</body></html>';
-  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');a.href=url;a.download=fname+'.html';
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  setTimeout(function(){URL.revokeObjectURL(url);},3000);
+  return true;
 }
 
-// ── PDF INDIVIDUAL ──
+/* Filas de `cquotes` sin las corruptas — mismo filtro que cevenComprobanteFilas(),
+   más las filas meta_* (overrides de % Nac, sin SKU/Descripción: ya las saca
+   ese mismo filtro por no tener esos dos campos). */
+function _applePdfFilas(qn){
+  return getDB().filter(function(r){
+    return String(r['N° Cotización']) === String(qn)
+      && r['SKU'] && r['SKU'] !== 'undefined'
+      && r['Descripción'] && r['Descripción'] !== 'undefined';
+  });
+}
+
+/* getProductFamily() (catalog.js) trabaja sobre un ítem EN PANTALLA
+   (it.description/it.lob/it.modelCol); acá se arma desde una fila YA GUARDADA
+   de cquotes, que no tiene modelCol. La descripción + el LOB alcanzan para
+   todos los patrones reales (macbook, imac, iphone, ipad, watch, airpod). */
+function _appleFamiliaDeFila(r){
+  return getProductFamily({ description: r['Descripción'], lob: r['_lob'] || '', modelCol: '' });
+}
+
+/* Objeto NUEVO en cada llamado — cevenComprobanteDoc() le cuelga `.doc` cuando
+   encadena varias páginas y no puede ser compartido. */
+function _appleComprobanteOpts(){
+  return {
+    extraCol: { header: 'Disponibilidad', get: function(r){ return r['Disponibilidad'] || '—'; }, width: 24 },
+    familyOf: _appleFamiliaDeFila,
+    familyOrder: FAMILY_ORDER,
+    warrantyOf: function(r){ return r['Tipo'] === 'garantia'; },
+    warrantySectionTitle: '🛡 Garantías Extendidas — CevenCare',
+    warrantySectionSub: 'Las garantías a continuación son opcionales y se presentan separadas de la cotización principal.'
+  };
+}
+
+/* ── PDF DE LA COTIZACIÓN EN VIVO ─────────────────────────────────────────── */
 function buildPDF(){
-  if(!items.length && !warrantyItems.length){showToast('La cotización está vacía.');return;}
-  // En ARS sin tipo de cambio, dp() no puede dar un importe: antes salía un PDF
-  // con los números de USD rotulados como ARS (1:1).
-  if(!cevenTCValido()){showToast('Cargá el tipo de cambio antes de exportar en ARS.');return;}
-  doSave();
-  var client=document.getElementById('client').value;
-  var exec=document.getElementById('exec').value;
-  var ob=document.getElementById('obs').value;
-  // Las condiciones comerciales (fecha efectiva, condición de pago, moneda y
-  // entrega) las lee cevenCondicionesHTML() de los mismos campos, más abajo.
-  var qn=String(qNum).padStart(4,'0');
-  var logoTag=_logo?'<img src="'+cevenEsc(_logo)+'" style="height:40px;object-fit:contain;display:block;margin:0 auto 20px">':'';
-  // El mismo sort que está activo en pantalla. Este comparador estaba copiado
-  // tres veces (acá, en renderQ y en getSortedItems): tres lugares donde tocar
-  // el orden y dos donde olvidarse, y el PDF terminaba ordenado distinto que
-  // la grilla que el vendedor acababa de mirar.
-  var sortedItems = getSortedItems();
-  /* Con dos opciones el documento lleva DOS bloques —cada uno con su tabla de
-     productos, su tabla de garantías y su total— y arriba el aviso de que son
-     excluyentes. Sin ese aviso, el cliente puede leer las dos tablas como dos
-     partes de la misma compra y sumar los totales. */
-  var hayOpcB = cevenOpcFiltrar(items, 2).length > 0 || cevenOpcFiltrar(warrantyItems, 2).length > 0;
+  if(!items.length && !warrantyItems.length){ showToast('La cotización está vacía.'); return; }
+  if(!_applePdfListo()) return;
 
-  // Filas de productos de una opción, agrupadas por familia (MacBook Pro, iPhone…).
-  function _filasProductos(lista){
-    var familyGroups = {};
-    for(var i=0;i<lista.length;i++){
-      var fam = getProductFamily(lista[i]);
-      if(!familyGroups[fam]) familyGroups[fam] = [];
-      familyGroups[fam].push(lista[i]);
-    }
-    var usedFamilies = FAMILY_ORDER.filter(function(f){ return familyGroups[f]; });
-    // Añadir familias no previstas al final
-    for(var f in familyGroups){ if(FAMILY_ORDER.indexOf(f)<0) usedFamilies.push(f); }
-    var showSep = usedFamilies.length > 1;
-    var rows = '';
-    for(var fi=0;fi<usedFamilies.length;fi++){
-      var fName = usedFamilies[fi];
-      if(showSep) rows+='<tr class="fam-sep"><td colspan="7">'+cevenEsc(fName)+'</td></tr>';
-      var grp = familyGroups[fName];
-      for(var gi=0;gi<grp.length;gi++){
-        var it=grp[gi];
-        // El HTML se inyecta en el DOM vivo (downloadQuotePDF → wrap.innerHTML) para
-        // que html2canvas lo rasterice: sin escapar, un SKU o una descripción del
-        // price list con <img onerror=…> se ejecuta al exportar.
-        rows+='<tr><td class="nowrap" style="font-size:11px;font-family:monospace">'+cevenEsc(it.sku)+'</td><td>'+cevenEsc(it.description)+'</td>'
-          +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.qty)+'</td>'
-          +'<td class="nowrap" style="text-align:right">'+dp(it.salePrice)+'</td>'
-          +'<td class="nowrap" style="text-align:right;font-weight:600">'+dp(it.salePrice*it.qty)+'</td>'
-          +'<td class="nowrap" style="text-align:center">'+cevenEsc(cevenFormatoIVA(it.taxes)||'—')+'</td>'
-          +'<td class="nowrap" style="text-align:center">'+cevenEsc(it.stock||'—')+'</td>'
-          +'</tr>';
-      }
-    }
-    return rows;
-  }
+  // Se guarda y se relee: el PDF sale de las MISMAS filas de `cquotes` que el
+  // del historial, así que hay un solo camino que mantener.
+  if(!doSave(true)){ showToast('No se pudo guardar la cotización para exportarla.'); return; }
+  var qn = cevenQNumFmt(qNum);
+  var filas = _applePdfFilas(qn);
+  if(!filas.length){ showToast('La cotización está vacía.'); return; }
 
-  var COLGRP = '<colgroup><col class="col-sku"><col class="col-desc"><col class="col-qty"><col class="col-pv"><col class="col-tot"><col class="col-iva"><col class="col-disp"></colgroup>';
-
-  /* El bloque completo de una opción: productos + garantías, cada uno con su
-     total. Devuelve '' si esa opción no tiene nada. */
-  function _bloqueOpcion(n){
-    var its = cevenOpcFiltrar(sortedItems, n);
-    var wrs = getSortedWarranties().filter(function(x){ return cevenOpcDe(x.w) === n; });
-    if(!its.length && !wrs.length) return '';
-    // ||0 para que un salePrice roto no imprima "NaN" como total en el PDF del cliente.
-    var totOpc = 0;
-    for(var i=0;i<its.length;i++) totOpc += (its[i].salePrice||0)*its[i].qty;
-
-    var h = '';
-    if(hayOpcB) h += '<p class="opc-tit">Opción '+cevenOpcLetra(n)+'</p>';
-    h += '<table>'+COLGRP+'<thead><tr>'
-      +'<th>SKU</th><th>Descripción</th>'
-      +'<th style="text-align:center">Qty</th>'
-      +'<th style="text-align:right">P. Venta</th>'
-      +'<th style="text-align:right">Total</th>'
-      +'<th style="text-align:center">IVA/Imp.Int.</th>'
-      +'<th style="text-align:center">Disponibilidad</th>'
-      +'</tr></thead><tbody>'+_filasProductos(its)
-      +'<tr class="tr"><td colspan="4" style="text-align:right">Total'+(hayOpcB?' Opción '+cevenOpcLetra(n):'')+'</td>'
-      +'<td style="text-align:right">'+dp(totOpc)+'</td><td></td><td></td></tr></tbody></table>';
-
-    if(wrs.length){
-      h += '<p class="opt-sec">🛡 Garantías Extendidas — CevenCare</p>'
-        +'<p class="opt-sub">Las garantías a continuación son opcionales y se presentan separadas de la cotización principal</p>'
-        +'<table>'+COLGRP+'<thead><tr>'
-          +'<th>SKU</th><th>Descripción</th>'
-          +'<th style="text-align:center">Qty</th>'
-          +'<th style="text-align:right">P. Venta</th>'
-          +'<th style="text-align:right">Total</th>'
-          +'<th style="text-align:center">IVA/Imp.Int.</th>'
-          +'<th style="text-align:center">Canal / Años</th>'
-        +'</tr></thead><tbody>';
-      var wTotal = 0;
-      for (var wi=0; wi<wrs.length; wi++) {
-        var w = wrs[wi].w;
-        var wpUnit = Math.round((w.precio||0)*100)/100;
-        var wsub = wpUnit * w.cantidad;
-        wTotal += wsub;
-        h += '<tr>'
-          +'<td class="nowrap" style="font-size:11px;font-family:monospace">'+cevenEsc(w.sku)+'</td>'
-          +'<td>'+cevenEsc(w.equipo)+' — '+(w.canal==='CC'?'Complete Care':'Gta. Limitada Ext.')+'</td>'
-          +'<td class="nowrap" style="text-align:center">'+cevenEsc(w.cantidad)+'</td>'
-          +'<td class="nowrap" style="text-align:right">USD '+wpUnit.toLocaleString('es-AR',{minimumFractionDigits: wpUnit%1===0?0:2, maximumFractionDigits:2})+'</td>'
-          +'<td class="nowrap" style="text-align:right;font-weight:600">USD '+wsub.toLocaleString('es-AR',{minimumFractionDigits: wsub%1===0?0:2, maximumFractionDigits:2})+'</td>'
-          +'<td class="nowrap" style="text-align:center;color:#6e6e73">21%</td>'
-          +'<td class="nowrap" style="text-align:center"><span class="badge-'+(String(w.canal).toLowerCase()==='cc'?'cc':'gl')+'">'+cevenEsc(w.canal)+'</span> · '+cevenEsc(w.años)+' '+(w.años===1?'año':'años')+'</td>'
-          +'</tr>';
-      }
-      // wTotal se venía acumulando y nunca se imprimía: la tabla de garantías salía
-      // sin fila de total, a diferencia de la de productos.
-      h += '<tr class="tr"><td colspan="4" style="text-align:right">Total garantías</td>'
-        +'<td style="text-align:right">USD '+wTotal.toLocaleString('es-AR',{minimumFractionDigits: wTotal%1===0?0:2, maximumFractionDigits:2})+'</td><td></td><td></td></tr>'
-        +'</tbody></table>';
-      if (wrs.some(function(x){ return x.w.canal === 'CC'; })) {
-        h += '<div class="fn"><strong style="text-transform:uppercase;font-size:10px;letter-spacing:.3px">Nota — Planes CC (Complete Care)</strong>'
-          +'Los planes CC incluyen cobertura de daños accidentales (1 evento por contrato) con un cargo por servicio a cargo del cliente: pantalla USD 99 (SKU: DADIACC) · otros daños USD 249 / USD 149 para MacBook Neo (SKU: OTDAACC).</div>';
-      }
-    }
-    return h;
-  }
-  // "<cliente> - <proyecto> - Ceven - <validez>" (shared/pdf-core.js)
-  var docTitle = cevenNombreDocumento(
-    client,
-    document.getElementById('proyecto').value,
-    document.getElementById('eff-date').value
-  );
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+cevenEsc(docTitle)+'</title>'
-    +cevenPdfDocCSS(
-      '.col-sku{width:12%}.col-desc{width:35%}.col-qty{width:6%}.col-pv{width:13%}.col-tot{width:13%}.col-iva{width:10%}.col-disp{width:11%}',
-      // Garantias CevenCare + separador de familia (MacBook Pro, iPhone, ...):
-      // ninguna de las dos existe en el PDF de otra marca.
-      APPLE_PDF_CSS_WARRANTY
-      +'.fn{background:#fffbea;border:1px solid #f5c400;border-radius:6px;padding:8px 10px;font-size:11px;color:#5c4a00;margin-top:10px;line-height:1.5}'
-      +'.fam-sep td{background:#f0f0f3;font-size:9px;font-weight:700;color:#3a3a3c;text-transform:uppercase;letter-spacing:.9px;padding:5px 8px;border-top:1.5px solid #c7c7cc;border-bottom:none}'
-    )
-    +'</head><body>'
-    +logoTag
-    +'<p class="qn">Cotización #'+cevenEsc(qn)+'</p>'
-    +'<h1>Productos recomendados para su operación</h1>'
-    +'<div class="cb">'+(client?'<p class="cn">'+cevenEsc(client)+'</p>':'')+(exec?'<p class="cm">Ejecutivo: '+cevenEsc(exec)+'</p>':'')+(ob?'<p class="cm">'+cevenEsc(ob)+'</p>':'')+'</div>'
-    +(hayOpcB ? '<p class="opc-nota">'+cevenEsc(cevenOpcLeyenda())+'</p>' : '')
-    +_bloqueOpcion(1)
-    +_bloqueOpcion(2);
-
-  // Sin argumento, cevenCondicionesHTML() lee los campos de la pantalla — que es
-  // lo que corresponde acá: se está exportando la cotización que está en vivo.
-  html += cevenCondicionesHTML()
-    +'<p class="ft">Ceven S.A. · Apple Business Partner · Authorized Service Provider · Argentina &amp; Uruguay</p>'
-    +'</body></html>';
-  // Estilos de impresión / salto de página (landscape) + evitar cortar filas
-  html = html.replace('</head>',
-    '<style>tr,.cb,.sec,.opt-sec,.fn{page-break-inside:avoid}thead{display:table-header-group}'
-    +'@media print{@page{size:A4 landscape;margin:10mm}}</style>'
-    +'</head>');
-
-  // Descargar como PDF real (horizontal, 1 sola hoja A4 landscape)
-  downloadQuotePDF(html, docTitle);
+  var doc = cevenComprobanteDoc(qn, filas, null, _appleComprobanteOpts());
+  if(!doc) return;
+  cevenDescargarYAbrir(doc.output('blob'), cevenComprobanteNombre(filas[0]));
 }
 
-// downloadQuotePDF() vive en shared/pdf-core.js (era identico byte a byte).
+/* ── PDF DE COTIZACIONES DEL HISTORIAL, TILDADAS ──────────────────────────── */
+// Botón "PDF seleccionadas" de la barra: un archivo con una página por cotización.
+function exportSelectedPDF(){
+  var keys = Object.keys(histSel);
+  if(!keys.length) return;
+  if(!_applePdfListo()) return;
+
+  var doc = null, primera = null;
+  keys.forEach(function(qn){
+    var filas = _applePdfFilas(qn);
+    if(!filas.length) return;
+    if(!primera) primera = filas[0];
+    var opts = _appleComprobanteOpts();
+    opts.doc = doc || undefined;
+    doc = cevenComprobanteDoc(qn, filas, null, opts);
+  });
+  if(!doc){ showToast('No se encontró ninguna cotización.'); return; }
+
+  var fname = keys.length === 1 ? 'Cotizacion_' + keys[0] : 'Cotizaciones_' + keys.join('-');
+  cevenDescargarYAbrir(doc.output('blob'), fname + '.pdf');
+}

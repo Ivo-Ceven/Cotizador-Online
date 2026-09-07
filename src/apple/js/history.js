@@ -240,7 +240,7 @@ function renderHistory(){
     switch(el.getAttribute('data-hact')){
       case 'edit': e.stopPropagation(); editQuoteFromHistory(qn); break;
       case 'copy': e.stopPropagation(); copiarCotizacionHist(qn); break;
-      case 'comp': e.stopPropagation(); cevenImprimirComprobante(qn); break;
+      case 'comp': e.stopPropagation(); cevenImprimirComprobante(qn, _appleComprobanteOpts()); break;
       case 'del':  e.stopPropagation(); deleteQ(qn); break;
     }
   });

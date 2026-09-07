@@ -519,7 +519,7 @@ function pipeBindDelegation(){
     // Abrir la cotización y su comprobante no necesitan nodo: el número va en
     // el propio data-*, y es la clave real contra cquotes.
     if(act === 'openq'){ openPipelineQuote(el.getAttribute('data-qn')); return; }
-    if(act === 'comp'){ cevenImprimirComprobante(el.getAttribute('data-qn')); return; }
+    if(act === 'comp'){ cevenImprimirComprobante(el.getAttribute('data-qn'), _polyComprobanteOpts()); return; }
 
     /* Todo lo demás resuelve la CLAVE contra el registro de nodos, que devuelve
        el objeto original: el id nunca se reconstruye desde un atributo (sería
