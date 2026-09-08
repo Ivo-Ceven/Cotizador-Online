@@ -69,6 +69,7 @@
 
 window._regiPipeRows = null;         // null = todavía no se pidió a Supabase
 window._regiForecastFilter = '';
+window._regiSoloPerdidas = false;    // toggle "Solo perdidas" (excluye a "Mostrar vinculadas")
 window._regiVistaWasActive = false;
 // OPD marcados "Perdida" que siguen 3 s en la tabla antes de que el filtro
 // "ya vinculadas" los saque (ver _regiMarcarPerdida). `...T` guarda el timer
@@ -370,10 +371,13 @@ function cevenRegiToggleVista(vista){
   if(execWrap) execWrap.style.display = usaDatosRegi ? 'none' : '';
   if(statusWrap) statusWrap.style.display = usaDatosRegi ? 'none' : '';
 
-  // "Mostrar vinculadas": solo existe EN la tabla REGI (no en el pipeline
-  // real ni en Estadísticas, que ya muestra las vinculadas por definición).
+  // "Mostrar vinculadas" y "Solo perdidas": solo existen EN la tabla REGI (no
+  // en el pipeline real ni en Estadísticas, que ya muestra las vinculadas por
+  // definición).
   var vincWrap = document.getElementById('regi-vinc-wrap');
   if(vincWrap) vincWrap.style.display = esRegi ? '' : 'none';
+  var perdWrap = document.getElementById('regi-perd-wrap');
+  if(perdWrap) perdWrap.style.display = esRegi ? '' : 'none';
 
   // Facturado y Forecast del mes no tienen equivalente en REGI ni en
   // Estadísticas: no hay "facturado" en una oportunidad que todavía es de un
@@ -688,13 +692,25 @@ function _renderRegiPipelineFromCache(){
     r.vinculada = r.linkReal || r.perdidaManual;
   });
   var nVinculadas = rowsTotal.filter(function(r){ return r.vinculada; }).length;
+  var nPerdidas = rowsTotal.filter(_regiEsPerdida).length;
   _regiPintarToggleVinculadas(nVinculadas);
+  _regiPintarToggleSoloPerdidas(nPerdidas);
 
   // Las que acaban de marcarse "Perdida" siguen 3 s en la tabla aunque ya
   // cuenten como vinculadas: _regiMarcarPerdida las mete en _regiPerdidaGracia
   // y las saca al vencer la ventana (efecto regi-row-saliendo, poly/index.html).
   var _gracia = window._regiPerdidaGracia || {};
-  var rows = window._regiMostrarVinculadas ? rowsTotal : rowsTotal.filter(function(r){ return !r.vinculada || _gracia[r.opd]; });
+  var rows;
+  if(window._regiSoloPerdidas){
+    // "Solo perdidas" gana sobre "Mostrar vinculadas": las perdidas SON
+    // vinculadas, así que sin esto quedarían ocultas igual. Deja pasar también
+    // las que están en su ventana de gracia de 3 s (recién marcadas).
+    rows = rowsTotal.filter(function(r){ return _regiEsPerdida(r) || _gracia[r.opd]; });
+  } else if(window._regiMostrarVinculadas){
+    rows = rowsTotal;
+  } else {
+    rows = rowsTotal.filter(function(r){ return !r.vinculada || _gracia[r.opd]; });
+  }
 
   var q = (document.getElementById('pipe-search').value || '').toLowerCase().trim();
   var forecastFilter = window._regiForecastFilter || '';
@@ -736,6 +752,8 @@ function _renderRegiPipelineFromCache(){
   var _vacio;
   if(rowsTotal.length === 0){
     _vacio = 'Todavía no se importó ningún Excel de REGI. Tocá "⬇ Importar Excel REGI".';
+  } else if(window._regiSoloPerdidas && nPerdidas === 0){
+    _vacio = 'Ninguna oportunidad de REGI está marcada como perdida. Se marcan con el switch "Perdida" de cada fila.';
   } else if(rows.length === 0 && !window._regiMostrarVinculadas && nVinculadas > 0){
     // El caso lindo: no queda nada por atender. Se lo dice así y no como
     // "ninguna oportunidad coincide con los filtros" (que suena a que algo
@@ -755,6 +773,43 @@ function _renderRegiPipelineFromCache(){
 function _regiPintarToggleVinculadas(n){
   var el = document.getElementById('regi-vinc-count');
   if(el) el.textContent = '(' + n + ')';
+}
+
+// Contador del toggle "Solo perdidas (N)", mismo criterio que el de arriba.
+function _regiPintarToggleSoloPerdidas(n){
+  var el = document.getElementById('regi-perd-count');
+  if(el) el.textContent = '(' + n + ')';
+}
+
+/* "Perdida" en la vista REGI: la declaró perdida Ceven a mano (switch de la
+   fila → forecast_override) o el vínculo real existió y todas sus cotizaciones
+   quedaron en 'Perdido' (perdidaCeven, lo calcula _renderRegiPipelineFromCache
+   sobre cada fila antes de filtrar). Mismo criterio que el KPI "REGIs
+   perdidas" del header (_regiTotalesGlobales). */
+function _regiEsPerdida(r){
+  return !!(r && (r.perdidaManual || r.perdidaCeven));
+}
+
+/* Los dos toggles de la vista REGI ("Mostrar vinculadas" y "Solo perdidas")
+   son modos de vista que compiten: prender uno apaga el otro. La exclusión
+   vive acá y no en el onchange para no repetir el cruce de ids en el HTML. */
+function _regiToggleMostrarVinculadas(on){
+  window._regiMostrarVinculadas = !!on;
+  if(on){
+    window._regiSoloPerdidas = false;
+    var p = document.getElementById('regi-solo-perd');
+    if(p) p.checked = false;
+  }
+  renderPipeline();
+}
+function _regiToggleSoloPerdidas(on){
+  window._regiSoloPerdidas = !!on;
+  if(on){
+    window._regiMostrarVinculadas = false;
+    var v = document.getElementById('regi-mostrar-vinc');
+    if(v) v.checked = false;
+  }
+  renderPipeline();
 }
 
 /* ── Render de "📊 Estadísticas REGI" ──────────────────────────────────────
@@ -986,7 +1041,8 @@ function _regiPintarDashboard(rowsTotal, filtered, forecastFilter, hayFiltros){
   document.getElementById('dash-total').textContent = 'USD ' + fI(montoFiltrado);
   _pipeSetLbl('dash-total-sub', hayFiltros
     ? 'según los filtros aplicados'
-    : (window._regiMostrarVinculadas ? 'incluye las ya vinculadas' : 'de las oportunidades sin vincular'));
+    : (window._regiSoloPerdidas ? 'solo las declaradas perdidas'
+      : (window._regiMostrarVinculadas ? 'incluye las ya vinculadas' : 'de las oportunidades sin vincular')));
 
   var pillsHtml = '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Por Forecast</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">';
@@ -1058,12 +1114,18 @@ function _regiRowHTML(r){
   // "➕ Copiar a Ceven" no edita esta foto, abre una cotización nueva del
   // lado de Ceven. El "✎ Editar" que asignaba productos se fue el
   // 03/09/2026 con el resto de la edición.
-  var celdaAcc = r.linkReal
-    ? '<span style="background:#e6f7ec;color:#15863a;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✓ Vinculada</span>'
-    : (r.perdidaManual
-      ? '<span style="background:#fde8e6;color:#d70015;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✕ Perdida (declarada)</span>'
-      : '<button class="bs" data-act="regi-copiar" data-opd="'+cevenEsc(r.opd)+'" title="Crear la cotización real en nuestro pipeline a partir de esta oportunidad" style="padding:2px 8px;font-size:12px;background:#e8f4ff;color:#0071e3;border-color:#b8ddff">'
-          + ((window._regiCopiadas && window._regiCopiadas[r.opd]) ? '➕ Copiar de nuevo' : '➕ Copiar a Ceven') + '</button>');
+  // Orden de autoridad: link real que terminó todo en 'Perdido' → "✕ Perdida"
+  // (roja, aunque haya vínculo real: la oportunidad no prosperó); link real vivo
+  // → "✓ Vinculada"; sin link pero declarada perdida a mano → "✕ Perdida
+  // (declarada)"; nada → botón para copiarla al pipeline real.
+  var celdaAcc = (r.linkReal && r.perdidaCeven)
+    ? '<span style="background:#fde8e6;color:#d70015;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✕ Perdida</span>'
+    : (r.linkReal
+      ? '<span style="background:#e6f7ec;color:#15863a;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✓ Vinculada</span>'
+      : (r.perdidaManual
+        ? '<span style="background:#fde8e6;color:#d70015;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✕ Perdida (declarada)</span>'
+        : '<button class="bs" data-act="regi-copiar" data-opd="'+cevenEsc(r.opd)+'" title="Crear la cotización real en nuestro pipeline a partir de esta oportunidad" style="padding:2px 8px;font-size:12px;background:#e8f4ff;color:#0071e3;border-color:#b8ddff">'
+            + ((window._regiCopiadas && window._regiCopiadas[r.opd]) ? '➕ Copiar de nuevo' : '➕ Copiar a Ceven') + '</button>'));
   // regi-row-saliendo: recién marcada "Perdida", en su ventana de 3 s antes de
   // que el filtro la retire. Gana sobre el opacity:.55 de vinculada (el
   // keyframe la desvanece igual).
