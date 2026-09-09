@@ -444,18 +444,23 @@ function _pipeTablaHTML(filas, scope, opts){
         // está aprobado del lado de HP). Se omite sin drama si el pipeline
         // REGI no se cargó todavía esta sesión — no vale la pena un fetch
         // solo para esto.
-        +'<td style="font-size:12px;color:#6e6e73;white-space:nowrap">'
-          +cevenEsc(r.opg||'—')
+        // El OPG/REGI puede ser larguísimo: el código va en un <span> que se
+        // recorta con "…" (título nativo para verlo entero), y el 🎯 y el ✎
+        // quedan FUERA de ese recorte para que no se los coma la elipsis.
+        +'<td style="font-size:12px;color:#6e6e73">'
+          +'<div style="display:flex;align-items:center;gap:4px">'
+          +'<span'+(r.opg?' title="'+cevenEsc(r.opg)+'"':'')+' style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.opg||'—')+'</span>'
           +((r.opg && typeof _regiOpgMatcheaVigente === 'function' && _regiOpgMatcheaVigente(r.opg))
-              ? ' <span title="Coincide con una oportunidad REGI vigente" style="cursor:default">🎯</span>' : '')
+              ? '<span title="Coincide con una oportunidad REGI vigente" style="cursor:default">🎯</span>' : '')
           // Un mes archivado es de solo lectura (para tocarlo hay que restaurar
           // el proyecto primero, igual que estado/mes/Netsuite): sin este
           // chequeo el botón llamaría a editOpgValue(), que busca la fila en
           // getPipeline() y no la encuentra —una fila archivada no vive ahí—,
           // así que el click no haría nada y nadie entendería por qué.
           +(!esArchivo && cevenCanEditPipelineRow(r.ejecutivo)
-              ? ' <button class="bs" data-act="opg-edit" data-k="'+kA+'" title="Editar Oportunidad / vincular con un código REGI" style="padding:0 5px;font-size:10px;line-height:1.3">✎</button>'
+              ? '<button class="bs" data-act="opg-edit" data-k="'+kA+'" title="Editar Oportunidad / vincular con un código REGI" style="padding:0 5px;font-size:10px;line-height:1.3">✎</button>'
               : '')
+          +'</div>'
         +'</td>'
         +'<td style="text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:11px">'
           +(r.qNum ? '<span data-act="openq" data-qn="'+cevenEsc(r.qNum)+'" style="color:var(--acc,#0071e3);font-weight:600;cursor:pointer">#'+cevenEsc(r.qNum)+'</span>' : '—')

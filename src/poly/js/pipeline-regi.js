@@ -175,6 +175,16 @@ function _regiOpgMatcheaVigente(opg){
 // − perdido). Un estado ausente cuenta como 'Cotizado' (activo), igual que ahí.
 var _REGI_ESTADOS_EXCLUIDOS = { Perdido: 1, Facturado: 1 };
 
+// El cotizador recién se empezó a usar en agosto/2026. Toda oportunidad cuyo
+// cierre estimado de HP sea ANTERIOR a este mes no tiene un lado "Ceven" real
+// con qué compararse (nadie estaba cargando el pipeline todavía), así que solo
+// mete ruido en las Estadísticas. Se descarta por completo: KPI, tablas por
+// mes/trimestre y el selector "Comparar una oportunidad" (ver
+// _regiStatsDentroDeRango, aplicado en _regiPairsVinculadas). Las que no traen
+// cierre estimado de HP NO se filtran acá — van al bucket "Sin fecha (HP)".
+// Subir el valor si en algún momento se quiere recortar más hacia adelante.
+var _REGI_STATS_DESDE = '2026-08';   // 'YYYY-MM', inclusive
+
 /* year*12 + (mes-1)  ->  'YYYY-MM'. Inverso de _regiMesOrdinal: sirve para
    pasar el promedio ponderado (fraccionario, se redondea) por _mesLabelPoly. */
 function _regiOrdinalAMes(ord){
@@ -187,17 +197,28 @@ function _regiOrdinalAMes(ord){
    "Ceven". `monto`/`mesCierre` llevan los mismos nombres que una fila suelta,
    así _regiDiffMonto y compañía no se tocan.
    - `monto`: Σ de las filas ACTIVAS (estado ∉ {Perdido, Facturado}).
+   - `montoFacturado`: Σ de las filas en estado Facturado (plata realizada). El
+     comparador la usa cuando no hay ninguna activa, para no mostrar USD 0 en
+     una venta ya cerrada (ver _regiCevenMontoComparacion).
    - `mesOrdinal`: promedio de meses de cierre PONDERADO POR MONTO sobre las
      filas activas con fecha (fraccionario a propósito); si Σpesos = 0 cae a
      promedio simple; null si ninguna activa tiene fecha. */
 function _regiCevenAgg(rows){
   rows = rows || [];
   var monto = 0, montoTotal = 0, nActivas = 0, nExcluidas = 0;
+  var montoFacturado = 0, nFacturadas = 0;
   var pesoFecha = 0, sumaPonderada = 0, sumaSimple = 0, nFecha = 0;
   rows.forEach(function(r){
     var m = Number(r.monto) || 0;
     montoTotal += m;
-    if(_REGI_ESTADOS_EXCLUIDOS[r.estado || 'Cotizado']){ nExcluidas++; return; }
+    var est = r.estado || 'Cotizado';
+    if(_REGI_ESTADOS_EXCLUIDOS[est]){
+      nExcluidas++;
+      // Facturado se guarda aparte: es plata REALIZADA y se compara bien
+      // contra el estimado de HP. Perdido no — ahí el 0 ES la información.
+      if(est === 'Facturado'){ montoFacturado += m; nFacturadas++; }
+      return;
+    }
     nActivas++;
     monto += m;
     var ord = _regiMesOrdinal(r.mesCierre);
@@ -219,6 +240,8 @@ function _regiCevenAgg(rows){
   return {
     monto: monto,
     montoTotal: montoTotal,
+    montoFacturado: montoFacturado,
+    nFacturadas: nFacturadas,
     mesOrdinal: mesOrdinal,
     mesCierre: mesOrdinal === null ? '' : _regiOrdinalAMes(mesOrdinal),
     nCotiz: rows.length,
@@ -231,8 +254,21 @@ function _regiCevenAgg(rows){
   };
 }
 
+/* ¿El par entra en las Estadísticas por su fecha? true si el cierre estimado de
+   HP es de _REGI_STATS_DESDE en adelante, o si HP no trae fecha válida (esos no
+   se filtran por mes: caen en el bucket "Sin fecha"). El string 'YYYY-MM' se
+   compara lexicográficamente, que para ese formato es orden cronológico. */
+function _regiStatsDentroDeRango(par){
+  var mk = par && par.hp && par.hp.mesCierre;
+  if(_regiMesOrdinal(mk) === null) return true;        // sin fecha válida: no se descarta acá
+  return String(mk) >= _REGI_STATS_DESDE;
+}
+
 /* [{hp, ceven}] — hp es la fila REGI (shape de _regiRowToPipeRow), ceven es la
-   AGREGACIÓN (_regiCevenAgg) de todas las filas del pipeline real con ese OPG. */
+   AGREGACIÓN (_regiCevenAgg) de todas las filas del pipeline real con ese OPG.
+   Se recortan las oportunidades anteriores al arranque del cotizador
+   (_regiStatsDentroDeRango): es el único consumidor y todas las Estadísticas
+   cuelgan de acá. */
 function _regiPairsVinculadas(){
   var vinculados = _regiOpgVinculadosSet();
   var pares = [];
@@ -241,16 +277,33 @@ function _regiPairsVinculadas(){
     var filas = codigo && vinculados[codigo];
     if(filas && filas.length) pares.push({hp: hp, ceven: _regiCevenAgg(filas)});
   });
-  return pares;
+  return pares.filter(_regiStatsDentroDeRango);
 }
 
-/* ceven − hp: negativo si Ceven pronostica MENOS monto que HP. hp.montoArchivo
-   (no hp.monto) es a propósito: `.monto` puede venir reemplazado por
-   productos asignados dentro del carrito propio de REGI (feature del
-   25/08/2026) — mezclarlo confundiría "lo que HP dice" con "lo que Ceven ya
-   armó adentro de REGI", que es justo la comparación que se quiere evitar. */
+/* Monto del lado Ceven que entra en la comparación contra HP:
+   - con posición viva (≥1 cotización activa) → esa suma (`ag.monto`), como siempre.
+   - sin nada activo pero con cotización(es) FACTURADA(s) → lo facturado. Una
+     venta cerrada es plata realizada y se compara bien contra el estimado de
+     HP; mostrar 0 ahí se leía como "Ceven no cotizó" (bug reportado 09/2026).
+   - solo perdidas / nada → 0 (el 0 ES la información: HP la sigue viendo viva).
+   `.facturado` avisa al render que rotule el número como ya facturado. */
+function _regiCevenMontoComparacion(ag){
+  ag = ag || {};
+  var activo = Number(ag.monto) || 0;
+  var facturado = Number(ag.montoFacturado) || 0;
+  if(!((ag.nActivas || 0) > 0) && facturado > 0) return { valor: facturado, facturado: true };
+  return { valor: activo, facturado: false };
+}
+
+/* ceven − hp: negativo si Ceven pronostica/factura MENOS monto que HP.
+   hp.montoArchivo (no hp.monto) es a propósito: `.monto` puede venir
+   reemplazado por productos asignados dentro del carrito propio de REGI
+   (feature del 25/08/2026) — mezclarlo confundiría "lo que HP dice" con "lo
+   que Ceven ya armó adentro de REGI", que es justo la comparación que se
+   quiere evitar. El lado Ceven sale de _regiCevenMontoComparacion (contempla
+   las oportunidades ya facturadas). */
 function _regiDiffMonto(par){
-  return (Number(par.ceven.monto) || 0) - (Number(par.hp.montoArchivo) || 0);
+  return _regiCevenMontoComparacion(par.ceven || {}).valor - (Number(par.hp.montoArchivo) || 0);
 }
 
 // 'YYYY-MM' -> year*12 + (mes-1), para poder restar dos meses. null si no
@@ -950,8 +1003,15 @@ function _regiStatsPintarComparacion(opd){
   var mesCeven = ag.mesCierre ? ((ag.nActivas > 1 ? '≈ ' : '') + _mesLabelPoly(ag.mesCierre)) : '—';
   var fechaDifTxt = diffFecha === null ? '—' : ((diffFecha > 0 ? '+' : '') + diffFecha.toFixed(1) + ' m');
 
-  var montoCevenTxt = 'USD ' + fI(ag.monto || 0)
-    + (multi ? (' <span style="color:#6e6e73">· ' + cevenEsc(ag.estadosResumen) + '</span>') : '');
+  var mc = _regiCevenMontoComparacion(ag);
+  var montoCevenTxt = 'USD ' + fI(mc.valor || 0);
+  if(mc.facturado){
+    // Sin posición viva pero facturada: se muestra lo facturado y se rotula,
+    // en vez de un USD 0 que se leería como "Ceven no cotizó esta oportunidad".
+    montoCevenTxt += ' <span style="color:#6e6e73">· facturado</span>';
+  } else if(multi){
+    montoCevenTxt += ' <span style="color:#6e6e73">· ' + cevenEsc(ag.estadosResumen) + '</span>';
+  }
 
   var estadoTxt;
   if(ag.nCotiz === 1){
@@ -1131,10 +1191,13 @@ function _regiRowHTML(r){
   // keyframe la desvanece igual).
   var _saliendo = !!(window._regiPerdidaGracia && window._regiPerdidaGracia[r.opd]);
   return '<tr'+(_saliendo ? ' class="regi-row-saliendo"' : (r.vinculada ? ' style="opacity:.55"' : ''))+'>'
-    + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+cevenEsc(r.opd||'—')+'</td>'
-    + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace">'+(r.regi ? cevenEsc(r.regi) : '<span style="color:#aeaeb2">sin REGI</span>')+'</td>'
+    // opd/regi/partner: pueden venir larguísimos del Excel de HP. Se recortan
+    // con "…" dentro de un ancho fijo (título nativo para el texto completo),
+    // igual que la columna Proyecto de al lado, para no ensanchar la tabla.
+    + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace"><div'+(r.opd?' title="'+cevenEsc(r.opd)+'"':'')+' style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.opd||'—')+'</div></td>'
+    + '<td style="font-size:12px;font-family:ui-monospace,Menlo,monospace"><div'+(r.regi?' title="'+cevenEsc(r.regi)+'"':'')+' style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r.regi ? cevenEsc(r.regi) : '<span style="color:#aeaeb2">sin REGI</span>')+'</div></td>'
     + '<td style="font-size:12px"><div style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
-    + '<td style="font-size:12px;color:#6e6e73">'+cevenEsc(r.primaryPartner||'—')+'</td>'
+    + '<td style="font-size:12px;color:#6e6e73"><div'+(r.primaryPartner?' title="'+cevenEsc(r.primaryPartner)+'"':'')+' style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.primaryPartner||'—')+'</div></td>'
     + '<td style="text-align:center">'+_regiForecastPillHTML(r)+'</td>'
     + '<td style="text-align:center">'+_regiPerdidaCheckboxHTML(r)+'</td>'
     + '<td style="font-size:12px;white-space:nowrap'+(vencido?';color:#d70015':'')+'" title="'+(vencido?'Deal Registration vencido':'')+'">'+cevenEsc(r.drExpiration ? _regiFechaDDMMYYYY(r.drExpiration) : '—')+'</td>'

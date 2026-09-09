@@ -347,6 +347,88 @@ console.log('\n9 · _regiCevenAgg / _regiPairsVinculadas agregan las N cotizacio
   ok(cmp.indexOf('Proy A') !== -1 && cmp.indexOf('Proy B') !== -1, 'el desglose lista cada cotización por proyecto');
 }
 
+/* ═══ 10 · Oportunidad ya facturada: compara contra lo facturado, no 0 ═════ */
+console.log('\n10 · una oportunidad facturada usa el monto realizado, no USD 0 (fix 09/2026)');
+{
+  // Una sola cotización, estado Facturado.
+  const e = cargar();
+  e._pipelineData = [ filaReal('f-1', 9000, '2026-07', {cliente:'Cli F', proyecto:'Proy F', estado:'Facturado'}) ];
+  e._regiPipeRows = [ filaRegi('OPD11', 'f-1', 10000, '2026-08') ];
+  const par = e._regiPairsVinculadas()[0];
+  ok(par.ceven.monto === 0, 'la posición viva sigue siendo 0 (Facturado no es posición viva)');
+  ok(par.ceven.montoFacturado === 9000 && par.ceven.nFacturadas === 1,
+     '_regiCevenAgg guarda el monto facturado aparte', JSON.stringify({f:par.ceven.montoFacturado, n:par.ceven.nFacturadas}));
+  ok(e._regiDiffMonto(par) === -1000,
+     'la diferencia usa lo facturado: 9000 − 10000 = -1000 (no -10000)', e._regiDiffMonto(par));
+  e.renderRegiStats();
+  e._regiStatsPintarComparacion('OPD11');
+  const cmp = e._els['stats-compare'].innerHTML;
+  ok(/USD 9\.000/.test(cmp), 'el comparador muestra el monto facturado (9.000), no USD 0', cmp);
+  ok(/facturado/.test(cmp), 'y lo rotula como facturado');
+  ok(/-USD 1\.000/.test(cmp), 'la diferencia puntual de esa oportunidad es -1.000');
+}
+{
+  // Perdido NO cae en el fallback: ahí el 0 es la información.
+  const e = cargar();
+  e._pipelineData = [ filaReal('p-1', 9000, '2026-07', {cliente:'Cli P', proyecto:'Proy P', estado:'Perdido'}) ];
+  e._regiPipeRows = [ filaRegi('OPD12', 'p-1', 10000, '2026-08') ];
+  const par = e._regiPairsVinculadas()[0];
+  ok(e._regiDiffMonto(par) === -10000,
+     'una oportunidad perdida sigue comparando contra 0 (0 − 10000 = -10000)', e._regiDiffMonto(par));
+}
+{
+  // Mixto: hay una activa → gana la posición viva, la facturada no se suma.
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('mx-1', 4000, '2026-09', {cliente:'C', proyecto:'Activa',    estado:'Cotizado'}),
+    filaReal('mx-1', 6000, '2026-05', {cliente:'C', proyecto:'Facturada', estado:'Facturado'})
+  ];
+  e._regiPipeRows = [ filaRegi('OPD13', 'mx-1', 12000, '2026-09') ];
+  const par = e._regiPairsVinculadas()[0];
+  ok(e._regiDiffMonto(par) === 4000 - 12000,
+     'con posición viva, la comparación la usa a ella (4000), no 4000+6000', e._regiDiffMonto(par));
+}
+
+/* ═══ 11 · Cutoff: junio/julio 2026 quedan fuera (uso arrancó en agosto) ═══ */
+console.log('\n11 · _regiPairsVinculadas descarta el cierre HP anterior a 2026-08');
+{
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('c-may', 500,  '2026-05', {estado:'Cotizado'}),
+    filaReal('c-jun', 1000, '2026-06', {estado:'Cotizado'}),
+    filaReal('c-jul', 2000, '2026-07', {estado:'Cotizado'}),
+    filaReal('c-ago', 3000, '2026-08', {estado:'Cotizado'}),
+    filaReal('c-sin', 4000, '',        {estado:'Cotizado'})
+  ];
+  e._regiPipeRows = [
+    filaRegi('OPDMAY', 'c-may', 500,  '2026-05'),
+    filaRegi('OPDJUN', 'c-jun', 1000, '2026-06'),
+    filaRegi('OPDJUL', 'c-jul', 2000, '2026-07'),
+    filaRegi('OPDAGO', 'c-ago', 3000, '2026-08'),
+    filaRegi('OPDSIN', 'c-sin', 4000, '')      // sin fecha de HP: NO se filtra por mes
+  ];
+  const opds = e._regiPairsVinculadas().map(p => p.hp.opd).sort();
+  ok(opds.length === 2, 'de 5, quedan 2 (agosto y "sin fecha")', JSON.stringify(opds));
+  ok(opds.indexOf('OPDMAY') === -1 && opds.indexOf('OPDJUN') === -1 && opds.indexOf('OPDJUL') === -1,
+     'mayo, junio y julio quedaron afuera');
+  ok(opds.indexOf('OPDAGO') !== -1, 'agosto entra');
+  ok(opds.indexOf('OPDSIN') !== -1, 'una oportunidad sin cierre estimado de HP no se descarta por el cutoff');
+}
+{
+  // La vista completa no cuenta las recortadas en el KPI, ni en la tabla, ni en el selector.
+  const e = cargar();
+  conPares(e, [
+    { hp: filaRegi('OPDJUL', 'x-jul', 9999, '2026-07'), ceven: filaReal('x-jul', 8000, '2026-07', {estado:'Cotizado'}) },
+    { hp: filaRegi('OPDAGO', 'x-ago', 1000, '2026-08'), ceven: filaReal('x-ago', 1200, '2026-08', {estado:'Cotizado'}) }
+  ]);
+  e.renderRegiStats();
+  ok(/sobre 1 oportunidad vinculada/.test(e._els['stats-kpi-monto-sub'].textContent),
+     'el KPI cuenta 1, no 2 (julio descartado)', e._els['stats-kpi-monto-sub'].textContent);
+  ok(e._els['stats-mes-body'].innerHTML.indexOf('Jul 2026') === -1, 'no hay fila de julio en la tabla por mes');
+  ok(e._els['stats-pick'].innerHTML.indexOf('OPDJUL') === -1, 'y el selector no ofrece la de julio');
+  ok(e._els['stats-pick'].innerHTML.indexOf('OPDAGO') !== -1, 'la de agosto sí está en el selector');
+}
+
 console.log('\n' + (fallos
   ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
   : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
