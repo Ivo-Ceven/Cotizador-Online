@@ -20,11 +20,24 @@ function toggleHistSel(qn,cb){
 function deleteSelected(){
   var keys=Object.keys(histSel);
   if(!keys.length) return;
+
+  // Las que están en el pipeline no se borran (dejarían una fila huérfana): se
+  // avisan y el resto sí se borra. Las bloqueadas quedan seleccionadas.
+  var bloq = (typeof cevenQuotesEnPipeline === 'function') ? cevenQuotesEnPipeline(keys) : [];
+  var borrarSet = {};
+  keys.forEach(function(qn){ borrarSet[qn] = 1; });
+  bloq.forEach(function(b){ delete borrarSet[b.qn]; });
+  if(bloq.length === keys.length){
+    showToast('⚠ No se puede: ' + (bloq.length === 1 ? 'esa cotización está' : 'esas ' + bloq.length + ' cotizaciones están') + ' en el pipeline. Quitalas de ahí primero.');
+    return;
+  }
+  if(bloq.length) showToast('⚠ ' + bloq.length + ' de las seleccionadas no se borraron: están en el pipeline.');
+
   var db=getDB();
   var removed=[], newDb=[], porQn={};
   for(var i=0;i<db.length;i++){
     var qn = db[i]['N° Cotización'];
-    if(histSel[qn]){
+    if(borrarSet[qn]){
       removed.push(db[i]);
       (porQn[qn] = porQn[qn] || []).push(db[i]);
     } else newDb.push(db[i]);
@@ -36,9 +49,10 @@ function deleteSelected(){
 
   saveDB(newDb);
   histSel={};
+  bloq.forEach(function(b){ histSel[b.qn] = true; });   // las bloqueadas siguen marcadas
   updateHistBtns();
   renderHistory();
-  notifyUndo('Eliminaste '+keys.length+' cotización(es) — están en la papelera.', function(){
+  notifyUndo('Eliminaste '+Object.keys(porQn).length+' cotización(es) — están en la papelera.', function(){
     var db2=getDB();
     saveDB(db2.concat(removed));
     cevenPapeleraSacar(Object.keys(porQn));
@@ -50,6 +64,9 @@ function deleteQ(qn){
   var db = getDB();
   var first = db.find(function(r){ return r['N° Cotización'] === qn; });
   if(first && !cevenCanEditQuote(first['Ejecutivo'])){ showToast('No tenés permiso para eliminar esta cotización.'); return; }
+  // No se borra del historial si dejaría una fila huérfana en el pipeline.
+  var enPipe = (typeof cevenQuoteEnPipeline === 'function') && cevenQuoteEnPipeline(qn);
+  if(enPipe){ showToast(_cevenBloqueoBorradoMsg(qn, enPipe)); return; }
   var removed=[], newDb=[];
   for(var i=0;i<db.length;i++){
     if(db[i]['N° Cotización'] === qn) removed.push(db[i]); else newDb.push(db[i]);

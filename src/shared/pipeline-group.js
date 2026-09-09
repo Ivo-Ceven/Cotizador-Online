@@ -219,3 +219,81 @@ function cevenPipeGroupRow(g, key, abierto){
       + '</div>'
     + '</td></tr>';
 }
+
+/* ---- ¿La cotización está en el pipeline? -----------------------------------
+   Una fila del pipeline (o de un mes archivado) es una FOTO de la cotización
+   con un puntero `qNum`: si se borra la cotización del historial, la fila
+   sobrevive huérfana y su monto sigue sumando en los KPIs. shared/papelera.js
+   +  <marca>/js/history.js usan esto para NO dejar borrar una cotización que
+   todavía está referenciada — hay que quitarla del pipeline primero.
+
+   Vive acá porque este archivo lo cargan las tres marcas con pipeline (Apple,
+   Poly, Legamaster) ANTES de su history.js, y no lo carga el multimarca —que
+   no tiene pipeline—, así que el `typeof` de abajo cae solo del lado bueno. */
+function cevenQuoteEnPipeline(qn){
+  qn = String(qn == null ? '' : qn);
+  if(!qn) return null;
+
+  if(typeof getPipeline === 'function'){
+    var pipe = getPipeline() || [];
+    for(var i = 0; i < pipe.length; i++){
+      if(String(pipe[i].qNum) === qn){
+        return { donde: 'pipeline', mes: '',
+                 proyecto: pipe[i].proyecto || pipe[i].cliente || '',
+                 estado: pipe[i].estado || 'Cotizado',
+                 monto: Number(pipe[i].monto) || 0 };
+      }
+    }
+  }
+  if(typeof getArchive === 'function'){
+    var arch = getArchive() || {};
+    var meses = Object.keys(arch);
+    for(var m = 0; m < meses.length; m++){
+      var filas = arch[meses[m]] || [];
+      for(var j = 0; j < filas.length; j++){
+        if(String(filas[j].qNum) === qn){
+          return { donde: 'archivo', mes: meses[m],
+                   proyecto: filas[j].proyecto || filas[j].cliente || '',
+                   estado: filas[j].estado || '',
+                   monto: Number(filas[j].monto) || 0 };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/* Para el borrado múltiple: [{qn, info}] de las que están referenciadas (las
+   que NO se pueden borrar). Vacío = todas se pueden. */
+function cevenQuotesEnPipeline(qns){
+  var out = [];
+  (qns || []).forEach(function(qn){
+    var info = cevenQuoteEnPipeline(qn);
+    if(info) out.push({ qn: String(qn), info: info });
+  });
+  return out;
+}
+
+// 'YYYY-MM' -> 'ago 2026'. Para el aviso de bloqueo, nada más.
+function _cevenMesLegible(mk){
+  var p = String(mk || '').split('-');
+  var M = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return (p.length === 2 && M[parseInt(p[1], 10) - 1]) ? (M[parseInt(p[1], 10) - 1] + ' ' + p[0]) : (mk || '');
+}
+
+// Texto del toast cuando se intenta borrar una cotización todavía en el pipeline.
+// Underscore: NO es API pública, la llaman history.js/papelera.js SOLO cuando
+// cevenQuoteEnPipeline (que sí es pública y guardada) devolvió algo — o sea que
+// para entonces esta función también existe. Sin el `_`, check-globals la exige
+// en el bundle del multimarca, que no la necesita.
+function _cevenBloqueoBorradoMsg(qn, info){
+  var loc = (info.donde === 'archivo')
+    ? ('el pipeline archivado' + (info.mes ? (' (' + _cevenMesLegible(info.mes) + ')') : ''))
+    : 'el pipeline';
+  var proy = info.proyecto ? (' — “' + info.proyecto + '”') : '';
+  // El "⚠ " hace que notify.js lo tome como aviso y lo muestre CENTRADO (no como
+  // cartel de esquina, que se pierde de vista). El símbolo se saca al pintar.
+  return '⚠ La cotización #' + qn + ' está en ' + loc + proy
+    + (info.estado ? (' (estado ' + info.estado + ')') : '')
+    + '. Quitala del pipeline antes de borrarla del historial.';
+}

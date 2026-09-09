@@ -180,6 +180,10 @@ function cevenPapeleraBorrarDef(qn){
     showToast('No tenés permiso para eliminar esta cotización.');
     return;
   }
+  // Si todavía la referencia el pipeline, borrarla definitivamente la dejaría
+  // como fila huérfana para siempre. Hay que quitarla del pipeline primero.
+  var enPipe = (typeof cevenQuoteEnPipeline === 'function') && cevenQuoteEnPipeline(qn);
+  if(enPipe){ showToast(_cevenBloqueoBorradoMsg(qn, enPipe)); return; }
   confirmModal('Eliminar definitivamente la cotización #' + qn + '. Esto no se puede deshacer.', function(){
     cevenPapeleraSave(cevenPapeleraGet().filter(function(x){ return String(x.qn) !== String(qn); }));
     showToast('Cotización #' + qn + ' eliminada definitivamente.');
@@ -194,16 +198,24 @@ function cevenPapeleraBorrarDef(qn){
 function cevenPapeleraVaciar(){
   var p = cevenPapeleraGet();
   if(!p.length) return;
-  var mios = p.filter(function(e){ return cevenCanEditQuote(e.ejecutivo); });
+  var puedo = function(e){ return cevenCanEditQuote(e.ejecutivo); };
+  // Las que todavía referencia el pipeline no se tiran: quedarían huérfanas.
+  var enPipe = function(e){ return (typeof cevenQuoteEnPipeline === 'function') && !!cevenQuoteEnPipeline(e.qn); };
+  var mios = p.filter(function(e){ return puedo(e) && !enPipe(e); });
+  var trabadas = p.filter(function(e){ return puedo(e) && enPipe(e); }).length;
   if(!mios.length){
-    showToast('No hay cotizaciones que puedas eliminar en la papelera.');
+    showToast(trabadas
+      ? (trabadas + ' cotización(es) siguen en el pipeline: quitalas de ahí antes de vaciar.')
+      : 'No hay cotizaciones que puedas eliminar en la papelera.');
     return;
   }
   confirmModal('Eliminar definitivamente ' + mios.length + ' cotización(es) de la papelera. Esto no se puede deshacer.', function(){
-    var resto = p.filter(function(e){ return !cevenCanEditQuote(e.ejecutivo); });
+    var quitar = {};
+    mios.forEach(function(e){ quitar[String(e.qn)] = 1; });
+    var resto = p.filter(function(e){ return !quitar[String(e.qn)]; });
     cevenPapeleraSave(resto);
     showToast(resto.length
-      ? 'Papelera vaciada. Quedaron ' + resto.length + ' de otros ejecutivos.'
+      ? 'Papelera vaciada. Quedaron ' + resto.length + ' (de otros ejecutivos o todavía en el pipeline).'
       : 'Papelera vaciada.');
     renderPapelera();
   }, { okLabel: 'Eliminar', danger: true });

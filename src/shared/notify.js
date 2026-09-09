@@ -7,10 +7,12 @@
      derecha, se cierra solo a los 5s. opts.actionLabel/onAction
      agrega un botón (ej. "Deshacer"). opts.type ('success'|
      'warning'|'error'|'info') fuerza el estilo; si no se pasa,
-     se infiere del texto (ver _inferToastType). Un tipo 'error'
-     redirige automáticamente a showErrorPopup() — un error nunca
-     se muestra como cartel de esquina, siempre como popup centrado
-     (pasá opts.forceToast:true para evitarlo en casos puntuales).
+     se infiere del texto (ver _inferToastType). Los tipos 'error' Y
+     'warning' NO van como cartel de esquina —se pueden perder de
+     vista sin leerlos—: redirigen a showErrorPopup(), un popup
+     CENTRADO que no se autocierra (rojo + "Error" para error, ámbar
+     + "Aviso" para warning). opts.forceToast:true deja el aviso como
+     cartel de esquina igual (notifyUndo() lo hace siempre).
    - showSuccess(msg, opts) / showWarning(msg, opts): atajos que
      fuerzan el tipo, para cuando el texto del mensaje no alcanza
      para inferirlo solo (ej. viene armado con datos dinámicos).
@@ -51,7 +53,11 @@ function _inferToastType(msg){
   // tilde ahí nunca genera el corte, así que el \b no matcheaba nunca.
   if(/no ten[eé]s permiso/i.test(s) || /^(carg[aá]|elegí|ingres[aá]|cont[aá])/i.test(s)
      || /est[aá] vac[ií][ao]/i.test(s) || /ya existe/i.test(s) || /ya no est[aá]/i.test(s)
-     || /no se encontr/i.test(s) || /\bno hay\b/i.test(s)) return 'warning';
+     || /no se encontr/i.test(s) || /\bno hay\b/i.test(s)
+     // Avisos que FRENAN una acción: "no se puede…", "quitala/sacala… primero",
+     // "… antes de borrar/guardar/…". Van centrados como el resto.
+     || /\bno se puede\b/i.test(s) || /\bquit[aá]l[ao]s?\b/i.test(s) || /\bsac[aá]l[ao]s?\b/i.test(s)
+     || /\bantes de (borrar|eliminar|guardar|seguir|continuar|cerrar)/i.test(s)) return 'warning';
   return 'info';
 }
 
@@ -71,11 +77,14 @@ function _toastStack(){
 function showToast(msg, opts){
   opts = opts || {};
   var type = opts.type || _inferToastType(msg);
-  // Un error real nunca se muestra como cartel de esquina — se puede
-  // perder de vista sin que el usuario llegue a leer qué pasó. Va como
-  // popup centrado (showErrorPopup), salvo que el caller pida lo contrario.
-  if(type === 'error' && !opts.forceToast){
-    return showErrorPopup(msg, opts);
+  // Un error o un aviso que frena una acción no se muestra como cartel de
+  // esquina — se puede perder de vista sin que el usuario llegue a leer qué
+  // pasó. Va como popup centrado (showErrorPopup), salvo que el caller pida
+  // lo contrario con forceToast.
+  if((type === 'error' || type === 'warning') && !opts.forceToast){
+    var o = {}; for(var k in opts) o[k] = opts[k];
+    if(type === 'warning') o.severity = 'warning';
+    return showErrorPopup(msg, o);
   }
   var ACCENTS = {
     success: {bg:'#30d158', fg:'#04260f', icon:'✓'},
@@ -121,8 +130,11 @@ function showToast(msg, opts){
   return close;
 }
 // Atajo para el patrón "hacé la acción y avisá con botón para deshacer".
+// forceToast: la acción YA se hizo, el aviso no frena nada — va como cartel de
+// esquina aunque el texto ("no se pudo…", "ya no está…") infiera como error o
+// warning y lo mandaría al popup centrado.
 function notifyUndo(msg, onUndo){
-  showToast(msg, {actionLabel: 'Deshacer', onAction: onUndo});
+  showToast(msg, {actionLabel: 'Deshacer', onAction: onUndo, forceToast: true});
 }
 
 // Atajos para forzar el tipo cuando el texto del mensaje no alcanza para
@@ -149,13 +161,23 @@ function showError(msg, opts){
   return showErrorPopup(msg, opts);
 }
 
-// ── Popup de error centrado — no es un popup del navegador, es HTML propio.
-// A diferencia de showToast(), no se autocierra: un error que se pierde de
-// vista sin que el usuario llegue a leerlo es peor que uno que lo obliga a
-// cerrarlo. opts.title (default "Error"), opts.okLabel (default "Entendido"),
-// opts.actionLabel/onAction agrega un botón secundario (ej. "Reintentar").
+// ── Popup CENTRADO — no es un popup del navegador, es HTML propio. Lo usan
+// tanto los errores reales como los avisos que frenan una acción (showToast
+// con type 'error' o 'warning' redirige acá). A diferencia de showToast(), no
+// se autocierra: un aviso que se pierde de vista sin que el usuario lo lea es
+// peor que uno que lo obliga a cerrarlo.
+//   opts.severity : 'error' (default) | 'warning' — cambia color y título.
+//   opts.title    : default "Error" / "Aviso" según severity.
+//   opts.okLabel  : default "Entendido".
+//   opts.actionLabel/onAction : botón secundario (ej. "Reintentar").
 function showErrorPopup(message, opts){
   opts = opts || {};
+  var warn = (opts.severity === 'warning');
+  var badgeBg = warn ? '#fff4e0' : '#fde8e6';
+  var badgeFg = warn ? '#a05c00' : '#d70015';
+  var okBg    = warn ? '#1d1d1f' : '#d70015';
+  var title   = opts.title || (warn ? 'Aviso' : 'Error');
+
   var old = document.getElementById('ceven-error-modal');
   if(old) old.parentNode.removeChild(old);
   var wrap = document.createElement('div');
@@ -165,24 +187,23 @@ function showErrorPopup(message, opts){
   wrap.innerHTML =
     '<div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:24px;width:380px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.2)">'
       + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
-        + '<span style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:#fde8e6;color:#d70015;'
+        + '<span style="flex-shrink:0;width:32px;height:32px;border-radius:50%;background:'+badgeBg+';color:'+badgeFg+';'
           + 'display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800">!</span>'
-        + '<div style="font-size:16px;font-weight:700;color:#1d1d1f">'+(opts.title || 'Error')+'</div>'
+        + '<div style="font-size:16px;font-weight:700;color:#1d1d1f">'+title+'</div>'
       + '</div>'
       + '<div data-txt style="font-size:14px;color:#1d1d1f;line-height:1.5;margin-bottom:20px;white-space:pre-line"></div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end">'
         + (opts.actionLabel && opts.onAction
             ? '<button data-action style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit">'+opts.actionLabel+'</button>'
             : '')
-        + '<button data-ok style="border:none;border-radius:980px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;background:#d70015;color:#fff;font-family:inherit">'+(opts.okLabel || 'Entendido')+'</button>'
+        + '<button data-ok style="border:none;border-radius:980px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;background:'+okBg+';color:#fff;font-family:inherit">'+(opts.okLabel || 'Entendido')+'</button>'
       + '</div>'
     + '</div>';
   document.body.appendChild(wrap);
-  // El título ya dice "Error" — si el mensaje repite "Error:" al principio
-  // (convención vieja de showErr/showToast) queda "Error / Error: ...".
-  var bodyText = String(message == null ? '' : message)
-    .replace(/^\s*(✓|⚠)\s*/, '')
-    .replace(/^\s*error\b[:\s]*/i, '');
+  // El título ya dice "Error"/"Aviso" — si el mensaje repite "Error:" o el "⚠"
+  // al principio (convención vieja de showErr/showToast) quedaría duplicado.
+  var bodyText = String(message == null ? '' : message).replace(/^\s*(✓|⚠)\s*/, '');
+  if(!warn) bodyText = bodyText.replace(/^\s*error\b[:\s]*/i, '');
   wrap.querySelector('[data-txt]').textContent = bodyText;
   function close(){
     document.removeEventListener('keydown', onKey);
