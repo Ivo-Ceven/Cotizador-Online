@@ -4,6 +4,17 @@ function renderArchiveMonth(monthKey, entries){
   var p = monthKey.split('-');
   var lbl = p.length===2 ? (meses[parseInt(p[1])-1]+' '+p[0]) : monthKey;
 
+  /* El buscador (#pipe-search) filtra también el mes archivado — tabla Y
+     tarjetas del dashboard: todo lo de abajo trabaja sobre `entries`, así que
+     alcanza con recortarlo acá. Mismo matcher que el pipeline vivo de Poly
+     (pipeline-view.js): canal + OPG + proyecto + N° de cotización. */
+  var _q = ((document.getElementById('pipe-search') || {}).value || '').toLowerCase().trim();
+  if(_q){
+    entries = entries.filter(function(r){
+      return ((r.cliente||'')+' '+(r.opg||'')+' '+(r.proyecto||'')+' '+(r.qNum||'')).toLowerCase().indexOf(_q) !== -1;
+    });
+  }
+
   var dash = document.getElementById('pipe-dashboard');
   var sumMonto = 0;
   var cliVistos = {}, nClientes = 0;
@@ -62,7 +73,10 @@ function renderArchiveMonth(monthKey, entries){
   /* Misma tabla agrupada que el pipeline activo, en modo lectura: el scope
      'a:<mes>' mantiene la expansión del archivo separada de la del pipeline. */
   var html = _pipeTablaHTML(entries, 'a:' + monthKey, {monthKey: monthKey, mesLabel: lbl});
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="10" style="text-align:center;color:#aeaeb2;padding:24px">No hay proyectos archivados en '+cevenEsc(lbl)+'. Elegí "Pipeline actual" en Vista para volver.</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="10" style="text-align:center;color:#aeaeb2;padding:24px">'
+    + (_q ? 'Ningún proyecto archivado de '+cevenEsc(lbl)+' coincide con la búsqueda.'
+          : 'No hay proyectos archivados en '+cevenEsc(lbl)+'. Elegí "Pipeline actual" en Vista para volver.')
+    + '</td></tr>';
   attachPipeSortHandlers();
   pipeBindDelegation();
 }

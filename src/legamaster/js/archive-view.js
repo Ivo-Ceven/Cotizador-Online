@@ -4,6 +4,16 @@ function renderArchiveMonth(monthKey, entries){
   var p = monthKey.split('-');
   var lbl = p.length===2 ? (meses[parseInt(p[1])-1]+' '+p[0]) : monthKey;
 
+  /* El buscador (#pipe-search) filtra también el mes archivado — tabla Y
+     tarjetas del dashboard: todo lo de abajo trabaja sobre `entries`. Mismo
+     matcher que el pipeline vivo (pipeline-view.js): cliente + proyecto + N°. */
+  var _q = ((document.getElementById('pipe-search') || {}).value || '').toLowerCase().trim();
+  if(_q){
+    entries = entries.filter(function(r){
+      return ((r.cliente||'')+' '+(r.proyecto||'')+' '+(r.qNum||'')).toLowerCase().indexOf(_q) !== -1;
+    });
+  }
+
   var dash = document.getElementById('pipe-dashboard');
   var sumMonto = 0;
   var cliVistos = {}, nClientes = 0;
@@ -51,7 +61,10 @@ function renderArchiveMonth(monthKey, entries){
   document.getElementById('dash-by-status').innerHTML = pillsHtml;
 
   var html = _pipeTablaHTML(entries, 'a:' + monthKey, {monthKey: monthKey, mesLabel: lbl});
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">No hay proyectos archivados en '+cevenEsc(lbl)+'. Elegí "Pipeline actual" en Vista para volver.</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">'
+    + (_q ? 'Ningún proyecto archivado de '+cevenEsc(lbl)+' coincide con la búsqueda.'
+          : 'No hay proyectos archivados en '+cevenEsc(lbl)+'. Elegí "Pipeline actual" en Vista para volver.')
+    + '</td></tr>';
   attachPipeSortHandlers();
   pipeBindDelegation();
 }

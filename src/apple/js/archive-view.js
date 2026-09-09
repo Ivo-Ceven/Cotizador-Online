@@ -4,6 +4,18 @@ function renderArchiveMonth(monthKey, entries){
   var p = monthKey.split('-');
   var lbl = p.length===2 ? (meses[parseInt(p[1])-1]+' '+p[0]) : monthKey;
 
+  /* El buscador (#pipe-search) filtra también el mes archivado — tabla Y
+     tarjetas del dashboard: todo lo de abajo trabaja sobre `entries`. Mismo
+     matcher que el pipeline vivo (pipeline-view.js): cliente + proyecto + N°.
+     Con búsqueda activa NO se suma el ajuste manual del mes (`mn`): es una
+     cifra global del mes, no atribuible a un cliente/proyecto puntual. */
+  var _q = ((document.getElementById('pipe-search') || {}).value || '').toLowerCase().trim();
+  if(_q){
+    entries = entries.filter(function(r){
+      return ((r.cliente||'')+' '+(r.proyecto||'')+' '+(r.qNum||'')).toLowerCase().indexOf(_q) !== -1;
+    });
+  }
+
   // Dashboard completo del mes archivado
   var dash = document.getElementById('pipe-dashboard');
   var sumMac=0,sumIph=0,sumIpad=0,sumServ=0,sumAcc=0;
@@ -13,7 +25,7 @@ function renderArchiveMonth(monthKey, entries){
   // Incluir ajuste manual del mes en los totales del dashboard
   var mn = (getTargetManual()||{})[monthKey]||{};
   var mnMonto = mn.monto||0, mnMac=mn.mac||0, mnIph=mn.iph||0, mnIpad=mn.ipad||0, mnServ=mn.serv||0, mnAcc=mn.acc||0;
-  if(mnMonto>0){
+  if(mnMonto>0 && !_q){
     sumMonto += mnMonto;
     sumMac += mnMac; sumIph += mnIph; sumIpad += mnIpad; sumServ += mnServ; sumAcc += mnAcc;
     amtMac += mnMac>0?mnMonto*(mnMac/(mnMac+mnIph+mnIpad+mnServ+mnAcc||1)):0;
@@ -191,8 +203,8 @@ function renderArchiveMonth(monthKey, entries){
     +'</tr>';
     if(archExpanded) html += renderArchiveDetailRow(r, archiveDB);
   });
-  // Fila "Otras ventas" si hay ajuste manual para este mes
-  if(mnMonto > 0){
+  // Fila "Otras ventas" si hay ajuste manual para este mes (no con búsqueda activa)
+  if(mnMonto > 0 && !_q){
     var mnFecha = mn._fecha || '—';
     html += '<tr style="background:#f0f7ff;border-top:1.5px dashed #b0c8e8">'
       +'<td style="font-size:12px">'+cevenEsc(mnFecha)+'</td>'
@@ -214,7 +226,9 @@ function renderArchiveMonth(monthKey, entries){
       +'</td>'
     +'</tr>';
   }
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="16" style="text-align:center;color:#aeaeb2;padding:24px">No hay entradas para '+cevenEsc(lbl)+'</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="16" style="text-align:center;color:#aeaeb2;padding:24px">'
+    + (_q ? 'Ninguna entrada archivada de '+cevenEsc(lbl)+' coincide con la búsqueda.' : 'No hay entradas para '+cevenEsc(lbl))
+    + '</td></tr>';
   attachPipeSortHandlers();
 }
 
