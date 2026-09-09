@@ -533,6 +533,7 @@
     }
     try{ if(typeof renderQ === 'function') renderQ(); }catch(e){}
     try{ if(visible('p-pipeline') && typeof renderPipeline === 'function') renderPipeline(); }catch(e){}
+    try{ if(visible('p-regi-stats') && typeof renderRegiStats === 'function') renderRegiStats(); }catch(e){}
     try{ if(visible('p-history') && typeof renderHistory === 'function') renderHistory(); }catch(e){}
   }
 
@@ -732,6 +733,7 @@
       _pipeSnap = {};
       merged.forEach(function(r){ if(r.id != null) _pipeSnap[r.id] = snapKey(r); });
       if(visible('p-pipeline') && typeof renderPipeline === 'function') renderPipeline();
+      else if(visible('p-regi-stats') && typeof renderRegiStats === 'function') renderRegiStats();
     });
 
     fetchRows('app_settings?' + BQ + '&select=*').then(function(res){

@@ -653,39 +653,49 @@
       <tbody id="regi-pipe-body"></tbody>
     </table>
   </div>
+</div>
 
-  <!-- Estadísticas REGI: compara, oportunidad por oportunidad, lo que HP
-       carga en su Excel (monto/fecha ESTIMADOS, sin hablar con el cliente)
-       contra lo que Ceven tiene cargado de verdad. Solo entran los pares ya
-       VINCULADOS por OPG (ver pipeline-regi.js) — oculta por defecto, la
-       muestra/oculta cevenRegiToggleVista() como a las otras dos. -->
-  <div id="pipe-stats" style="display:none">
+<!-- 📊 Estadísticas REGI: vista propia, ítem del navbar (ya NO una opción del
+     selector "Vista"). Compara, oportunidad por oportunidad, lo que HP carga
+     en su Excel (monto/fecha ESTIMADOS) contra lo que Ceven tiene cargado de
+     verdad; solo entran los pares ya VINCULADOS por OPG (ver pipeline-regi.js).
+     La pinta renderRegiStats() cuando _navApply('regi-stats') muestra este .pg. -->
+<div id="p-regi-stats" class="pg">
     <div id="stats-empty" style="display:none;text-align:center;color:#aeaeb2;padding:24px"></div>
     <div id="stats-body" style="display:none">
+      <!-- Slicers interactivos: período (mes / trimestre) y estado de Ceven.
+           Los pinta y cablea _regiStatsPintarFiltros() a partir de los datos. -->
+      <div id="stats-filtros" class="card" style="display:flex;flex-direction:column;gap:9px"></div>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:14px">
         <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:14px 16px">
-          <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Diferencia de monto (Ceven − HP)</div>
+          <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Monto Ceven − Monto HP</div>
           <div id="stats-kpi-monto" style="font-size:24px;font-weight:700;color:#1d1d1f">USD 0</div>
           <div id="stats-kpi-monto-sub" style="font-size:11px;color:#6e6e73;margin-top:2px"></div>
         </div>
         <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:14px 16px">
-          <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Diferencia de fecha promedio</div>
+          <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Cierre de Ceven vs. HP (prom.)</div>
           <div id="stats-kpi-fecha" style="font-size:24px;font-weight:700;color:#1d1d1f">—</div>
           <div id="stats-kpi-fecha-sub" style="font-size:11px;color:#6e6e73;margin-top:2px"></div>
         </div>
       </div>
 
       <div class="card">
+        <h3 style="margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:#6e6e73">HP vs Ceven por mes</h3>
+        <div id="stats-chart"></div>
+      </div>
+
+      <div class="card">
         <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:#6e6e73">Por mes (cierre estimado de HP)</h3>
         <div class="tw"><table><thead><tr>
-          <th>Mes</th><th style="text-align:center">REGI</th><th style="text-align:right">Dif. monto</th><th style="text-align:right">Dif. fecha (prom.)</th>
+          <th>Mes</th><th style="text-align:center">Oport.</th><th style="text-align:right">Ceven − HP</th><th style="text-align:right">Cierre Ceven</th>
         </tr></thead><tbody id="stats-mes-body"></tbody></table></div>
       </div>
 
       <div class="card">
         <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:#6e6e73">Por trimestre</h3>
         <div class="tw"><table><thead><tr>
-          <th>Trimestre</th><th style="text-align:center">REGI</th><th style="text-align:right">Dif. monto</th><th style="text-align:right">Dif. fecha (prom.)</th>
+          <th>Trimestre</th><th style="text-align:center">Oport.</th><th style="text-align:right">Ceven − HP</th><th style="text-align:right">Cierre Ceven</th>
         </tr></thead><tbody id="stats-q-body"></tbody></table></div>
       </div>
 
@@ -695,7 +705,6 @@
         <div id="stats-compare"></div>
       </div>
     </div>
-  </div>
 </div>
 
 <!-- Navegación (botón Atrás del navegador + Escape) -->

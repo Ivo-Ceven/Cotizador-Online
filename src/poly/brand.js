@@ -150,10 +150,13 @@ window.CEVEN_BRAND = {
   // ellas desde adentro). `needsPipeline` esconde el item para el rol lector,
   // que no usa pipeline. Poly no tiene nacionalizacion: un item menos.
   navItems: [
-    { view: 'quote',    label: 'Cotización' },
-    { view: 'catalog',  label: 'Catálogo', alsoFor: ['addprod'] },
-    { view: 'history',  label: 'Historial' },
-    { view: 'pipeline', label: 'Pipeline', needsPipeline: true }
+    { view: 'quote',      label: 'Cotización' },
+    { view: 'catalog',    label: 'Catálogo', alsoFor: ['addprod'] },
+    { view: 'history',    label: 'Historial' },
+    { view: 'pipeline',   label: 'Pipeline', needsPipeline: true },
+    // Estadísticas REGI: vista propia (antes vivía en el selector "Vista" del
+    // pipeline). La pinta renderRegiStats() desde _navApply('regi-stats').
+    { view: 'regi-stats', label: '📊 Estadísticas', needsPipeline: true }
   ],
 
   /* --- Pipeline: vista (shared/pipeline-ui.js) ---------------------- */

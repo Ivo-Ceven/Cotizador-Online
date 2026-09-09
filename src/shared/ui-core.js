@@ -94,6 +94,7 @@ function _navApply(n) {
   el.classList.add('on');
   if(n === 'nac'  && typeof renderNac === 'function') renderNac();
   if(n === 'qnac' && typeof renderQuoteNac === 'function') renderQuoteNac();
+  if(n === 'regi-stats' && typeof renderRegiStats === 'function') renderRegiStats();  // Poly: Estadísticas REGI
   if(n === 'history') renderHistory();
   if(n === 'addprod' && editingManualId === null) prepAddProd();
   // rollOverdueEntries() y archiveOldEntries() se llaman ACÁ Y SOLO ACÁ.

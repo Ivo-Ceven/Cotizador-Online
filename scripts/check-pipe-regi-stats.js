@@ -2,10 +2,12 @@
 /* ============================================================================
    check-pipe-regi-stats.js · Cotizadores Ceven
    ----------------------------------------------------------------------------
-   Vista "📊 Estadísticas REGI" (27/08/2026, sobre el vínculo por OPG del
-   mismo día — ver docs/HISTORIAL.md): compara, para cada oportunidad ya
-   VINCULADA, el monto/fecha que carga HP en su Excel contra lo que Ceven
-   tiene cargado de verdad, con KPI agregados por mes y por trimestre.
+   "📊 Estadísticas REGI" (27/08/2026, sobre el vínculo por OPG del mismo día
+   — ver docs/HISTORIAL.md): compara, para cada oportunidad ya VINCULADA, el
+   monto/fecha que carga HP en su Excel contra lo que Ceven tiene cargado de
+   verdad — KPI, gráfico HP-vs-Ceven, tablas por mes/trimestre y slicers
+   interactivos (período + estado). Desde 09/2026 es una vista propia del
+   navbar (#p-regi-stats), ya no una opción del selector "Vista".
 
    Corre las funciones REALES de src/poly/js/pipeline-regi.js. Mismo harness
    `vm` que scripts/check-pipe-regi-opg.js.
@@ -56,6 +58,8 @@ function cargar(){
     'archive-month-sel':      { value: '__regi_stats' },
     'stats-empty':            nodo(),
     'stats-body':             nodo(),
+    'stats-filtros':          Object.assign(nodo(), { contains: () => false }),
+    'stats-chart':            nodo(),
     'stats-kpi-monto':        nodo(),
     'stats-kpi-monto-sub':    nodo(),
     'stats-kpi-fecha':        nodo(),
@@ -242,8 +246,11 @@ console.log('\n7 · renderRegiStats / _renderRegiStatsFromCache pintan lo que co
   ok(e._els['stats-empty'].style.display === 'none', 'con pares, el mensaje de vacío se oculta');
   ok(e._els['stats-body'].style.display === 'block', 'y el cuerpo se muestra');
   ok(/-USD 1\.000/.test(e._els['stats-kpi-monto'].textContent), 'KPI monto: suma -2000+1000 = -1000, con signo', e._els['stats-kpi-monto'].textContent);
-  ok(/-1\.0 meses/.test(e._els['stats-kpi-fecha'].textContent), 'KPI fecha: promedio (-2+0)/2 = -1.0', e._els['stats-kpi-fecha'].textContent);
-  ok(/sobre 2 oportunidades vinculadas/.test(e._els['stats-kpi-monto-sub'].textContent), 'la sub-línea dice sobre cuántas oportunidades');
+  ok(/1\.0 meses después/.test(e._els['stats-kpi-fecha'].textContent), 'KPI fecha redactado: promedio -1.0 = "1.0 meses después"', e._els['stats-kpi-fecha'].textContent);
+  ok(/2 oportunidades/.test(e._els['stats-kpi-monto-sub'].textContent)
+     && /Ceven USD/.test(e._els['stats-kpi-monto-sub'].textContent)
+     && /HP USD/.test(e._els['stats-kpi-monto-sub'].textContent),
+     'la sub-línea son los dos totales crudos + el conteo, sin texto interpretativo', e._els['stats-kpi-monto-sub'].textContent);
   ok(e._els['stats-mes-body'].innerHTML.indexOf('Ago 2026') !== -1, 'la tabla por mes tiene la fila de agosto');
   ok(e._els['stats-q-body'].innerHTML.indexOf('Q3 2026') !== -1, 'la tabla por trimestre tiene Q3 2026');
   ok(e._els['stats-pick'].innerHTML.indexOf('Hospital Italiano') !== -1 && e._els['stats-pick'].innerHTML.indexOf('Banco Galicia') !== -1,
@@ -276,20 +283,39 @@ console.log('\n7 · renderRegiStats / _renderRegiStatsFromCache pintan lo que co
   ok(e._els['stats-compare'].innerHTML === '', 'un opd que no está en los pares tampoco rompe nada');
 }
 
-/* ═══ 8 · cevenRegiToggleVista: Estadísticas apaga lo que no le corresponde ═ */
-console.log('\n8 · cevenRegiToggleVista("__regi_stats") deja la pantalla en el estado correcto');
+/* ═══ 8 · Estadísticas es una vista propia del navbar, NO del selector "Vista" ═ */
+console.log('\n8 · Estadísticas migró del selector "Vista" al navbar (p-regi-stats)');
 {
+  // cevenRegiToggleVista solo conoce el pipeline normal y "__regi": nunca
+  // manosea #pipe-stats (que ya no existe) ni el dashboard por Estadísticas.
   const e = cargar();
   e._els['pipe-table-normal'] = { style: {} };
   e._els['pipe-table-regi'] = { style: {} };
-  e._els['pipe-stats'] = { style: {} };
   e._els['regi-vinc-wrap'] = { style: {} };
-  e.cevenRegiToggleVista('__regi_stats');
-  ok(e._els['pipe-table-normal'].style.display === 'none', 'oculta el pipeline normal');
-  ok(e._els['pipe-table-regi'].style.display === 'none', 'oculta la tabla REGI');
-  ok(e._els['pipe-stats'].style.display === '', 'y muestra Estadísticas');
-  ok(e._els['regi-vinc-wrap'].style.display === 'none', '"Mostrar vinculadas" no aplica acá, se oculta');
-  ok(e._els['pipe-dashboard'].style.display === 'none', 'el dashboard de KPI del pipeline normal/REGI se apaga explícito');
+  e.cevenRegiToggleVista('__regi');
+  ok(e._els['pipe-table-normal'].style.display === 'none', '"__regi" oculta el pipeline normal');
+  ok(e._els['pipe-table-regi'].style.display === '', 'y muestra la tabla REGI');
+  ok(e._els['regi-vinc-wrap'].style.display === '', '"Mostrar vinculadas" aplica en la tabla REGI');
+}
+{
+  const src = fs.readFileSync(path.join(ROOT, 'src/poly/js/pipeline-regi.js'), 'utf8');
+  ok(src.indexOf('__regi_stats') === -1, 'ya no queda ninguna referencia a __regi_stats en pipeline-regi.js');
+  ok(src.indexOf("getElementById('pipe-stats')") === -1, 'cevenRegiToggleVista ya no toca #pipe-stats');
+  ok(src.indexOf("getElementById('p-regi-stats')") !== -1, 'renderRegiStats mira #p-regi-stats para saber si sigue en pantalla');
+
+  const view = fs.readFileSync(path.join(ROOT, 'src/poly/js/pipeline-view.js'), 'utf8');
+  ok(view.indexOf('__regi_stats') === -1, 'el selector "Vista" ya no ofrece "__regi_stats"');
+  ok(view.indexOf('__regi') !== -1, 'pero sigue ofreciendo "🎯 Pipeline REGI" (__regi)');
+
+  const brand = fs.readFileSync(path.join(ROOT, 'src/poly/brand.js'), 'utf8');
+  ok(/view:\s*'regi-stats'/.test(brand), 'poly/brand.js declara el navItem view:"regi-stats"');
+
+  const html = fs.readFileSync(path.join(ROOT, 'src/poly/index.html'), 'utf8');
+  ok(html.indexOf('id="p-regi-stats"') !== -1, 'poly/index.html tiene el .pg #p-regi-stats');
+  ok(html.indexOf('id="pipe-stats"') === -1, 'y ya no tiene el viejo #pipe-stats');
+
+  const uicore = fs.readFileSync(path.join(ROOT, 'src/shared/ui-core.js'), 'utf8');
+  ok(/n === 'regi-stats'.*renderRegiStats/.test(uicore), '_navApply llama renderRegiStats() al entrar a "regi-stats"');
 }
 
 /* ═══ 9 · Un mismo REGI en VARIAS cotizaciones de Ceven: impacto agregado ═══ */
@@ -337,8 +363,10 @@ console.log('\n9 · _regiCevenAgg / _regiPairsVinculadas agregan las N cotizacio
   e.renderRegiStats();
   ok(/· 2 cotiz\./.test(e._els['stats-pick'].innerHTML),
      'el desplegable marca la oportunidad con más de una cotización', e._els['stats-pick'].innerHTML);
-  ok(/con más de una cotización de Ceven/.test(e._els['stats-kpi-monto-sub'].textContent),
-     'la sub-línea del KPI de monto avisa que hay agregación');
+  ok(/Ceven USD 20\.000/.test(e._els['stats-kpi-monto-sub'].textContent)
+     && /HP USD 25\.000/.test(e._els['stats-kpi-monto-sub'].textContent),
+     'la sub-línea del KPI muestra el total agregado de Ceven (20.000) y el de HP (25.000)',
+     e._els['stats-kpi-monto-sub'].textContent);
   e._regiStatsPintarComparacion('OPD9');
   const cmp = e._els['stats-compare'].innerHTML;
   ok(/USD 20\.000/.test(cmp), 'la columna Ceven muestra el monto agregado (20.000)', cmp);
@@ -389,8 +417,8 @@ console.log('\n10 · una oportunidad facturada usa el monto realizado, no USD 0 
      'con posición viva, la comparación la usa a ella (4000), no 4000+6000', e._regiDiffMonto(par));
 }
 
-/* ═══ 11 · Cutoff: junio/julio 2026 quedan fuera (uso arrancó en agosto) ═══ */
-console.log('\n11 · _regiPairsVinculadas descarta el cierre HP anterior a 2026-08');
+/* ═══ 11 · Sin recorte de meses: TODA oportunidad vinculada entra ═══════════ */
+console.log('\n11 · _regiPairsVinculadas ya no recorta por fecha (jun/jul vuelven a entrar)');
 {
   const e = cargar();
   e._pipelineData = [
@@ -405,28 +433,80 @@ console.log('\n11 · _regiPairsVinculadas descarta el cierre HP anterior a 2026-
     filaRegi('OPDJUN', 'c-jun', 1000, '2026-06'),
     filaRegi('OPDJUL', 'c-jul', 2000, '2026-07'),
     filaRegi('OPDAGO', 'c-ago', 3000, '2026-08'),
-    filaRegi('OPDSIN', 'c-sin', 4000, '')      // sin fecha de HP: NO se filtra por mes
+    filaRegi('OPDSIN', 'c-sin', 4000, '')
   ];
   const opds = e._regiPairsVinculadas().map(p => p.hp.opd).sort();
-  ok(opds.length === 2, 'de 5, quedan 2 (agosto y "sin fecha")', JSON.stringify(opds));
-  ok(opds.indexOf('OPDMAY') === -1 && opds.indexOf('OPDJUN') === -1 && opds.indexOf('OPDJUL') === -1,
-     'mayo, junio y julio quedaron afuera');
-  ok(opds.indexOf('OPDAGO') !== -1, 'agosto entra');
-  ok(opds.indexOf('OPDSIN') !== -1, 'una oportunidad sin cierre estimado de HP no se descarta por el cutoff');
+  ok(opds.length === 5, 'entran las 5 (no hay cutoff)', JSON.stringify(opds));
+  ok(opds.indexOf('OPDMAY') !== -1 && opds.indexOf('OPDJUN') !== -1 && opds.indexOf('OPDJUL') !== -1,
+     'mayo, junio y julio ya NO se descartan');
+}
+
+/* ═══ 12 · Slicers PowerBI: período (mes/trimestre) y estado de Ceven ══════ */
+console.log('\n12 · _regiStatsParPasa / _regiStatsChartData / _regiFechaTxt');
+{
+  const e = cargar();
+  // Texto redactado del desfasaje de fecha, sin signos que interpretar.
+  ok(e._regiFechaTxt(null).txt === '—', 'sin dato: guión');
+  ok(e._regiFechaTxt(0).txt === 'en fecha', 'diff 0: "en fecha"');
+  ok(e._regiFechaTxt(1.8).txt === '1.8 meses antes', 'diff +1.8 (HP más lejos): Ceven cierra "antes"');
+  ok(e._regiFechaTxt(-2).txt === '2.0 meses después', 'diff -2 (Ceven más lejos): "después"');
+  ok(e._regiFechaTxt(1).txt === '1.0 meses antes', 'siempre con decimal: "1.0 meses"');
 }
 {
-  // La vista completa no cuenta las recortadas en el KPI, ni en la tabla, ni en el selector.
   const e = cargar();
   conPares(e, [
-    { hp: filaRegi('OPDJUL', 'x-jul', 9999, '2026-07'), ceven: filaReal('x-jul', 8000, '2026-07', {estado:'Cotizado'}) },
-    { hp: filaRegi('OPDAGO', 'x-ago', 1000, '2026-08'), ceven: filaReal('x-ago', 1200, '2026-08', {estado:'Cotizado'}) }
+    { hp: filaRegi('OPA', 'a', 1000, '2026-08'), ceven: filaReal('a', 1200, '2026-08', {estado:'Cotizado'}) },
+    { hp: filaRegi('OPB', 'b', 2000, '2026-09'), ceven: filaReal('b', 1500, '2026-09', {estado:'Negociacion'}) },
+    { hp: filaRegi('OPC', 'c', 3000, '2026-11'), ceven: filaReal('c', 4000, '2026-11', {estado:'Facturado'}) }
   ]);
+  const all = e._regiPairsVinculadas();
+
+  // Sin filtros: pasan las 3.
+  ok(all.filter(e._regiStatsParPasa).length === 3, 'sin slicers, pasan todas');
+
+  // Filtro por mes: solo 2026-09.
+  e.window._regiStatsFiltros = { meses: { '2026-09': 1 }, estados: {} };
+  const soloSep = all.filter(e._regiStatsParPasa);
+  ok(soloSep.length === 1 && soloSep[0].hp.opd === 'OPB', 'slicer de mes deja solo septiembre', JSON.stringify(soloSep.map(p=>p.hp.opd)));
+
+  // Filtro por estado Ceven: solo Facturado.
+  e.window._regiStatsFiltros = { meses: {}, estados: { 'Facturado': 1 } };
+  const soloFact = all.filter(e._regiStatsParPasa);
+  ok(soloFact.length === 1 && soloFact[0].hp.opd === 'OPC', 'slicer de estado deja solo la facturada', JSON.stringify(soloFact.map(p=>p.hp.opd)));
+
+  // Dimensiones ofrecidas.
+  e.window._regiStatsFiltros = { meses: {}, estados: {} };
+  const dims = e._regiStatsDimensiones(all);
+  ok(dims.meses.join(',') === '2026-08,2026-09,2026-11', 'los meses del slicer salen ordenados', dims.meses.join(','));
+  ok(dims.estados.indexOf('Facturado') !== -1 && dims.estados.indexOf('Cotizado') !== -1, 'los estados presentes están todos');
+
+  // Datos del gráfico: HP vs Ceven por mes.
+  const chart = e._regiStatsChartData(all);
+  ok(chart.length === 3, 'un grupo por mes', JSON.stringify(chart.map(g=>g.key)));
+  ok(chart[0].hp === 1000 && chart[0].ceven === 1200, 'agosto: HP 1000 / Ceven 1200', JSON.stringify(chart[0]));
+  ok(chart[2].hp === 3000 && chart[2].ceven === 4000, 'la facturada aporta su monto facturado al gráfico (4000)', JSON.stringify(chart[2]));
+}
+{
+  // Render completo con un slicer activo: KPI y tabla ven el subconjunto.
+  const e = cargar();
+  conPares(e, [
+    { hp: filaRegi('OPX', 'x', 10000, '2026-08'), ceven: filaReal('x', 9000, '2026-08', {estado:'Cotizado'}) },
+    { hp: filaRegi('OPY', 'y', 20000, '2026-12'), ceven: filaReal('y', 25000, '2026-12', {estado:'Cotizado'}) }
+  ]);
+  e.window._regiStatsFiltros = { meses: { '2026-08': 1 }, estados: {} };
   e.renderRegiStats();
-  ok(/sobre 1 oportunidad vinculada/.test(e._els['stats-kpi-monto-sub'].textContent),
-     'el KPI cuenta 1, no 2 (julio descartado)', e._els['stats-kpi-monto-sub'].textContent);
-  ok(e._els['stats-mes-body'].innerHTML.indexOf('Jul 2026') === -1, 'no hay fila de julio en la tabla por mes');
-  ok(e._els['stats-pick'].innerHTML.indexOf('OPDJUL') === -1, 'y el selector no ofrece la de julio');
-  ok(e._els['stats-pick'].innerHTML.indexOf('OPDAGO') !== -1, 'la de agosto sí está en el selector');
+  ok(/1 de 2 oportunidades \(filtrado\)/.test(e._els['stats-kpi-monto-sub'].textContent),
+     'el KPI avisa que es 1 de 2 (filtrado)', e._els['stats-kpi-monto-sub'].textContent);
+  ok(/-USD 1\.000/.test(e._els['stats-kpi-monto'].textContent),
+     'y el número es el del subconjunto: 9000 − 10000 = -1000', e._els['stats-kpi-monto'].textContent);
+  ok(e._els['stats-mes-body'].innerHTML.indexOf('Dic 2026') === -1
+     && e._els['stats-mes-body'].innerHTML.indexOf('Ago 2026') !== -1,
+     'la tabla por mes solo muestra agosto');
+  ok(e._els['stats-chart'].innerHTML.indexOf('Ago 2026') !== -1 && e._els['stats-chart'].innerHTML.indexOf('Dic 2026') === -1,
+     'el gráfico solo tiene la barra de agosto');
+  // El desplegable "Comparar una oportunidad" NO se filtra: lista las dos.
+  ok(e._els['stats-pick'].innerHTML.indexOf('OPX') !== -1 && e._els['stats-pick'].innerHTML.indexOf('OPY') !== -1,
+     'el comparador uno-a-uno sigue listando TODAS las oportunidades');
 }
 
 console.log('\n' + (fallos

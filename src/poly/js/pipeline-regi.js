@@ -175,15 +175,12 @@ function _regiOpgMatcheaVigente(opg){
 // − perdido). Un estado ausente cuenta como 'Cotizado' (activo), igual que ahí.
 var _REGI_ESTADOS_EXCLUIDOS = { Perdido: 1, Facturado: 1 };
 
-// El cotizador recién se empezó a usar en agosto/2026. Toda oportunidad cuyo
-// cierre estimado de HP sea ANTERIOR a este mes no tiene un lado "Ceven" real
-// con qué compararse (nadie estaba cargando el pipeline todavía), así que solo
-// mete ruido en las Estadísticas. Se descarta por completo: KPI, tablas por
-// mes/trimestre y el selector "Comparar una oportunidad" (ver
-// _regiStatsDentroDeRango, aplicado en _regiPairsVinculadas). Las que no traen
-// cierre estimado de HP NO se filtran acá — van al bucket "Sin fecha (HP)".
-// Subir el valor si en algún momento se quiere recortar más hacia adelante.
-var _REGI_STATS_DESDE = '2026-08';   // 'YYYY-MM', inclusive
+/* Filtros interactivos de las Estadísticas (slicers estilo PowerBI). Mapas
+   usados como sets: una clave presente y truthy = seleccionada; vacío = "todos".
+   Viven en window y NO se persisten (mismo criterio que _regiForecastFilter):
+   son estado de vista, se resetean al recargar. */
+window._regiStatsFiltros = window._regiStatsFiltros || { meses: {}, estados: {} };
+var _REGI_SIN_FECHA = '(sin fecha)';   // clave del bucket sin cierre estimado de HP
 
 /* year*12 + (mes-1)  ->  'YYYY-MM'. Inverso de _regiMesOrdinal: sirve para
    pasar el promedio ponderado (fraccionario, se redondea) por _mesLabelPoly. */
@@ -254,21 +251,10 @@ function _regiCevenAgg(rows){
   };
 }
 
-/* ¿El par entra en las Estadísticas por su fecha? true si el cierre estimado de
-   HP es de _REGI_STATS_DESDE en adelante, o si HP no trae fecha válida (esos no
-   se filtran por mes: caen en el bucket "Sin fecha"). El string 'YYYY-MM' se
-   compara lexicográficamente, que para ese formato es orden cronológico. */
-function _regiStatsDentroDeRango(par){
-  var mk = par && par.hp && par.hp.mesCierre;
-  if(_regiMesOrdinal(mk) === null) return true;        // sin fecha válida: no se descarta acá
-  return String(mk) >= _REGI_STATS_DESDE;
-}
-
 /* [{hp, ceven}] — hp es la fila REGI (shape de _regiRowToPipeRow), ceven es la
    AGREGACIÓN (_regiCevenAgg) de todas las filas del pipeline real con ese OPG.
-   Se recortan las oportunidades anteriores al arranque del cotizador
-   (_regiStatsDentroDeRango): es el único consumidor y todas las Estadísticas
-   cuelgan de acá. */
+   Devuelve TODAS las vinculadas: el recorte por período/estado lo hacen los
+   slicers de la vista (_regiStatsParPasa), no esta función. */
 function _regiPairsVinculadas(){
   var vinculados = _regiOpgVinculadosSet();
   var pares = [];
@@ -277,7 +263,7 @@ function _regiPairsVinculadas(){
     var filas = codigo && vinculados[codigo];
     if(filas && filas.length) pares.push({hp: hp, ceven: _regiCevenAgg(filas)});
   });
-  return pares.filter(_regiStatsDentroDeRango);
+  return pares;
 }
 
 /* Monto del lado Ceven que entra en la comparación contra HP:
@@ -346,19 +332,142 @@ function _regiTrimestreLabel(qk){
   return p.length === 2 ? ('Q' + p[1] + ' ' + p[0]) : qk;
 }
 
-/* KPI totales: {n, diffMonto (SUMA, pedido explícito), diffFechaProm
-   (PROMEDIO — confirmado con el usuario: sumar desfasajes de fecha entre
-   muchas oportunidades da un número poco legible), nFecha}. diffFechaProm
-   queda null si ningún par tiene fecha de los dos lados. */
+/* KPI totales sobre los pares YA filtrados por los slicers:
+   - montoHp / montoCeven: Σ de cada lado (Ceven vía _regiCevenMontoComparacion).
+   - diffMonto: montoCeven − montoHp (SUMA de las diferencias por par, idéntico).
+   - diffFechaProm: PROMEDIO del desfasaje de cierre (sumar meses entre muchas
+     oportunidades da un número ilegible); null si ninguna tiene fecha en ambos
+     lados. */
 function _regiKpisTotales(pares){
-  var diffMonto = 0, sumFecha = 0, nFecha = 0, nMulti = 0;
+  var diffMonto = 0, montoHp = 0, montoCeven = 0, sumFecha = 0, nFecha = 0, nMulti = 0;
   pares.forEach(function(par){
+    montoHp += Number(par.hp.montoArchivo) || 0;
+    montoCeven += _regiCevenMontoComparacion(par.ceven || {}).valor || 0;
     diffMonto += _regiDiffMonto(par);
     var df = _regiDiffFechaMeses(par);
     if(df !== null){ sumFecha += df; nFecha++; }
     if(par.ceven && par.ceven.nCotiz > 1) nMulti++;
   });
-  return { n: pares.length, diffMonto: diffMonto, diffFechaProm: nFecha ? (sumFecha / nFecha) : null, nFecha: nFecha, nMulti: nMulti };
+  return {
+    n: pares.length, diffMonto: diffMonto, montoHp: montoHp, montoCeven: montoCeven,
+    diffFechaProm: nFecha ? (sumFecha / nFecha) : null, nFecha: nFecha, nMulti: nMulti
+  };
+}
+
+/* ── Slicers de las Estadísticas ─────────────────────────────────────────────
+   Período (mes / trimestre) y Estado de Ceven. Los valores disponibles salen
+   de los propios pares vinculados; el estado de selección vive en
+   window._regiStatsFiltros. */
+
+// Clave de mes del par para agrupar/filtrar: 'YYYY-MM' o el sentinel sin fecha.
+function _regiParMesKey(par){
+  var mk = par && par.hp && par.hp.mesCierre;
+  return (_regiMesOrdinal(mk) === null) ? _REGI_SIN_FECHA : String(mk);
+}
+
+// Estados de Ceven presentes en un par (uno por cotización vinculada).
+function _regiParEstados(par){
+  var out = {};
+  (((par && par.ceven) || {}).rows || []).forEach(function(r){ out[r.estado || 'Cotizado'] = 1; });
+  return Object.keys(out);
+}
+
+/* Meses y estados que ofrecen los slicers, ya ordenados: los meses cronológicos
+   con "Sin fecha" al final; los estados por el ranking del embudo. */
+function _regiStatsDimensiones(paresAll){
+  var mesesSet = {}, estSet = {};
+  paresAll.forEach(function(par){
+    mesesSet[_regiParMesKey(par)] = 1;
+    _regiParEstados(par).forEach(function(e){ estSet[e] = 1; });
+  });
+  var meses = Object.keys(mesesSet).sort(function(a, b){
+    if(a === _REGI_SIN_FECHA) return 1;
+    if(b === _REGI_SIN_FECHA) return -1;
+    return a < b ? -1 : (a > b ? 1 : 0);
+  });
+  var estados = Object.keys(estSet).sort(function(a, b){
+    var ra = (typeof cevenEstadoRank === 'function') ? cevenEstadoRank(a) : 0;
+    var rb = (typeof cevenEstadoRank === 'function') ? cevenEstadoRank(b) : 0;
+    return ra - rb;
+  });
+  return { meses: meses, estados: estados };
+}
+
+// ¿El par pasa los slicers activos? Sets vacíos = "todos".
+function _regiStatsParPasa(par){
+  var f = window._regiStatsFiltros || {};
+  var mesesSel = Object.keys(f.meses || {}).filter(function(k){ return f.meses[k]; });
+  var estSel = Object.keys(f.estados || {}).filter(function(k){ return f.estados[k]; });
+  if(mesesSel.length && mesesSel.indexOf(_regiParMesKey(par)) === -1) return false;
+  if(estSel.length){
+    var ests = _regiParEstados(par);
+    var hay = ests.some(function(e){ return estSel.indexOf(e) !== -1; });
+    if(!hay) return false;
+  }
+  return true;
+}
+
+// ¿Hay algún slicer activo? (para mostrar "Limpiar" y avisar que es un subconjunto)
+function _regiStatsHayFiltro(){
+  var f = window._regiStatsFiltros || {};
+  return Object.keys(f.meses || {}).some(function(k){ return f.meses[k]; })
+      || Object.keys(f.estados || {}).some(function(k){ return f.estados[k]; });
+}
+
+// 'YYYY-MM' -> 'YYYY-Qn' de los meses presentes, para los chips de trimestre.
+function _regiStatsTrimestresDe(meses){
+  var out = [];
+  meses.forEach(function(mk){
+    if(mk === _REGI_SIN_FECHA) return;
+    var q = _regiTrimestreKey(mk);
+    if(q && out.indexOf(q) === -1) out.push(q);
+  });
+  return out.sort();
+}
+
+/* Barras agrupadas HP vs Ceven por mes, sobre los pares filtrados. Cada grupo:
+   {key, label, hp, ceven, n}. "Sin fecha" queda al final. */
+function _regiStatsChartData(paresView){
+  var mapa = {};
+  paresView.forEach(function(par){
+    var k = _regiParMesKey(par);
+    if(!mapa[k]) mapa[k] = { key: k, hp: 0, ceven: 0, n: 0 };
+    mapa[k].hp += Number(par.hp.montoArchivo) || 0;
+    mapa[k].ceven += _regiCevenMontoComparacion(par.ceven || {}).valor || 0;
+    mapa[k].n++;
+  });
+  return Object.keys(mapa).sort(function(a, b){
+    if(a === _REGI_SIN_FECHA) return 1;
+    if(b === _REGI_SIN_FECHA) return -1;
+    return a < b ? -1 : (a > b ? 1 : 0);
+  }).map(function(k){
+    var g = mapa[k];
+    g.label = (k === _REGI_SIN_FECHA) ? 'Sin fecha' : _mesLabelPoly(k);
+    return g;
+  });
+}
+
+// Monto compacto para las etiquetas del gráfico: 1.2M / 340k / 900.
+function _regiMoneyCorto(n){
+  n = Number(n) || 0;
+  var s = n < 0 ? '-' : '';
+  var a = Math.abs(n);
+  if(a >= 1e6) return s + (a / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if(a >= 1e3) return s + Math.round(a / 1e3) + 'k';
+  return s + Math.round(a);
+}
+
+/* Desfasaje de cierre en palabras (sin signos que haya que interpretar).
+   diff = hp − ceven (meses): >0 Ceven cierra ANTES que HP, <0 DESPUÉS.
+   Devuelve {txt, color}. */
+function _regiFechaTxt(diff){
+  if(diff === null || diff === undefined) return { txt: '—', color: '#1d1d1f' };
+  var a = Math.abs(diff);
+  if(a < 0.05) return { txt: 'en fecha', color: '#1d1d1f' };
+  var meses = a.toFixed(1) + ' meses';
+  return diff > 0
+    ? { txt: meses + ' antes', color: '#15863a' }
+    : { txt: meses + ' después', color: '#d70015' };
 }
 
 /* Agrupa por keyFn(hp.mesCierre) — "por mes" pasa la identidad, "por
@@ -398,15 +507,14 @@ function _regiAgregarPorPeriodo(pares, keyFn, labelFn){
    El refetch (invalidar window._regiPipeRows) pasa SOLO en la transición
    false->true, no en cada render: si no, escribir en el buscador mientras
    se está en la vista REGI dispararía un pedido a Supabase por letra. */
-/* Recibe el VALOR del selector "Vista" ('', '__regi', '__regi_stats' o un mes
-   archivado) — antes recibía un booleano ("¿es REGI?"), pero con Estadísticas
-   sumándose como tercer caso, quien decide qué mostrar necesita saber cuál de
-   las tres es, no solo si es "la de antes" o no. Sigue siendo el ÚNICO lugar
-   que decide qué se ve, llamado desde renderPipeline() en CADA render. */
+/* Recibe el VALOR del selector "Vista" ('', '__regi' o un mes archivado).
+   Estadísticas ya NO pasa por acá: es una vista propia del navbar
+   (p-regi-stats, la pinta renderRegiStats). Sigue siendo el ÚNICO lugar que
+   decide qué se ve DENTRO de #p-pipeline, llamado desde renderPipeline() en
+   CADA render. */
 function cevenRegiToggleVista(vista){
   var esRegi = (vista === '__regi');
-  var esStats = (vista === '__regi_stats');
-  var usaDatosRegi = esRegi || esStats;   // las dos consumen window._regiPipeRows
+  var usaDatosRegi = esRegi;   // consume window._regiPipeRows
 
   var eraActiva = !!window._regiVistaWasActive;
   window._regiVistaWasActive = usaDatosRegi;
@@ -414,29 +522,24 @@ function cevenRegiToggleVista(vista){
 
   var tNormal = document.getElementById('pipe-table-normal');
   var tRegi = document.getElementById('pipe-table-regi');
-  var stats = document.getElementById('pipe-stats');
   if(tNormal) tNormal.style.display = usaDatosRegi ? 'none' : '';
   if(tRegi) tRegi.style.display = esRegi ? '' : 'none';
-  if(stats) stats.style.display = esStats ? '' : 'none';
 
   var execWrap = document.getElementById('pipe-exec-wrap');
   var statusWrap = document.getElementById('pipe-status-wrap');
   if(execWrap) execWrap.style.display = usaDatosRegi ? 'none' : '';
   if(statusWrap) statusWrap.style.display = usaDatosRegi ? 'none' : '';
 
-  // "Mostrar vinculadas" y "Solo perdidas": solo existen EN la tabla REGI (no
-  // en el pipeline real ni en Estadísticas, que ya muestra las vinculadas por
-  // definición).
+  // "Mostrar vinculadas" y "Solo perdidas": solo existen EN la tabla REGI.
   var vincWrap = document.getElementById('regi-vinc-wrap');
   if(vincWrap) vincWrap.style.display = esRegi ? '' : 'none';
   var perdWrap = document.getElementById('regi-perd-wrap');
   if(perdWrap) perdWrap.style.display = esRegi ? '' : 'none';
 
-  // Facturado y Forecast del mes no tienen equivalente en REGI ni en
-  // Estadísticas: no hay "facturado" en una oportunidad que todavía es de un
-  // partner, y el monto único de la fila (ver el comentario de cabecera) ya
-  // reemplaza la necesidad de un segundo KPI separado. El pipeline normal y
-  // el archivo sí usan las dos tarjetas — quedan visibles ahí.
+  // Facturado y Forecast del mes no tienen equivalente en REGI: no hay
+  // "facturado" en una oportunidad que todavía es de un partner, y el monto
+  // único de la fila ya reemplaza la necesidad de un segundo KPI separado. El
+  // pipeline normal y el archivo sí usan las dos tarjetas — quedan visibles ahí.
   var facturadoCard = document.getElementById('dash-facturado-card');
   var proyCard = document.getElementById('dash-proy-card');
   if(facturadoCard) facturadoCard.style.display = usaDatosRegi ? 'none' : '';
@@ -457,26 +560,14 @@ function cevenRegiToggleVista(vista){
   if(perdCard) perdCard.style.display = 'none';
 
   // exportPipeline() arma el Excel con las columnas del pipeline normal
-  // (fecha/ejecutivo/OPG/factura...): no sabe leer una fila de REGI ni de
-  // Estadísticas.
+  // (fecha/ejecutivo/OPG/factura...): no sabe leer una fila de REGI.
   var exportBtn = document.getElementById('pipe-export-btn');
   if(exportBtn) exportBtn.style.display = usaDatosRegi ? 'none' : '';
-
-  // El dashboard de KPI del pipeline normal/REGI (#pipe-dashboard) lo pinta
-  // cada render (_pipeTablaHTML / _regiPintarDashboard), que también decide
-  // cuándo mostrarlo — salvo Estadísticas, que nunca lo toca porque arma sus
-  // propias tarjetas adentro de #pipe-stats. Sin este apagado explícito,
-  // entrar a Estadísticas después de haber estado en cualquiera de las otras
-  // dos vistas dejaría ese dashboard viejo pegado en pantalla.
-  if(esStats){
-    var dash = document.getElementById('pipe-dashboard');
-    if(dash) dash.style.display = 'none';
-  }
 
   // Los dos montos globales del header (arriba de todo, al lado del título)
   // se pintan acá y no en _regiPintarDashboard: esta función corre en CADA
   // renderPipeline() sin importar la vista, así que quedan al día se esté
-  // mirando el pipeline normal, REGI, Estadísticas o un mes archivado.
+  // mirando el pipeline normal, REGI o un mes archivado.
   if(typeof _regiEnsureHeaderKpis === 'function') _regiEnsureHeaderKpis();
 }
 
@@ -877,8 +968,9 @@ function renderRegiStats(){
     if(empty){ empty.style.display = 'block'; empty.textContent = 'Cargando…'; }
     if(body) body.style.display = 'none';
     _cevenRegiPipeFetch().then(function(){
-      var sel = document.getElementById('archive-month-sel');
-      if(sel && sel.value === '__regi_stats') _renderRegiStatsFromCache();
+      // Solo pintar si seguimos en la vista de Estadísticas cuando vuelve el fetch.
+      var pg = document.getElementById('p-regi-stats');
+      if(pg && pg.classList && pg.classList.contains('on')) _renderRegiStatsFromCache();
     }).catch(function(e){
       if(empty) empty.textContent = 'No se pudo cargar el pipeline REGI' + ((e && e.message) ? (': ' + cevenEsc(e.message)) : '.');
     });
@@ -888,12 +980,12 @@ function renderRegiStats(){
 }
 
 function _renderRegiStatsFromCache(){
-  var pares = _regiPairsVinculadas();
-  window._regiStatsPares = pares;   // para que el <select> encuentre el par por opd sin recalcular
+  var paresAll = _regiPairsVinculadas();
+  window._regiStatsPares = paresAll;   // el comparador (sin slicers) busca por opd acá
 
   var empty = document.getElementById('stats-empty');
   var body = document.getElementById('stats-body');
-  if(!pares.length){
+  if(!paresAll.length){
     if(empty){
       empty.style.display = 'block';
       empty.textContent = 'Todavía no hay ninguna oportunidad vinculada. Vinculá proyectos desde "🎯 Pipeline REGI" (o cargando el mismo código en el OPG del pipeline real) para verlas acá.';
@@ -904,20 +996,29 @@ function _renderRegiStatsFromCache(){
   if(empty) empty.style.display = 'none';
   if(body) body.style.display = 'block';
 
-  _regiStatsPintarKpis(_regiKpisTotales(pares));
+  // Slicers: se pintan desde el universo completo; el resto usa el subconjunto.
+  var dims = _regiStatsDimensiones(paresAll);
+  _regiStatsPintarFiltros(dims);
+  var pares = paresAll.filter(_regiStatsParPasa);
+
+  _regiStatsPintarKpis(_regiKpisTotales(pares), pares.length, paresAll.length);
+  _regiStatsPintarChart(_regiStatsChartData(pares));
 
   var porMes = _regiAgregarPorPeriodo(pares, function(mk){ return mk || ''; }, _mesLabelPoly);
   var porQ = _regiAgregarPorPeriodo(pares, _regiTrimestreKey, _regiTrimestreLabel);
   var mesBody = document.getElementById('stats-mes-body');
   var qBody = document.getElementById('stats-q-body');
-  if(mesBody) mesBody.innerHTML = porMes.map(_regiStatsFilaPeriodoHTML).join('');
-  if(qBody) qBody.innerHTML = porQ.map(_regiStatsFilaPeriodoHTML).join('');
+  if(mesBody) mesBody.innerHTML = porMes.map(_regiStatsFilaPeriodoHTML).join('')
+    || '<tr><td colspan="4" style="text-align:center;color:#aeaeb2;padding:14px">Ningún dato con los filtros actuales.</td></tr>';
+  if(qBody) qBody.innerHTML = porQ.map(_regiStatsFilaPeriodoHTML).join('')
+    || '<tr><td colspan="4" style="text-align:center;color:#aeaeb2;padding:14px">—</td></tr>';
 
+  // El desplegable "Comparar una oportunidad" sigue listando TODAS (no filtra).
   var sel = document.getElementById('stats-pick');
   if(sel){
     var prev = sel.value;
-    sel.innerHTML = _regiStatsOpciones(pares);
-    sel.value = pares.some(function(p){ return p.hp.opd === prev; }) ? prev : '';
+    sel.innerHTML = _regiStatsOpciones(paresAll);
+    sel.value = paresAll.some(function(p){ return p.hp.opd === prev; }) ? prev : '';
   }
   _regiStatsPintarComparacion(sel ? sel.value : '');
 }
@@ -927,7 +1028,11 @@ function _regiStatsColor(v){
   return v < 0 ? '#d70015' : (v > 0 ? '#15863a' : '#1d1d1f');
 }
 
-function _regiStatsPintarKpis(kpis){
+/* KPIs, sin texto que haya que interpretar: el subtítulo son los dos totales
+   crudos (Ceven y HP) y el conteo. El de fecha va redactado ("1.8 meses
+   después"), sin signos. `nView`/`nTotal`: cuántas oportunidades quedaron con
+   los slicers y cuántas hay en total. */
+function _regiStatsPintarKpis(kpis, nView, nTotal){
   var elMonto = document.getElementById('stats-kpi-monto');
   var elMontoSub = document.getElementById('stats-kpi-monto-sub');
   if(elMonto){
@@ -935,35 +1040,164 @@ function _regiStatsPintarKpis(kpis){
     elMonto.style.color = _regiStatsColor(kpis.diffMonto);
   }
   if(elMontoSub){
-    elMontoSub.textContent = 'sobre ' + kpis.n + (kpis.n === 1 ? ' oportunidad vinculada' : ' oportunidades vinculadas')
-      + (kpis.nMulti ? (' · ' + kpis.nMulti + ' con más de una cotización de Ceven (monto agregado)') : '')
-      + ' · negativo = Ceven pronostica MENOS monto que HP';
+    elMontoSub.textContent = 'Ceven USD ' + fI(kpis.montoCeven) + '  ·  HP USD ' + fI(kpis.montoHp)
+      + '  ·  ' + _regiStatsAlcanceTxt(nView, nTotal);
   }
 
   var elFecha = document.getElementById('stats-kpi-fecha');
   var elFechaSub = document.getElementById('stats-kpi-fecha-sub');
+  var f = _regiFechaTxt(kpis.diffFechaProm);
   if(elFecha){
-    elFecha.textContent = (kpis.diffFechaProm === null) ? '—'
-      : ((kpis.diffFechaProm > 0 ? '+' : '') + kpis.diffFechaProm.toFixed(1) + ' meses');
-    elFecha.style.color = _regiStatsColor(kpis.diffFechaProm);
+    elFecha.textContent = f.txt;
+    elFecha.style.color = f.color;
   }
   if(elFechaSub){
-    elFechaSub.textContent = (kpis.nFecha
-        ? ('promedio sobre ' + kpis.nFecha + (kpis.nFecha === 1 ? ' oportunidad' : ' oportunidades') + ' con fecha en los dos lados')
-        : 'ninguna oportunidad vinculada tiene fecha en los dos lados')
-      + ' · negativo = Ceven pronostica un cierre MÁS LEJOS que HP';
+    elFechaSub.textContent = kpis.nFecha
+      ? ('promedio sobre ' + kpis.nFecha + (kpis.nFecha === 1 ? ' oportunidad' : ' oportunidades') + ' con fecha en ambos lados')
+      : 'ninguna oportunidad con fecha en ambos lados';
   }
 }
 
+// "12 oportunidades" o "5 de 12 oportunidades (filtrado)".
+function _regiStatsAlcanceTxt(nView, nTotal){
+  if(nView === nTotal) return nView + (nView === 1 ? ' oportunidad' : ' oportunidades');
+  return nView + ' de ' + nTotal + ' oportunidades (filtrado)';
+}
+
 function _regiStatsFilaPeriodoHTML(g){
-  var fechaTxt = (g.diffFechaProm === null) ? '—' : ((g.diffFechaProm > 0 ? '+' : '') + g.diffFechaProm.toFixed(1) + ' m');
+  var f = _regiFechaTxt(g.diffFechaProm);
   return '<tr>'
     + '<td>' + cevenEsc(g.label) + '</td>'
     + '<td style="text-align:center">' + g.n + '</td>'
     + '<td style="text-align:right;font-weight:600;color:' + _regiStatsColor(g.diffMonto) + '">'
       + (g.diffMonto < 0 ? '-' : '+') + 'USD ' + fI(Math.abs(g.diffMonto)) + '</td>'
-    + '<td style="text-align:right;font-weight:600;color:' + _regiStatsColor(g.diffFechaProm) + '">' + fechaTxt + '</td>'
+    + '<td style="text-align:right;font-weight:600;color:' + f.color + '">' + cevenEsc(f.txt) + '</td>'
   + '</tr>';
+}
+
+/* ── Slicers: chips de trimestre + mes + estado de Ceven ─────────────────── */
+function _regiStatsChipHTML(act, val, label, activo){
+  var bg = activo ? '#0071e3' : '#fff';
+  var fg = activo ? '#fff' : '#1d1d1f';
+  var bd = activo ? '#0071e3' : '#d2d2d7';
+  return '<button type="button" data-act="' + act + '" data-val="' + cevenEsc(val) + '"'
+    + ' style="border:0.5px solid ' + bd + ';background:' + bg + ';color:' + fg
+    + ';border-radius:980px;padding:5px 12px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit">'
+    + cevenEsc(label) + '</button>';
+}
+
+function _regiStatsPintarFiltros(dims){
+  var box = document.getElementById('stats-filtros');
+  if(!box) return;
+  var f = window._regiStatsFiltros || (window._regiStatsFiltros = { meses: {}, estados: {} });
+
+  // Podar selecciones de dimensiones que ya no existen (los datos cambiaron):
+  // sin esto quedaría un filtro fantasma que vacía la vista y no tiene chip
+  // para destildarlo.
+  Object.keys(f.meses).forEach(function(k){ if(dims.meses.indexOf(k) === -1) delete f.meses[k]; });
+  Object.keys(f.estados).forEach(function(k){ if(dims.estados.indexOf(k) === -1) delete f.estados[k]; });
+
+  var trims = _regiStatsTrimestresDe(dims.meses);
+  var mesesReales = dims.meses.filter(function(m){ return m !== _REGI_SIN_FECHA; });
+
+  function fila(titulo, chips){
+    return '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
+      + '<span style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;min-width:70px">' + titulo + '</span>'
+      + chips + '</div>';
+  }
+
+  var h = '';
+
+  if(trims.length > 1){
+    h += fila('Trimestre', trims.map(function(q){
+      var meses = mesesReales.filter(function(m){ return _regiTrimestreKey(m) === q; });
+      var activo = meses.length > 0 && meses.every(function(m){ return f.meses[m]; });
+      return _regiStatsChipHTML('stats-trim', q, _regiTrimestreLabel(q), activo);
+    }).join(''));
+  }
+
+  var chipsMes = dims.meses.map(function(m){
+    var label = (m === _REGI_SIN_FECHA) ? 'Sin fecha' : _mesLabelPoly(m);
+    return _regiStatsChipHTML('stats-mes', m, label, !!f.meses[m]);
+  }).join('');
+  h += fila('Mes', chipsMes);
+
+  if(dims.estados.length > 1){
+    var chipsEst = dims.estados.map(function(e){
+      var label = (typeof cevenEstadoLabel === 'function') ? cevenEstadoLabel(e) : e;
+      return _regiStatsChipHTML('stats-estado', e, label, !!f.estados[e]);
+    }).join('');
+    h += fila('Estado Ceven', chipsEst);
+  }
+
+  if(_regiStatsHayFiltro()){
+    h += '<div><button type="button" data-act="stats-limpiar" style="border:none;background:none;color:#0071e3;font-size:12px;cursor:pointer;font-family:inherit;padding:2px 0;text-decoration:underline">Limpiar filtros</button></div>';
+  }
+
+  box.innerHTML = h;
+  _regiStatsBindFiltros(box);
+}
+
+function _regiStatsBindFiltros(box){
+  if(box._regiBound) return;
+  box._regiBound = true;
+  box.addEventListener('click', function(ev){
+    var el = ev.target && ev.target.closest ? ev.target.closest('[data-act]') : null;
+    if(!el || !box.contains(el)) return;
+    var f = window._regiStatsFiltros || (window._regiStatsFiltros = { meses: {}, estados: {} });
+    var act = el.getAttribute('data-act');
+    var val = el.getAttribute('data-val');
+    if(act === 'stats-limpiar'){ f.meses = {}; f.estados = {}; }
+    else if(act === 'stats-mes'){ if(f.meses[val]) delete f.meses[val]; else f.meses[val] = 1; }
+    else if(act === 'stats-estado'){ if(f.estados[val]) delete f.estados[val]; else f.estados[val] = 1; }
+    else if(act === 'stats-trim'){
+      // Trimestre: alterna EN BLOQUE los meses reales de ese trimestre.
+      var dims = _regiStatsDimensiones(window._regiStatsPares || []);
+      var meses = dims.meses.filter(function(m){ return m !== _REGI_SIN_FECHA && _regiTrimestreKey(m) === val; });
+      var todosPuestos = meses.length > 0 && meses.every(function(m){ return f.meses[m]; });
+      meses.forEach(function(m){ if(todosPuestos) delete f.meses[m]; else f.meses[m] = 1; });
+    } else return;
+    _renderRegiStatsFromCache();
+  });
+}
+
+/* ── Gráfico de barras: HP vs Ceven por mes ─────────────────────────────────
+   Sin librería: dos barras por grupo, alto proporcional al máximo de la vista.
+   Scrollea horizontal si hay muchos meses (el .tw de afuera). */
+function _regiStatsPintarChart(data){
+  var box = document.getElementById('stats-chart');
+  if(!box) return;
+  if(!data.length){ box.innerHTML = '<div style="color:#aeaeb2;font-size:12px;padding:14px 0">Ningún dato con los filtros actuales.</div>'; return; }
+
+  var max = 0;
+  data.forEach(function(g){ max = Math.max(max, g.hp, g.ceven); });
+  if(max <= 0) max = 1;
+  var H = 150;   // alto del área de barras, px
+
+  var barras = data.map(function(g){
+    var hHp = Math.max(2, Math.round(H * g.hp / max));
+    var hCe = Math.max(2, Math.round(H * g.ceven / max));
+    function bar(alto, color, monto){
+      return '<div title="USD ' + fI(monto) + '" style="width:22px;height:' + alto + 'px;background:' + color
+        + ';border-radius:3px 3px 0 0"></div>';
+    }
+    return '<div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:64px">'
+      + '<div style="display:flex;align-items:flex-end;gap:4px;height:' + H + 'px">'
+        + bar(hHp, '#c7c7cc', g.hp)
+        + bar(hCe, '#0071e3', g.ceven)
+      + '</div>'
+      + '<div style="font-size:10px;color:#6e6e73;font-variant-numeric:tabular-nums;text-align:center;line-height:1.3">'
+        + _regiMoneyCorto(g.hp) + ' / <b style="color:#0071e3">' + _regiMoneyCorto(g.ceven) + '</b></div>'
+      + '<div style="font-size:11px;color:#1d1d1f;white-space:nowrap">' + cevenEsc(g.label) + '</div>'
+    + '</div>';
+  }).join('');
+
+  box.innerHTML =
+    '<div style="display:flex;gap:14px;font-size:11px;color:#6e6e73;margin-bottom:10px">'
+    + '<span><span style="display:inline-block;width:10px;height:10px;background:#c7c7cc;border-radius:2px;vertical-align:middle;margin-right:4px"></span>HP (estimado)</span>'
+    + '<span><span style="display:inline-block;width:10px;height:10px;background:#0071e3;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Ceven</span>'
+    + '</div>'
+    + '<div style="overflow-x:auto"><div style="display:flex;gap:10px;align-items:flex-end;padding-bottom:4px">' + barras + '</div></div>';
 }
 
 function _regiStatsOpciones(pares){
