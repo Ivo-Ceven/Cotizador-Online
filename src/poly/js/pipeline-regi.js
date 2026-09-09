@@ -717,7 +717,7 @@ function _renderRegiPipelineFromCache(){
 
   var mesesPresentes = {}, haySinFecha = false;
   rows.forEach(function(r){ if(r.mesCierre) mesesPresentes[r.mesCierre] = true; else haySinFecha = true; });
-  var monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha);
+  var monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha, rows);
 
   var sinBuscar = rows.filter(function(r){
     if(forecastFilter && (r.forecast || '') !== forecastFilter) return false;
@@ -964,7 +964,7 @@ function _regiStatsPintarComparacion(opd){
   box.innerHTML = '<table style="width:100%">'
     + '<thead><tr><th></th><th>HP (Excel)</th><th>Ceven (real' + (multi ? ', ' + ag.nCotiz + ' cotiz.' : '') + ')</th><th>Diferencia</th></tr></thead>'
     + '<tbody>'
-      + _regiStatsFilaCompararHTML('Cliente / Proyecto',
+      + _regiStatsFilaCompararHTML('Canal / Cliente final',
           cevenEsc(par.hp.cliente || '—') + ' — ' + cevenEsc(par.hp.proyecto || '—'),
           cevenEsc(ag.cliente || '—') + ' — ' + cevenEsc(ag.proyecto || '—'),
           '—', null)
@@ -1000,7 +1000,7 @@ function _regiStatsDesgloseHTML(ag){
     + '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">'
       + 'Cotizaciones de Ceven para este REGI (' + (ag.rows || []).length + ')</div>'
     + '<table style="width:100%">'
-      + '<thead><tr><th>Cliente</th><th>Proyecto</th><th style="text-align:right">Monto</th><th>Cierre</th><th>Estado</th></tr></thead>'
+      + '<thead><tr><th>Canal</th><th>Cliente final</th><th style="text-align:right">Monto</th><th>Cierre</th><th>Estado</th></tr></thead>'
       + '<tbody>' + filas + '</tbody></table></div>';
 }
 

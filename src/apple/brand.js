@@ -34,10 +34,13 @@ window.CEVEN_BRAND = {
     {nombre: 'warrantyItems', get: function(){ return warrantyItems; }, set: function(v){ warrantyItems = v; }}
   ],
 
+  // `mesAutoRoll` (08/09/2026): mes de cierre ORIGINAL de una fila que el sistema
+  //   movio al mes actual por estar vencida y abierta. Columna nueva: migracion
+  //   20260908120000, aplicar ANTES de deployar esto.
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','ejecutivo','mesCierre','estado',
     'qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad','montoAcc','montoServ',
     'monto','margenPond','moneda','skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',
-    'skuPartialRemMes','skuArchivedQty','ovLink','esFOB','perdidoMotivo','fechaMod'],
+    'skuPartialRemMes','skuArchivedQty','ovLink','esFOB','perdidoMotivo','fechaMod','mesAutoRoll'],
 
   numCols: ['id','qNum','clienteId','qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad',
     'montoAcc','montoServ','monto','margenPond'],
@@ -55,7 +58,8 @@ window.CEVEN_BRAND = {
   // Escalares que aceptan NULL: hay que emitirlos explicitamente como null.
   // Si se omiten del payload, PostgREST conserva el valor viejo y el poll lo
   // vuelve a traer, dejando el pipeline en un ciclo de revert infinito.
-  nullableCols: ['ovLink','proyecto','mesCierre','clienteId'],
+  // `mesAutoRoll` se limpia al editar el mes a mano / restaurar de la cajita.
+  nullableCols: ['ovLink','proyecto','mesCierre','clienteId','mesAutoRoll'],
 
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   // El poll tiene que preservarlos al mergear las filas del servidor.
@@ -121,7 +125,7 @@ window.CEVEN_BRAND = {
   // (numeros y fechas se leen "de mayor a menor"; el texto, alfabetico).
   // Cuantas columnas tiene la tabla: el <tr> de encabezado de cada cliente lo
   // necesita para el colspan (shared/pipeline-group.js).
-  pipeColCount: 15,   // +1 por la columna "Modificado" (alerta de estancadas)
+  pipeColCount: 16,   // "Modificado" (alerta de estancadas) + "Proyecto/observaciones" (08/09/2026)
 
   pipeSortDescCols: ['monto','qMac','qIph','qIpad','qServ','qAcc','margenPond','fechaISO','fechaMod'],
 

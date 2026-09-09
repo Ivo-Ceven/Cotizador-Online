@@ -345,7 +345,7 @@ function renderPipelineDetailRow(r, db, pipe){
     }).filter(function(ln){ return (parseInt(ln['Cantidad'])||0) > 0; });
   }
   if(!rows.length){
-    return '<tr class="pipe-detail"><td colspan="15" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">No se encontraron líneas para esta cotización en el historial.</td></tr>';
+    return '<tr class="pipe-detail"><td colspan="16" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">No se encontraron líneas para esta cotización en el historial.</td></tr>';
   }
   // skuStatus por línea (se guarda en pipe entry)
   var skuStatus = pipeEntry.skuStatus || {};
@@ -493,7 +493,7 @@ function renderPipelineDetailRow(r, db, pipe){
     +'</tr>';
   }
   inner += '</tbody></table></div>';
-  return '<tr class="pipe-detail"><td colspan="15" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
+  return '<tr class="pipe-detail"><td colspan="16" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
 }
 
 // Delegación de eventos del detalle por SKU. Vive en #pipe-body (junto con las
@@ -869,6 +869,7 @@ function updatePipelineMesCierreValue(id, fullValue){
   for(var i=0;i<pipe.length;i++){
     if(pipe[i].id === id){
       pipe[i].mesCierre = fullValue || '';
+      delete pipe[i].mesAutoRoll;   // editar el mes a mano confirma el cierre
       qNum = pipe[i].qNum;
       tryAutoMerge(pipe[i]);
       break;
@@ -896,6 +897,7 @@ function updateSkuMesCierreValue(pipeId, lineKey, fullValue){
       if(!cevenCanEditPipelineRow(pipe[i].ejecutivo)){ showToast('No tenés permiso para modificar esta línea del pipeline.'); return; }
       if(countQuoteProductLines(pipe[i].qNum) <= 1){
         pipe[i].mesCierre = fullValue || '';
+        delete pipe[i].mesAutoRoll;   // editar el mes a mano confirma el cierre
         if(pipe[i].skuMesCierre) delete pipe[i].skuMesCierre[lineKey];
         if(pipe[i].skuMesCierre && !Object.keys(pipe[i].skuMesCierre).length) delete pipe[i].skuMesCierre;
       } else {
@@ -963,6 +965,16 @@ function buildPipelineWorkbook(){
      ignorando los filtros activos. */
   var pipe = cevenPipeFilasVisibles();
   if(!pipe.length) return null;
+  /* "Proyecto/observaciones": texto libre de la cotización (clave `Observaciones`
+     de cquotes). Igual que en pantalla, se lee de la cotización por su número. */
+  var _obsDb = null;
+  function _obsDe(r){
+    if(!r.qNum) return '';
+    if(_obsDb === null) _obsDb = getDB();
+    var row = _obsDb.filter(function(x){ return x['N° Cotización'] === r.qNum; })[0];
+    var v = row ? String(row['Observaciones'] || '') : '';
+    return v === '—' ? '' : v;
+  }
   var data = pipe.map(function(r){
     var mesLabel = '';
     if(r.mesCierre){
@@ -980,6 +992,7 @@ function buildPipelineWorkbook(){
       'Ejecutivo': r.ejecutivo,
       'Cliente': r.cliente,
       'Proyecto': r.proyecto,
+      'Proyecto/observaciones': _obsDe(r),
       'Cierre estimado': mesLabel,
       'Q Mac': r.qMac,
       'Q iPhone': r.qIph,
@@ -992,7 +1005,7 @@ function buildPipelineWorkbook(){
     };
   });
   var ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{wch:11},{wch:13},{wch:13},{wch:14},{wch:24},{wch:24},{wch:14},{wch:8},{wch:9},{wch:8},{wch:12},{wch:14},{wch:14},{wch:14},{wch:32}];
+  ws['!cols'] = [{wch:11},{wch:13},{wch:13},{wch:14},{wch:24},{wch:24},{wch:30},{wch:14},{wch:8},{wch:9},{wch:8},{wch:12},{wch:14},{wch:14},{wch:14},{wch:32}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pipeline');
   return wb;

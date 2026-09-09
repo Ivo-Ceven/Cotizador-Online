@@ -62,7 +62,7 @@ function renderArchiveMonth(monthKey, entries){
   /* Misma tabla agrupada que el pipeline activo, en modo lectura: el scope
      'a:<mes>' mantiene la expansión del archivo separada de la del pipeline. */
   var html = _pipeTablaHTML(entries, 'a:' + monthKey, {monthKey: monthKey, mesLabel: lbl});
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">No hay proyectos archivados en '+cevenEsc(lbl)+'. Elegí "Pipeline actual" en Vista para volver.</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="10" style="text-align:center;color:#aeaeb2;padding:24px">No hay proyectos archivados en '+cevenEsc(lbl)+'. Elegí "Pipeline actual" en Vista para volver.</td></tr>';
   attachPipeSortHandlers();
   pipeBindDelegation();
 }
@@ -100,6 +100,7 @@ function restoreFromArchive(monthKey, id){
   // snapshot original (con su mesCierre) quede intacto para el deshacer.
   var restored = JSON.parse(JSON.stringify(toRestore));
   restored.mesCierre = currentMonthKey();
+  delete restored.mesAutoRoll;   // decisión manual fresca: sin chapita "↪ auto"
   var pipe = getPipeline();
   pipe.push(restored);
   savePipeline(pipe);

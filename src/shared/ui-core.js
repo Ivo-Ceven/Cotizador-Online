@@ -96,10 +96,19 @@ function _navApply(n) {
   if(n === 'qnac' && typeof renderQuoteNac === 'function') renderQuoteNac();
   if(n === 'history') renderHistory();
   if(n === 'addprod' && editingManualId === null) prepAddProd();
-  // archiveOldEntries() se llama ACÁ Y SOLO ACÁ. renderPipeline() no debe
-  // volver a llamarlo: cada pasada que archiva algo dispara savePipeline() →
-  // autoSnapshot() → scheduleFullBackup(), y duplicarlo duplica ese trabajo.
-  if(n === 'pipeline'){ archiveOldEntries(); renderPipeline(); if(typeof autoBackupPipeline === 'function') autoBackupPipeline(false); if(typeof maybeAutoFullBackup === 'function') maybeAutoFullBackup(); }
+  // rollOverdueEntries() y archiveOldEntries() se llaman ACÁ Y SOLO ACÁ.
+  // renderPipeline() no debe volver a llamarlos: cada pasada que mueve algo
+  // dispara savePipeline() → autoSnapshot() → scheduleFullBackup().
+  // ORDEN: primero el roll (mueve al mes actual las filas ABIERTAS con cierre
+  // vencido) y recién después el archivado (se lleva las CERRADAS de meses
+  // pasados). Abierta/cerrada particionan: una fila nunca la tocan las dos.
+  if(n === 'pipeline'){
+    if(typeof rollOverdueEntries === 'function') rollOverdueEntries();
+    archiveOldEntries();
+    renderPipeline();
+    if(typeof autoBackupPipeline === 'function') autoBackupPipeline(false);
+    if(typeof maybeAutoFullBackup === 'function') maybeAutoFullBackup();
+  }
   if(typeof cevenSyncUserUI === 'function') cevenSyncUserUI();
 }
 

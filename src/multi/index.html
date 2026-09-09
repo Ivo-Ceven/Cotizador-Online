@@ -112,7 +112,7 @@
         <summary title="Más acciones" aria-label="Más acciones">⋯</summary>
         <div class="ovf-menu">
           <div class="ovf-hd">Copia de seguridad</div>
-          <button onclick="exportFullBackup()"><span class="act-i">⬇️</span>Descargar backup completo</button>
+          <button onclick="exportCombinedFullBackup()"><span class="act-i">⬇️</span>Descargar backup completo</button>
           <button onclick="document.getElementById('backup-import').click()"><span class="act-i">⬆️</span>Restaurar desde un archivo</button>
         </div>
       </details>
@@ -123,15 +123,19 @@
   <div class="card">
     <div class="g2">
       <div>
-        <label class="lbl">Cliente</label>
-        <input id="client" type="text" placeholder="Buscar o escribir un cliente" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500">
+        <label class="lbl">Canal <span class="req">*</span></label>
+        <input id="client" type="text" placeholder="Buscar o escribir un canal" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500">
         <datalist id="cliente-datalist"></datalist>
       </div>
-      <!-- Proyecto es obligatorio para emitir: el pipeline de Poly lo exige. -->
-      <div><label class="lbl">Proyecto <span style="color:var(--ct2);font-weight:400">(cliente final)</span></label><input id="proyecto" type="text" placeholder="Ej: Hospital Italiano — Sala Directorio"></div>
-      <div><label class="lbl">OPG <span style="color:var(--ct2);font-weight:400">— opcional, solo para las líneas de Poly</span></label><input id="opg" type="text" placeholder="Dejar vacío si no aplica"></div>
+      <!-- El cliente final es obligatorio para emitir: el pipeline de Poly lo exige.
+           Mismo combo con autocompletado que Canal (shared/clientes.js). -->
+      <div><label class="lbl">Cliente <span class="req">*</span> <span style="color:var(--ct2);font-weight:400">(cliente final)</span></label><input id="proyecto" type="text" placeholder="Buscar o escribir un cliente final" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false"><datalist id="proyecto-datalist"></datalist></div>
+      <!-- "FOB" al principio de Proyecto/observaciones fuerza nacionalización 0 en
+           las líneas de Apple, igual que en su cotizador. -->
+      <div><label class="lbl">Proyecto/observaciones</label><input id="obs" type="text" placeholder="Referencia del proyecto o nota... (empezar con FOB fuerza NAC 0 en Apple)" onchange="renderQ()"></div>
+      <div><label class="lbl">Oportunidad <span style="color:var(--ct2);font-weight:400">— opcional, solo para las líneas de Poly</span></label><input id="opg" type="text" placeholder="Dejar vacío si no aplica"></div>
       <div>
-        <label class="lbl">Ejecutivo</label>
+        <label class="lbl">Ejecutivo <span class="req">*</span></label>
         <select id="exec"><option value="">Seleccionar ejecutivo</option></select>
       </div>
       <div>
@@ -152,9 +156,6 @@
           <option value="Perdido">Perdido</option>
         </select>
       </div>
-      <!-- "FOB" al principio de Observaciones fuerza nacionalización 0 en las
-           líneas de Apple, igual que en su cotizador. -->
-      <div><label class="lbl">Observaciones</label><input id="obs" type="text" placeholder="Notas del pedido... (empezar con FOB fuerza NAC 0 en Apple)" onchange="renderQ()"></div>
       <div>
         <label class="lbl">Moneda</label>
         <div style="display:flex;gap:8px">
@@ -296,7 +297,7 @@
   </div>
   <div class="card" style="margin-bottom:12px">
     <div class="gf">
-      <div><label class="lbl">Buscar cliente / proyecto</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
+      <div><label class="lbl">Buscar canal / cliente final</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
       <div><label class="lbl">Ejecutivo</label><select id="hexec" onchange="renderHistory()"><option value="">Todos</option></select></div>
       <div style="display:flex;align-items:flex-end"><button class="bo" style="width:100%" onclick="clearHF()">Limpiar</button></div>
     </div>

@@ -43,8 +43,15 @@ window.CEVEN_BRAND = {
      estado de la fila vale para todos sus articulos MENOS los que tengan uno
      configurado en particular (ver shared/pipeline-sku.js). La columna jsonb ya
      existia en la tabla `pipeline` desde 07/2026, asi que no hubo migracion. */
+  // `fechaMod` (08/09/2026): ISO de la ultima modificacion real de la fila, la
+  //   sella savePipeline() (shared). Columna ya existente en Supabase
+  //   (20260818130000) — declarativo, sin migracion.
+  // `mesAutoRoll` (08/09/2026): mes de cierre ORIGINAL de una fila que el
+  //   sistema movio al mes actual por estar vencida y abierta. Columna nueva:
+  //   migracion 20260908120000, aplicar ANTES de deployar esto.
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto',
-    'ejecutivo','mesCierre','estado','monto','moneda','perdidoMotivo','skuStatus'],
+    'ejecutivo','mesCierre','estado','monto','moneda','perdidoMotivo','skuStatus',
+    'fechaMod','mesAutoRoll'],
 
   numCols: ['id','qNum','clienteId','monto'],
 
@@ -59,7 +66,9 @@ window.CEVEN_BRAND = {
   padCols: { qNum: 4 },
 
   // Escalares que aceptan NULL: hay que emitirlos explicitamente como null.
-  nullableCols: ['mesCierre','proyecto','clienteId'],
+  // `mesAutoRoll` se limpia al editar el mes a mano / restaurar de la cajita;
+  // `fechaMod` NO va aca (nunca se vacia).
+  nullableCols: ['mesCierre','proyecto','clienteId','mesAutoRoll'],
 
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   localOnlyCols: [],
@@ -111,9 +120,10 @@ window.CEVEN_BRAND = {
 
   /* --- Pipeline: vista (shared/pipeline-ui.js) ---------------------- */
 
-  // Una columna menos que Poly (sin OPG): Fecha/Ejecutivo/Cotiz./Proyecto/
-  // Cierre estimado/Estado/Monto/Acciones = 8.
-  pipeColCount: 8,
+  // Fecha/Ejecutivo/Cotiz./Cliente final/Proyecto-observaciones/Cierre
+  // estimado/Estado/Monto/Acciones = 9 (sin OPG, con Proyecto/observaciones
+  // desde 08/09/2026).
+  pipeColCount: 9,
 
   pipeSortDescCols: ['monto','fechaISO'],
 

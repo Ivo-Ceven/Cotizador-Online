@@ -190,9 +190,10 @@ function renderHistory(){
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bsr" data-act="del" data-qn="'+qnA+'">✕</button>' : '')
       +'</div>'
       +'<div class="hist-card-info" style="display:flex;gap:16px;flex-wrap:wrap;padding:9px 14px;border-bottom:0.5px solid #f0f0f0;font-size:13px">'
-        +'<div><span class="lbl">Cliente</span><strong>'+cevenEsc(first['Cliente']||'—')+'</strong></div>'
-        +'<div><span class="lbl">OPG</span>'+cevenEsc(first['OPG']||'—')+'</div>'
-        +'<div><span class="lbl">Proyecto</span>'+cevenEsc(first['Proyecto']||'—')+'</div>'
+        +'<div><span class="lbl">Canal</span><strong>'+cevenEsc(first['Cliente']||'—')+'</strong></div>'
+        +'<div><span class="lbl">Oportunidad</span>'+cevenEsc(first['OPG']||'—')+'</div>'
+        +'<div><span class="lbl">Cliente final</span>'+cevenEsc(first['Proyecto']||'—')+'</div>'
+        +'<div><span class="lbl">Proyecto/observaciones</span>'+cevenEsc(first['Observaciones']||'—')+'</div>'
         +'<div><span class="lbl">Ejecutivo</span>'+cevenEsc(first['Ejecutivo']||'—')+'</div>'
         +'<div style="margin-left:auto;text-align:right"><span class="lbl">Total'+(hayOpcB?' · Opción '+cevenOpcLetra(opcEf):'')+'</span><strong style="font-size:15px">USD '+fI(gt)+'</strong></div>'
       +'</div>'

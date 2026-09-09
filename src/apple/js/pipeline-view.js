@@ -177,7 +177,7 @@ function renderPipeline(){
        que es justo el bug que se está arreglando, por otro camino. */
     else if(!r.skuMesCierre || !Object.keys(r.skuMesCierre).length) haySinFecha = true;
   });
-  monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha);
+  monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha, pipe);
 
   /* El filtro se aplica en DOS pasos, y el intermedio no es cosmético: las
      pastillas de "Top clientes" salen de `sinBuscar` —todo menos el texto del
@@ -731,6 +731,13 @@ function renderPipeline(){
     var mesSel = cevenMonthField(curMC, ' data-pact="mes"'+rowA, {cls:'mpk-sm'});
 
     var estado = r.estado || 'Cotizado';
+    /* "Proyecto/observaciones": texto libre de la cotización (clave
+       `Observaciones` de cquotes). No es una columna propia del pipeline —
+       se lee por número de cotización en CADA render. Las filas virtuales
+       comparten el qNum real, así que muestran lo mismo. */
+    var _obsRow = r.qNum ? pipeDB.filter(function(x){ return x['N° Cotización'] === r.qNum; })[0] : null;
+    var obsTxt = _obsRow ? String(_obsRow['Observaciones'] || '') : '';
+    if(obsTxt === '—') obsTxt = '';
     // Opciones desde shared/pipeline-status.js, que también conserva un estado
     // guardado fuera de la lista en vez de cambiarlo en silencio.
     var statusSel = '<select data-pact="status"'+rowA+' style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
@@ -775,7 +782,8 @@ function renderPipeline(){
         +cevenOpcChipPipeHTML(pipeDB.filter(function(x){ return x['N° Cotización'] === r.qNum; }), ' data-pact="opc"'+rowA)
       +'</div></td>'
       +'<td><div title="'+cevenEsc(r.proyecto||'')+'" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
-      +'<td style="font-size:12px;white-space:nowrap">'+mesSel+'</td>'
+      +'<td style="font-size:12px;color:#6e6e73"><div'+(obsTxt?' title="'+cevenEsc(obsTxt)+'"':'')+' style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(obsTxt||'—')+'</div></td>'
+      +'<td style="font-size:12px;white-space:nowrap">'+mesSel+(r._virtual ? '' : cevenMesAutoRollBadge(r))+'</td>'
       +'<td style="text-align:center">'+statusSel+'</td>'
       +cell(r.qMac,  fam==='mac')
       +cell(r.qIph,  fam==='iphone')
@@ -830,7 +838,7 @@ function renderPipeline(){
   var _vacio = _hayFiltros
     ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Limpiar filtros".'
     : 'El pipeline está vacío. Cargá una cotización y tocá "Agregar al pipeline".';
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="15" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="16" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
 }
 

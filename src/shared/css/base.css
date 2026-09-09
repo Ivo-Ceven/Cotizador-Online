@@ -64,6 +64,15 @@ table,input,select,textarea,.si,.kpi,.bk,.tgt-inp{font-variant-numeric:tabular-n
 .h3{font-size:14px;font-weight:600;letter-spacing:-.006em}
 .sub{font-size:12px;color:var(--ct2);line-height:1.45}
 .lbl{font-size:10.5px;color:var(--ct2);display:block;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.55px}
+/* Asterisco de campo obligatorio dentro de una .lbl. El color propio del <span>
+   gana sobre el color heredado de .lbl (incluido el !important de modo oscuro,
+   que apunta a .lbl y no a su hijo). */
+.lbl .req{color:var(--cred);font-weight:700}
+
+/* Los dos <select> del dashboard del pipeline (mes de cierre y canal) que
+   reemplazaron a las pastillas. Heredan color/borde/fondo del `select` de más
+   abajo (y su override de modo oscuro); acá solo el tamaño y la forma. */
+.pipe-flt-sel{font-size:12px;font-weight:500;padding:5px 11px;border-radius:980px;max-width:250px;cursor:pointer}
 
 /* ═══════════════════ NAVBAR ═══════════════════
    Barra superior compartida (shared/navbar.js). Es la única señal

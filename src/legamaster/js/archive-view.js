@@ -51,7 +51,7 @@ function renderArchiveMonth(monthKey, entries){
   document.getElementById('dash-by-status').innerHTML = pillsHtml;
 
   var html = _pipeTablaHTML(entries, 'a:' + monthKey, {monthKey: monthKey, mesLabel: lbl});
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#aeaeb2;padding:24px">No hay proyectos archivados en '+cevenEsc(lbl)+'. Elegí "Pipeline actual" en Vista para volver.</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">No hay proyectos archivados en '+cevenEsc(lbl)+'. Elegí "Pipeline actual" en Vista para volver.</td></tr>';
   attachPipeSortHandlers();
   pipeBindDelegation();
 }
@@ -83,6 +83,7 @@ function restoreFromArchive(monthKey, id){
 
   var restored = JSON.parse(JSON.stringify(toRestore));
   restored.mesCierre = currentMonthKey();
+  delete restored.mesAutoRoll;   // decisión manual fresca: sin chapita "↪ auto"
   var pipe = getPipeline();
   pipe.push(restored);
   savePipeline(pipe);

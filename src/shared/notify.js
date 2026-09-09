@@ -257,7 +257,7 @@ function confirmModal(message, onConfirm, opts){
     '<div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:22px;width:380px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">'
       + '<div data-txt style="font-size:14px;color:#1d1d1f;line-height:1.5;margin-bottom:18px;white-space:pre-line"></div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end">'
-        + '<button data-cancel style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit">Cancelar</button>'
+        + '<button data-cancel style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit">'+(opts.cancelLabel||'Cancelar')+'</button>'
         + '<button data-ok style="border:none;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;background:'+(opts.danger?'#d70015':'#1d1d1f')+';color:#fff;font-family:inherit">'+(opts.okLabel||'Confirmar')+'</button>'
       + '</div>'
     + '</div>';

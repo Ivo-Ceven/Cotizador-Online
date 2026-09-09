@@ -138,6 +138,14 @@ function renderArchiveMonth(monthKey, entries){
   });
   if(archMonths.indexOf(curKey)===-1) mesOpts += '<option value="'+cevenEsc(curKey)+'">Pipeline activo</option>';
   var archiveDB = getDB();
+  /* "Proyecto/observaciones": texto libre de la cotización (clave `Observaciones`
+     de cquotes, que NO se archiva). Se lee por número de cotización. */
+  function _archObs(r){
+    if(!r.qNum) return '';
+    var row = archiveDB.filter(function(x){ return x['N° Cotización'] === r.qNum; })[0];
+    var v = row ? String(row['Observaciones'] || '') : '';
+    return v === '—' ? '' : v;
+  }
   var monthA = ' data-amonth="'+cevenEsc(monthKey)+'"';
   entries.forEach(function(r){
     var mesC = r.mesCierre || '—';
@@ -164,6 +172,7 @@ function renderArchiveMonth(monthKey, entries){
       +'<td style="font-size:12px">'+cevenEsc(r.ejecutivo||'—')+'</td>'
       +'<td style="font-weight:500"><div style="display:flex;align-items:center;gap:4px"><div title="'+cevenEsc(r.cliente||'')+'" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.cliente)+'</div>'+partialBadge+'</div></td>'
       +'<td><div title="'+cevenEsc(r.proyecto||'')+'" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(r.proyecto||'—')+'</div></td>'
+      +'<td style="font-size:12px;color:#6e6e73"><div style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+cevenEsc(_archObs(r)||'—')+'</div></td>'
       +'<td style="font-size:12px">'+mesSel+'</td>'
       +'<td style="text-align:center"><span style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:'+fg+';background:'+(r.estado==='Facturado'?'#e0f5f1':'#fbbebe')+'">'+cevenEsc(r.estado)+'</span>'
         +(r.estado === 'Perdido'
@@ -190,6 +199,7 @@ function renderArchiveMonth(monthKey, entries){
       +'<td style="font-size:12px">Ceven</td>'
       +'<td style="font-weight:600;color:#0071e3">Otras ventas <span style="font-size:9px;font-weight:400;color:#6e6e73;margin-left:4px">ajuste manual</span></td>'
       +'<td style="color:#6e6e73;font-size:11px">Diferencia</td>'
+      +'<td></td>'
       +'<td><span style="font-size:11px;color:#6e6e73">'+cevenEsc(lbl)+'</span></td>'
       +'<td style="text-align:center"><span style="border-radius:980px;padding:2px 10px;font-size:11px;font-weight:700;color:#0a5c30;background:#e0f5f1">Facturado</span></td>'
       +'<td style="text-align:center">'+cevenEsc(mnMac||'—')+'</td>'
@@ -204,7 +214,7 @@ function renderArchiveMonth(monthKey, entries){
       +'</td>'
     +'</tr>';
   }
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="15" style="text-align:center;color:#aeaeb2;padding:24px">No hay entradas para '+cevenEsc(lbl)+'</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="16" style="text-align:center;color:#aeaeb2;padding:24px">No hay entradas para '+cevenEsc(lbl)+'</td></tr>';
   attachPipeSortHandlers();
 }
 
@@ -247,7 +257,7 @@ function renderArchiveDetailRow(r, db){
   // se listarían las líneas de las dos.
   var lines = cevenOpcFilasDeCotiz(db, r.qNum, ['producto','garantia']);
   if(!lines.length){
-    return '<tr class="pipe-detail"><td colspan="15" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">No se encontraron líneas para esta cotización (#'+cevenEsc(r.qNum||'—')+') en el historial.</td></tr>';
+    return '<tr class="pipe-detail"><td colspan="16" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">No se encontraron líneas para esta cotización (#'+cevenEsc(r.qNum||'—')+') en el historial.</td></tr>';
   }
   var inner = '<div style="padding:10px 14px 14px;background:#fafafa">'
     +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Detalle por SKU · #'+cevenEsc(r.qNum)
@@ -289,7 +299,7 @@ function renderArchiveDetailRow(r, db){
     +'<td style="padding:7px 10px;text-align:right;color:#6e6e73">MgPd '+mgPd+'</td>'
     +'<td style="padding:7px 10px;text-align:right">USD '+fI(totMonto)+'</td>'
   +'</tr></tfoot></table></div>';
-  return '<tr class="pipe-detail"><td colspan="15" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
+  return '<tr class="pipe-detail"><td colspan="16" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
 }
 
 function restoreFromArchive(monthKey, id){
@@ -308,6 +318,7 @@ function restoreFromArchive(monthKey, id){
   // el deshacer.
   var restored = JSON.parse(JSON.stringify(toRestore));
   restored.mesCierre = currentMonthKey();
+  delete restored.mesAutoRoll;   // decisión manual fresca: sin chapita "↪ auto"
   var pipe = getPipeline();
   pipe.push(restored);
   savePipeline(pipe);

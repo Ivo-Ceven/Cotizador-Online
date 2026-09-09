@@ -58,10 +58,16 @@ function pipeRowSignature(e){
    lo que habia antes, comparando por firma — un guardado sin cambios no
    mueve la fecha. Es brand-agnostic a proposito (mismo criterio que
    pickPipe()/nullableCols en sync.js): corre para cualquier marca, pero
-   solo importa para las que declaren `fechaMod` en su pipeCols (hoy, Apple;
-   ver el comentario de brand.js). Para las demas queda como un campo local
-   sin uso, igual que padCols vacio en Poly. */
-function savePipeline(p){
+   solo importa para las que declaren `fechaMod` en su pipeCols (hoy Apple,
+   Poly y Legamaster; ver el comentario de brand.js).
+
+   `opts.systemChange === true`: el cambio lo hizo el SISTEMA, no una persona
+   (rollOverdueEntries() moviendo un cierre estimado vencido). En ese caso NO
+   se estampa `fechaMod` aunque la firma cambie — si no, el reloj de "dias sin
+   movimiento" se resetearia solo cada mes y la alerta de estancamiento nunca
+   dispararia. Un alta SI estampa (una fila nueva es actividad). */
+function savePipeline(p, opts){
+  var systemChange = !!(opts && opts.systemChange);
   // Lectura CRUDA del estado anterior, sin pasar por el re-relleno de ceros
   // de getPipeline(): comparar contra una versión repadeada podría marcar
   // "cambió" una entrada que en realidad quedó igual, y fechaMod dejaría de
@@ -73,7 +79,8 @@ function savePipeline(p){
   for(var j=0;j<p.length;j++){
     var e = p[j], old = prevById[e.id];
     if(!old){ if(!e.fechaMod) e.fechaMod = e.fecha || now; continue; }
-    e.fechaMod = (pipeRowSignature(e) !== pipeRowSignature(old)) ? now : old.fechaMod;
+    var changed = pipeRowSignature(e) !== pipeRowSignature(old);
+    e.fechaMod = (changed && !systemChange) ? now : old.fechaMod;
   }
   var ok = cevenLsSet(cevenK('cpipeline'), JSON.stringify(p));
   if(ok && typeof autoSnapshot === 'function') autoSnapshot();
@@ -89,4 +96,14 @@ function saveArchive(a){ return cevenLsSet(cevenK('carchive'), JSON.stringify(a)
 // Mes actual como "YYYY-MM"
 function currentMonthKey(){
   var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+
+/* 'YYYY-MM' + n meses -> 'YYYY-MM', con acarreo de año. `n` puede ser negativo.
+   Clave mal formada -> se devuelve tal cual. Lo usa el test del auto-roll y lo
+   va a necesitar la capa de alertas ("cuántos meses entre dos claves"). */
+function cevenMonthAdd(key, n){
+  var p = String(key || '').split('-'), y = +p[0], m = +p[1];
+  if(p.length !== 2 || isNaN(y) || isNaN(m)) return key;
+  var t = y * 12 + (m - 1) + (n || 0);
+  return Math.floor(t / 12) + '-' + String((t % 12) + 1).padStart(2, '0');
 }

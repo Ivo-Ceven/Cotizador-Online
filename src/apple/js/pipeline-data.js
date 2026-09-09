@@ -1,9 +1,48 @@
 
-// ── PIPELINE · ARCHIVADO (especifico de Apple) ──
+// ── PIPELINE · ARCHIVADO + AUTO-ROLL (especifico de Apple) ──
 // getPipeline/savePipeline/getArchive/saveArchive/currentMonthKey viven en
 // shared/pipeline-store.js: son identicos en las dos marcas. Lo de abajo NO:
 // Apple archiva porciones de una cotizacion SKU por SKU (parciales, familias
 // Mac/iPhone/iPad), Poly archiva la fila entera. Ver el comentario del modulo.
+
+/* Al entrar al pipeline, ANTES de archiveOldEntries(): toda fila ABIERTA (estado
+   raíz distinto de Facturado/Perdido) cuyo `mesCierre` sea un mes PASADO se mueve
+   al mes actual y se marca `mesAutoRoll` con el mes original (una sola vez) para
+   la chapita "↪ auto".
+
+   A nivel FILA solamente: NO se tocan los overrides `skuMesCierre` por línea —
+   son decisiones explícitas del vendedor, y la 2ª pasada de archiveOldEntries()
+   ya se lleva las porciones Facturadas de meses pasados. Una fila con overrides
+   se muestra explotada en filas virtuales, así que la chapita (gate
+   `!r._virtual` en pipeline-view.js) no se ve en ese caso — límite conocido.
+
+   {systemChange:true}: mover un cierre vencido NO es actividad del vendedor, así
+   que NO resetea `fechaMod` (si no, la alerta de estancamiento nunca dispara).
+   El mes auto-movido NO se espeja a `cquotes['Mes Cierre']` (eso pasa solo
+   cuando el vendedor confirma el mes a mano). Sin undo. */
+function rollOverdueEntries(){
+  var pipe = getPipeline();
+  var cur = currentMonthKey();
+  var cambios = 0, nuevos = 0;
+  pipe.forEach(function(r){
+    var mesC = r.mesCierre || '';
+    if(!mesC || mesC >= cur) return;
+    var estado = r.estado || 'Cotizado';
+    if(estado === 'Facturado' || estado === 'Perdido') return;   // la maneja archiveOldEntries
+    if(!r.mesAutoRoll){ r.mesAutoRoll = mesC; nuevos++; }         // NO se pisa en re-rolls
+    r.mesCierre = cur;
+    cambios++;
+  });
+  if(cambios > 0) savePipeline(pipe, {systemChange:true});
+  if(nuevos > 0){
+    showToast('↪ ' + nuevos + (nuevos === 1 ? ' cotización tenía' : ' cotizaciones tenían')
+      + ' el cierre estimado vencido — se movieron a ' + cevenMesLabel(cur)
+      + '. Si alguna ya cerró, poné el mes real y marcá Facturado.', {
+      actionLabel: 'Ver',
+      onAction: function(){ window._pipeMonthFilter = cur; renderPipeline(); }
+    });
+  }
+}
 
 // Al entrar al pipeline: mueve al archivo las entradas Facturadas/Perdidas de meses anteriores
 function archiveOldEntries(){
@@ -23,6 +62,11 @@ function archiveOldEntries(){
       if(!archive[mesC]) archive[mesC] = [];
       var exists = archive[mesC].some(function(x){ return x.id === r.id && !x._fromPartial; });
       if(!exists){ archive[mesC].push(r); moved++; }
+      // Si `exists`, la fila NO se re-copia pero tampoco vuelve a `toKeep`: hay
+      // que sacarla del pipeline vivo igual. El guardado de abajo mira si
+      // `toKeep` se achicó, no solo `moved` — antes una fila que YA estaba
+      // archivada (la resucitó una carrera de sync entre `carchive` y la tabla
+      // `pipeline`) quedaba figurando en los DOS lados.
     } else {
       toKeep.push(r);
     }
@@ -153,7 +197,7 @@ function archiveOldEntries(){
     }
   });
 
-  if(moved > 0 || partialMoved > 0 || pipeChanged){
+  if(moved > 0 || partialMoved > 0 || pipeChanged || toKeep.length !== pipe.length){
     savePipeline(toKeep);
     saveArchive(archive);
     var msg = [];

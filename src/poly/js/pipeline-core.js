@@ -83,8 +83,8 @@ function addToPipeline(){
   var clienteId = (typeof cevenClienteIdParaNombre === 'function') ? cevenClienteIdParaNombre(client) : null;
   var opg      = (document.getElementById('opg').value||'').trim();
   var proyecto = (document.getElementById('proyecto').value||'').trim();
-  if(!client){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
-  if(!proyecto){ showToast('Cargá el proyecto (cliente final) antes de agregar al pipeline.'); return; }
+  if(!client){ showToast('Cargá el canal antes de agregar al pipeline.'); return; }
+  if(!proyecto){ showToast('Cargá el cliente final antes de agregar al pipeline.'); return; }
   // Sin ejecutivo la fila queda con ejecutivo '—' y cevenCanEditPipelineRow('—')
   // le niega la edición al propio autor. Se corta antes de tocar el pipeline.
   if(!cevenRequireExec()) return;
@@ -121,11 +121,11 @@ function addToPipeline(){
   } else {
     var row = pipe[idx];
     if(typeof pushPipeUndo === 'function') pushPipeUndo(row.id); // snapshot antes de mutar
-    /* Cambiar el nombre del proyecto sobre una cotización ya cargada suele
-       significar que se empezó un proyecto nuevo SIN tocar "＋ Nueva": se aplica
-       igual (nunca se pierde el clic), pero se avisa con opción de deshacer. */
+    /* Cambiar el cliente final sobre una cotización ya cargada suele significar
+       que se empezó otro trabajo SIN tocar "＋ Nueva": se aplica igual (nunca se
+       pierde el clic), pero se avisa con opción de deshacer. */
     if((row.proyecto||'').trim().toLowerCase() !== proyecto.toLowerCase()){
-      warnMsg = 'Actualizaste la cotización #'+qn+': el proyecto pasó de "'+(row.proyecto||'—')+'" a "'+proyecto+'". Si en realidad es un proyecto nuevo, deshacé y usá "＋ Nueva" antes de cargarlo.';
+      warnMsg = 'Actualizaste la cotización #'+qn+': el cliente final pasó de "'+(row.proyecto||'—')+'" a "'+proyecto+'". Si en realidad es otro cliente final, deshacé y usá "＋ Nueva" antes de cargarlo.';
     }
     row.proyecto  = proyecto;
     row.cliente   = client;

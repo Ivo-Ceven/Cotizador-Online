@@ -117,10 +117,43 @@ function cevenRefreshClienteDatalist(){
   }).join('');
 }
 
+/* Lo mismo para el campo "Cliente final" (id `proyecto`). No hay ficha ni tabla
+   propia: la lista sale de lo que ya se escribió antes en el pipeline y en el
+   historial (clave `Proyecto` de cquotes). Mismo objetivo que el de Canal:
+   que un typo no arme un "cliente final" nuevo que despues aparece como una
+   fila suelta en el pipeline. */
+function cevenProyectosConocidos(){
+  var seen = {}, out = [];
+  function _add(n){
+    n = String(n == null ? '' : n).trim();
+    if(!n || n === '—') return;
+    var k = cevenNormClient(n);
+    if(!k || seen[k]) return;
+    seen[k] = 1; out.push(n);
+  }
+  try{ if(typeof getPipeline === 'function') getPipeline().forEach(function(r){ _add(r.proyecto); }); }catch(e){}
+  try{ if(typeof getDB === 'function') getDB().forEach(function(r){ _add(r['Proyecto']); }); }catch(e){}
+  out.sort(function(a, b){ return a.localeCompare(b); });
+  return out;
+}
+
+function cevenRefreshProyectoDatalist(){
+  var dl = document.getElementById('proyecto-datalist');
+  if(!dl) return;
+  dl.innerHTML = cevenProyectosConocidos().map(function(n){
+    return '<option value="' + cevenEsc(n) + '">';
+  }).join('');
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
    COMBO DE CLIENTE  ·  reemplaza al <datalist> nativo
    ----------------------------------------------------------------------------
-   El campo Cliente usaba `list="cliente-datalist"`, o sea el desplegable nativo
+   Sirve a DOS campos (ver `CAMPOS` abajo): "Canal" (id `client`, con nivel de
+   precio al lado) y "Cliente final" (id `proyecto`, sin nivel). Cada uno lee su
+   propio <datalist>; el resto —matching, teclado, cartel de "no existe"— es
+   común.
+
+   El campo Canal usaba `list="cliente-datalist"`, o sea el desplegable nativo
    del navegador. Cuatro problemas, y ninguno se arregla con CSS porque ese
    desplegable NO es estilable:
 
@@ -153,6 +186,17 @@ function cevenRefreshClienteDatalist(){
 (function(){
   var MAX_VISIBLES = 60;   // con 500 clientes, pintar todos traba el teclado
 
+  /* El mismo combo sirve a DOS campos. Cada uno trae su <datalist> (la fuente de
+     datos), si muestra el nivel de precio al lado, y cómo se nombra en los
+     carteles de "no existe / se va a crear". */
+  var CAMPOS = {
+    client:   { datalist: 'cliente-datalist',  aria: 'Canales',           conTier: true,  noun: 'canal',         nounPl: 'canales' },
+    proyecto: { datalist: 'proyecto-datalist', aria: 'Clientes finales',  conTier: false, noun: 'cliente final', nounPl: 'clientes finales' }
+  };
+  function _cfg(el){
+    return (el && el.tagName === 'INPUT' && CAMPOS[el.id]) ? CAMPOS[el.id] : null;
+  }
+
   var pop = null;    // el nodo abierto, o null
   var input = null;  // el <input> que lo abrió
   var items = [];    // [{nombre, tier}] de lo que se está mostrando
@@ -182,13 +226,16 @@ function cevenRefreshClienteDatalist(){
      no se cachea: la lista de la base llega asincrónica y puede engordar entre
      una apertura y la siguiente. */
   function _todos(){
-    var dl = document.getElementById('cliente-datalist');
+    // Sin un campo reconocido (p. ej. en los tests, que llaman _filtrar sin
+    // abrir el combo) se asume el de Canal, que es el comportamiento original.
+    var cfg = _cfg(input) || CAMPOS.client;
+    var dl = document.getElementById(cfg.datalist);
     if(!dl) return [];
     var opts = dl.querySelectorAll('option'), out = [], i;
     for(i = 0; i < opts.length; i++){
       var n = opts[i].value;
       if(!n) continue;
-      out.push({nombre: n, tier: cevenClienteTier(n)});
+      out.push({nombre: n, tier: cfg.conTier ? cevenClienteTier(n) : ''});
     }
     return out;
   }
@@ -260,15 +307,16 @@ function cevenRefreshClienteDatalist(){
     items = _filtrar(q);
     sel = -1;
 
+    var _cfgP = _cfg(input) || CAMPOS.client;
     var h = '';
     if(!items.length){
       /* Los dos vacíos son distintos y antes decían lo mismo (nada). Con la
          lista cargada, "no hay ninguno con ese nombre" es además el aviso de
-         que se está por crear un cliente nuevo — que después arma su propio
-         grupo en el pipeline, y ahí ya es tarde para ver el typo. */
+         que se está por crear uno nuevo — que después arma su propia fila/grupo
+         en el pipeline, y ahí ya es tarde para ver el typo. */
       h = '<div class="cbo-vacio">' + ((_todos().length && q.trim())
-        ? '<b>Sin coincidencias.</b><br>Se va a crear como cliente nuevo.'
-        : 'Todavía no hay clientes cargados.') + '</div>';
+        ? '<b>Sin coincidencias.</b><br>Se va a crear como ' + _cfgP.noun + ' nuevo.'
+        : ('Todavía no hay ' + _cfgP.nounPl + ' cargados.')) + '</div>';
     } else {
       var actual = cevenNormClient(q);
       for(var i = 0; i < items.length; i++){
@@ -326,7 +374,7 @@ function cevenRefreshClienteDatalist(){
     pop = document.createElement('div');
     pop.className = 'cbo-pop';
     pop.setAttribute('role', 'listbox');
-    pop.setAttribute('aria-label', 'Clientes');
+    pop.setAttribute('aria-label', (_cfg(el) || CAMPOS.client).aria);
     document.body.appendChild(pop);
     el.setAttribute('aria-expanded', 'true');
     _pintar();
@@ -337,7 +385,7 @@ function cevenRefreshClienteDatalist(){
      no existir todavía cuando este archivo corre, así que engancharse al
      elemento no serviría. */
   function _esCampo(t){
-    return !!(t && t.id === 'client' && t.tagName === 'INPUT');
+    return !!_cfg(t);
   }
 
   // focusin y no focus: focus no burbujea, así que no se puede delegar.

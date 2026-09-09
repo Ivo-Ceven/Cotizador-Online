@@ -54,8 +54,8 @@ function addToPipeline(){
   var client   = (document.getElementById('client').value||'').trim();
   var clienteId = (typeof cevenClienteIdParaNombre === 'function') ? cevenClienteIdParaNombre(client) : null;
   var proyecto = (document.getElementById('proyecto').value||'').trim();
-  if(!client){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
-  if(!proyecto){ showToast('Cargá el proyecto (cliente final) antes de agregar al pipeline.'); return; }
+  if(!client){ showToast('Cargá el canal antes de agregar al pipeline.'); return; }
+  if(!proyecto){ showToast('Cargá el cliente final antes de agregar al pipeline.'); return; }
   if(!cevenRequireExec()) return;
 
   var exec      = cevenExecActual();
@@ -86,7 +86,7 @@ function addToPipeline(){
     var row = pipe[idx];
     if(typeof pushPipeUndo === 'function') pushPipeUndo(row.id);
     if((row.proyecto||'').trim().toLowerCase() !== proyecto.toLowerCase()){
-      warnMsg = 'Actualizaste la cotización #'+qn+': el proyecto pasó de "'+(row.proyecto||'—')+'" a "'+proyecto+'". Si en realidad es un proyecto nuevo, deshacé y usá "＋ Nueva" antes de cargarlo.';
+      warnMsg = 'Actualizaste la cotización #'+qn+': el cliente final pasó de "'+(row.proyecto||'—')+'" a "'+proyecto+'". Si en realidad es otro cliente final, deshacé y usá "＋ Nueva" antes de cargarlo.';
     }
     row.proyecto  = proyecto;
     row.cliente   = client;

@@ -44,8 +44,15 @@ window.CEVEN_BRAND = {
      configurado en particular (ver shared/pipeline-sku.js). La columna jsonb
      ya existia en la tabla `pipeline` desde 07/2026 —la usaba solo Apple—, asi
      que esto es declarativo: no hubo migracion. */
+  // `fechaMod` (08/09/2026): ISO de la ultima modificacion real de la fila, la
+  //   sella savePipeline() (shared). La columna ya existia en Supabase desde
+  //   20260818130000 (la usaba solo Apple) — esto es declarativo, sin migracion.
+  // `mesAutoRoll` (08/09/2026): mes de cierre ORIGINAL de una fila que el
+  //   sistema movio al mes actual por estar vencida y abierta. Columna nueva:
+  //   migracion 20260908120000, que se aplica ANTES de deployar esto.
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','opg',
-    'ejecutivo','mesCierre','estado','monto','moneda','factura','perdidoMotivo','skuStatus'],
+    'ejecutivo','mesCierre','estado','monto','moneda','factura','perdidoMotivo','skuStatus',
+    'fechaMod','mesAutoRoll'],
 
   numCols: ['id','qNum','clienteId','monto'],
 
@@ -69,7 +76,10 @@ window.CEVEN_BRAND = {
   // Es ademas el caso que motivo `nullableCols`: al vaciar el campo se seteaba null,
   // el upsert omitia la columna, PostgREST conservaba el numero viejo y el poll
   // lo revertia — re-renderizando la tabla cada 15s para siempre.
-  nullableCols: ['opg','factura','mesCierre','proyecto','clienteId'],
+  // `mesAutoRoll` se limpia (delete) cuando el vendedor edita el mes a mano o
+  // restaura de la cajita: hay que emitirlo como null explicito o el poll lo
+  // revierte. `fechaMod` NO va aca: nunca se vacia, siempre es un ISO.
+  nullableCols: ['opg','factura','mesCierre','proyecto','clienteId','mesAutoRoll'],
 
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   localOnlyCols: [],
@@ -153,7 +163,8 @@ window.CEVEN_BRAND = {
   // Poly no tiene las columnas de unidades por familia ni margen.
   // Cuantas columnas tiene la tabla: el <tr> de encabezado de cada cliente lo
   // necesita para el colspan (shared/pipeline-group.js).
-  pipeColCount: 9,
+  // 10 desde 08/09/2026: se sumo la columna "Proyecto/observaciones".
+  pipeColCount: 10,
 
   pipeSortDescCols: ['monto','fechaISO'],
 

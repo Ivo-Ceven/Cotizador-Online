@@ -60,6 +60,8 @@
 
   if(typeof cevenRefreshClienteDatalist === 'function') cevenRefreshClienteDatalist();
   if(typeof cevenClientesDbRefreshDatalist === 'function') cevenClientesDbRefreshDatalist();
+  // Cliente final (id `proyecto`): mismo combo, lista de lo ya usado antes.
+  if(typeof cevenRefreshProyectoDatalist === 'function') cevenRefreshProyectoDatalist();
 
 })();
 

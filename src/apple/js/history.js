@@ -204,9 +204,10 @@ function renderHistory(){
         +(cevenCanEditQuote(first['Ejecutivo']) ? '<button class="bsr" data-hact="del"'+qnA+'>✕</button>' : '')
       +'</div>'
       +'<div class="hist-card-info" style="display:flex;gap:16px;flex-wrap:wrap;padding:9px 14px;border-bottom:0.5px solid #f0f0f0;font-size:13px">'
-        +'<div><span class="lbl">Cliente</span><strong>'+cevenEsc(first['Cliente']||'—')+'</strong></div>'
+        +'<div><span class="lbl">Canal</span><strong>'+cevenEsc(first['Cliente']||'—')+'</strong></div>'
+        +'<div><span class="lbl">Cliente final</span>'+cevenEsc(first['Proyecto']||'—')+'</div>'
         +'<div><span class="lbl">Ejecutivo</span>'+cevenEsc(first['Ejecutivo']||'—')+'</div>'
-        +'<div><span class="lbl">Observaciones</span>'+cevenEsc(first['Observaciones']||'—')+'</div>'
+        +'<div><span class="lbl">Proyecto/observaciones</span>'+cevenEsc(first['Observaciones']||'—')+'</div>'
         +totalBox
       +'</div>'
       +'<div style="overflow-x:auto"><table style="min-width:560px">'

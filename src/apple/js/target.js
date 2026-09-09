@@ -225,7 +225,7 @@ function renderSkuDashboard(){
       var clientRows=Object.keys(cmap).map(function(k){return cmap[k];});
       clientRows.sort(function(x,y){ return y.qty-x.qty; });
       var inner='<div style="padding:8px 14px 12px 24px;background:#fafafa">'
-        +'<div style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Clientes cotizando '+cevenEsc(a.sku)+'</div>'
+        +'<div style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Canales cotizando '+cevenEsc(a.sku)+'</div>'
         +'<table style="width:100%;border-collapse:collapse;font-size:12px">';
       clientRows.forEach(function(cr){
         inner+='<tr style="border-top:0.5px solid #eee">'

@@ -342,6 +342,35 @@
   }
   function snapKey(row){ return JSON.stringify(pickPipe(row)); }
 
+  /* Ids que YA están en el archivo (carchive) — no pueden estar además en el
+     pipeline vivo. Una fila así se resucita cuando otro equipo la re-sube a la
+     tabla `pipeline` antes de recibir el carchive nuevo, o cuando un DELETE no
+     pasó por permisos y el cliente lo dio por hecho. El merge del poll y del
+     arranque la filtran, y encolan su borrado del servidor.
+
+     Se lee de localStorage directo (no de getArchive()) para no depender del
+     orden de carga de pipeline-store.js. Cache por string crudo: el blob puede
+     ser grande y el poll corre cada 15 s. */
+  var _archIdCache = { raw: null, ids: {} };
+  function pipeArchivedIds(){
+    var raw = lsGet(window.cevenK('carchive'));
+    if(raw === _archIdCache.raw) return _archIdCache.ids;
+    var ids = {};
+    try{
+      var a = JSON.parse(raw || '{}');
+      if(a && typeof a === 'object'){
+        for(var mk in a){
+          var list = a[mk];
+          for(var i = 0; list && i < list.length; i++){
+            if(list[i] && list[i].id != null) ids[list[i].id] = 1;
+          }
+        }
+      }
+    }catch(e){}
+    _archIdCache = { raw: raw, ids: ids };
+    return ids;
+  }
+
   function padNum(v, len){
     var s = String(parseInt(v, 10) || 0);
     while(s.length < len) s = '0' + s;
@@ -677,6 +706,25 @@
         if(read.rows[i] && read.rows[i].id != null) localById[read.rows[i].id] = read.rows[i];
       }
       var merged = serverRows.map(function(sr){ return keepLocalOnly(sr, localById[sr.id]); }).sort(byId);
+
+      /* Una fila que ya está en el archivo (carchive) NO puede volver al
+         pipeline vivo. Si el servidor todavía la tiene —otro equipo la re-subió
+         antes de recibir el carchive nuevo, o su DELETE no pasó por permisos y
+         el cliente lo dio por hecho— se saca de acá y se encola su borrado del
+         servidor. Sin esto la fila "reaparece" en cada poll. */
+      var _arch = pipeArchivedIds();
+      if(!isEmpty(_arch)){
+        var _resu = [];
+        merged = merged.filter(function(r){
+          if(r.id != null && _arch[r.id]){ _resu.push(String(r.id)); return false; }
+          return true;
+        });
+        if(_resu.length){
+          for(var _rd = 0; _rd < _resu.length; _rd++) _dirtyDel[_resu[_rd]] = 1;
+          markDirty(PIPE_KEY); saveDirty(); schedule(PIPE_KEY);
+        }
+      }
+
       // normPipe compara solo las columnas sincronizadas (pickPipe ignora las
       // localOnly), así que una diferencia únicamente local no reescribe nada.
       if(normPipe(read.rows) === normPipe(merged)) return;
@@ -816,12 +864,20 @@
     var rowLevel  = !isEmpty(_dirtyUp) || !isEmpty(_dirtyDel);
     var allLocal  = (_dirty[PIPE_KEY] !== undefined) && !rowLevel;
 
+    /* Igual que en el poll: una fila que está en el archivo NO entra al pipeline
+       vivo, ni siquiera si el servidor o el local todavía la tienen. Se encola
+       su borrado. El archivo gana incluso sobre _dirtyUp: si se archivó, la
+       decisión fue sacarla del vivo. */
+    var _arch = pipeArchivedIds();
+    var _archDel = 0;
+
     var out = [], pushIds = [], seen = {};
     for(i = 0; i < serverRows.length; i++){
       r = serverRows[i];
       if(r.id == null) continue;
       seen[r.id] = 1;
       if(_dirtyDel[r.id]) continue;
+      if(_arch[r.id]){ _dirtyDel[r.id] = 1; _archDel++; continue; }
       var lr = localById[r.id];
       if(lr && (allLocal || _dirtyUp[r.id])){ out.push(lr); pushIds.push(r.id); }
       else out.push(keepLocalOnly(r, lr));
@@ -829,6 +885,7 @@
     for(i = 0; i < localRows.length; i++){
       r = localRows[i];
       if(!r || r.id == null || seen[r.id] || _dirtyDel[r.id]) continue;
+      if(_arch[r.id]){ _dirtyDel[r.id] = 1; _archDel++; continue; }
       out.push(r); pushIds.push(r.id);
     }
     out.sort(byId);
@@ -845,8 +902,11 @@
     }
     if(pushIds.length){
       console.log('[sync] arranque: ' + pushIds.length + ' fila(s) local(es) sin subir — se pushean');
-      markDirty(PIPE_KEY);
       pushIds.forEach(function(x){ _dirtyUp[x] = 1; });
+    }
+    if(pushIds.length || _archDel){
+      if(_archDel) console.log('[sync] arranque: ' + _archDel + ' fila(s) ya archivada(s) seguían en la tabla pipeline — se borran');
+      markDirty(PIPE_KEY);
       saveDirty();
     }
   }
@@ -906,6 +966,15 @@
       if(!f){
         f = localStorage.getItem('_ceven_import_reload') === '1';
         if(f) localStorage.removeItem('_ceven_import_reload');
+      }
+      // Flag POR MARCA: lo deja un restore de backup COMBINADO (varias marcas en
+      // un archivo). Cada cotizador consume el suyo la primera vez que se abre y
+      // empuja su parte restaurada — ver _applyCombinedBackupRestore() en
+      // shared/backup.js.
+      if(!f){
+        var bk = cevenK('cimport_reload');
+        f = lsGet(bk) === '1';
+        if(f) try{ localStorage.removeItem(bk); }catch(e){}
       }
     }catch(e){}
     return f;

@@ -76,7 +76,7 @@
         <summary title="Más acciones" aria-label="Más acciones">⋯</summary>
         <div class="ovf-menu">
           <div class="ovf-hd">Copia de seguridad</div>
-          <button onclick="exportFullBackup()"><span class="act-i">⬇️</span>Descargar backup completo</button>
+          <button onclick="exportCombinedFullBackup()"><span class="act-i">⬇️</span>Descargar backup completo</button>
           <button onclick="document.getElementById('backup-import').click()"><span class="act-i">⬆️</span>Restaurar desde un archivo</button>
         </div>
       </details>
@@ -85,8 +85,8 @@
   </div>
   <div class="card">
     <div class="g2">
-      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Buscar o escribir un cliente" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
-      <div><label class="lbl">Ejecutivo</label>
+      <div><label class="lbl">Canal <span class="req">*</span></label><input id="client" type="text" placeholder="Buscar o escribir un canal" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
+      <div><label class="lbl">Ejecutivo <span class="req">*</span></label>
         <select id="exec">
           <option value="">Seleccionar ejecutivo</option>
           <option>Fer Castro</option><option>Tsu Rivas</option><option>Jenny Tofel</option>
@@ -110,13 +110,13 @@
           <option value="Perdido">Perdido</option>
         </select>
       </div>
-      <!-- Eran UN solo campo: `Proyecto` en cquotes se guardaba con el mismo
-           texto que `Observaciones`, así que el pipeline agrupado por proyecto
-           mostraba notas sueltas. Ahora son dos.
+      <!-- Eran UN solo campo: `Proyecto` en cquotes (la clave NO cambió) se
+           guardaba con el mismo texto que `Observaciones`, así que el pipeline
+           agrupado por cliente final mostraba notas sueltas. Ahora son dos.
            OJO: el marcador FOB (que pone la nacionalización en 0%) se sigue
            leyendo de Observaciones — ver isCotizacionFOB() en catalog.js. -->
-      <div><label class="lbl">Proyecto</label><input id="proyecto" type="text" placeholder="Nombre o referencia del proyecto..."></div>
-      <div><label class="lbl">Observaciones <span style="color:#6e6e73;font-weight:400">— escribí FOB acá si la cotización lo es</span></label><input id="obs" type="text" placeholder="Notas de la cotización..." oninput="onObsChange()"></div>
+      <div><label class="lbl">Cliente <span class="req">*</span> <span style="color:#6e6e73;font-weight:400">(cliente final)</span></label><input id="proyecto" type="text" placeholder="Buscar o escribir un cliente final" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false"><datalist id="proyecto-datalist"></datalist></div>
+      <div><label class="lbl">Proyecto/observaciones <span style="color:#6e6e73;font-weight:400">— escribí FOB acá si la cotización lo es</span></label><input id="obs" type="text" placeholder="Referencia del proyecto o nota de la cotización..." oninput="onObsChange()"></div>
     </div>
   </div>
   <!-- Barra de opciones A/B (shared/opciones.js). Con una sola opción es solo
@@ -397,7 +397,7 @@
   </div>
   <div class="card" style="margin-bottom:12px">
     <div class="gf">
-      <div><label class="lbl">Buscar cliente</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
+      <div><label class="lbl">Buscar canal</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
       <div><label class="lbl">Ejecutivo</label><select id="hexec" onchange="renderHistory()"><option value="">Todos</option><option>Fer Castro</option><option>Tsu Rivas</option><option>Jenny Tofel</option></select></div>
       <div><label class="lbl">Desde</label><input id="hfrom" type="date" onchange="renderHistory()"></div>
       <div><label class="lbl">Hasta</label><input id="hto" type="date" onchange="renderHistory()"></div>
@@ -427,7 +427,7 @@
       <option value="">Pipeline actual</option>
     </select>
     <button class="bo" onclick="openTargetAnual()" title="Ver y configurar objetivo anual de facturación" style="font-weight:600">📈 Target Anual</button>
-    <button class="bo" onclick="openSkuDashboard()" title="Análisis por SKU: unidades por estado y clientes" style="font-weight:600">📦 Por SKU</button>
+    <button class="bo" onclick="openSkuDashboard()" title="Análisis por SKU: unidades por estado y canales" style="font-weight:600">📦 Por SKU</button>
     <!-- "✕ Filtros" se fue de acá a la tarjeta de filtros de abajo, y pasó a
          llamarse "✕ Limpiar filtros" (24/08/2026): perdido entre Target, SKU,
          Excel y backup, no se encontraba cuando hacía falta — que es siempre
@@ -438,7 +438,7 @@
   </div>
   <div class="card" style="margin-bottom:12px">
     <div class="gf">
-      <div><label class="lbl">Buscar cliente / proyecto</label><input id="pipe-search" type="text" placeholder="..." oninput="renderPipeline()"></div>
+      <div><label class="lbl">Buscar canal / cliente final</label><input id="pipe-search" type="text" placeholder="..." oninput="renderPipeline()"></div>
       <div><label class="lbl">Ejecutivo</label><select id="pipe-exec" onchange="renderPipeline()"><option value="">Todos</option><option>Fer Castro</option><option>Tsu Rivas</option><option>Jenny Tofel</option></select></div>
       <div><label class="lbl">Familia</label>
         <select id="pipe-family" onchange="renderPipeline()">
@@ -527,13 +527,13 @@
       </div>
     </div>
     <!-- Filtros tipo pastillas: Cierre estimado + Top clientes en una sola fila -->
-    <div id="pipe-pills-row" style="display:flex;flex-wrap:nowrap;gap:8px 20px;align-items:center;margin-bottom:10px;overflow:hidden">
+    <div id="pipe-pills-row" style="display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;margin-bottom:10px">
       <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;flex-shrink:0">
         <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Cierre est.</span>
         <div id="pipe-month-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
       </div>
       <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;min-width:0">
-        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Top clientes</span>
+        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Top canales</span>
         <div id="pipe-topclients-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
       </div>
     </div>
@@ -542,13 +542,16 @@
   </div>
 
   <div class="tw">
-    <table style="min-width:1400px;--stk-act-w:160px">
+    <table style="min-width:1540px;--stk-act-w:160px">
       <thead><tr>
         <th class="srt" data-sort="fechaISO">Fecha</th>
         <th class="srt" data-sort="fechaMod" style="text-align:center" title="Última modificación real de la entrada">Modificado</th>
         <th class="srt" data-sort="ejecutivo">Ejecutivo</th>
-        <th class="srt" data-sort="cliente">Cliente</th>
-        <th class="srt" data-sort="proyecto">Proyecto</th>
+        <th class="srt" data-sort="cliente">Canal</th>
+        <th class="srt" data-sort="proyecto">Cliente final</th>
+        <!-- Texto libre de la cotización (clave `Observaciones` en cquotes): se
+             lee de la cotización por su número en cada render. -->
+        <th>Proyecto/observaciones</th>
         <th class="srt" data-sort="mesCierre" title="Mes estimado de cierre">Cierre est.</th>
         <th class="srt" data-sort="estado" style="text-align:center">Estado</th>
         <th class="srt" data-sort="qMac" style="text-align:center" title="Cantidad total de Mac (todos los modelos sumados)">Macs</th>

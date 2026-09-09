@@ -102,8 +102,9 @@ function cevenPipeGroupBy(rows, opts){
     var r = rows[i];
     var crudo = String(r.cliente == null ? '' : r.cliente).trim();
     var k = cevenNormClient(crudo);
-    // Las filas sin cliente van juntas en su propio grupo en vez de perderse.
-    if(!k || k === '—'){ k = '(sin cliente)'; crudo = 'Sin cliente'; }
+    // Las filas sin canal van juntas en su propio grupo en vez de perderse.
+    // La clave interna '(sin cliente)' NO cambia (la compara pipeline-ui.js).
+    if(!k || k === '—'){ k = '(sin cliente)'; crudo = 'Sin canal'; }
 
     if(!mapa[k]){
       mapa[k] = { clave: k, label: crudo, rows: [], monto: 0, n: 0, _grafias: {} };

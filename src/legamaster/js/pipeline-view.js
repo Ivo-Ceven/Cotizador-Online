@@ -76,7 +76,7 @@ function renderPipeline(){
     if(r.mesCierre) mesesPresentes[r.mesCierre] = true;
     else haySinFecha = true;
   });
-  monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha);
+  monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha, pipe);
 
   var sinBuscar = pipe.filter(function(r){
     if(ex && r.ejecutivo !== ex) return false;
@@ -190,7 +190,7 @@ function renderPipeline(){
   var _vacio = _hayFiltros
     ? 'Ningún proyecto coincide con los filtros. Tocá "✕ Limpiar filtros".'
     : 'El pipeline está vacío. Cargá una cotización y tocá "Agregar al pipeline".';
-  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
+  document.getElementById('pipe-body').innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
   attachPipeSortHandlers();
   pipeBindDelegation();
 }
@@ -257,6 +257,12 @@ function _pipeTablaHTML(filas, scope, opts){
       var rowStyle = '';
       if(tint.bg) rowStyle += 'background:'+tint.bg;
       if(tint.fg) rowStyle += (rowStyle?';':'') + 'color:'+tint.fg;
+      /* "Proyecto/observaciones": texto libre de la cotización (clave
+         `Observaciones` de cquotes). No es una columna propia del pipeline —
+         se lee de la cotización por su número en CADA render. */
+      var _obsRow = r.qNum ? db().filter(function(x){ return x['N° Cotización'] === r.qNum; })[0] : null;
+      var obsTxt = _obsRow ? String(_obsRow['Observaciones'] || '') : '';
+      if(obsTxt === '—') obsTxt = '';
 
       /* Cuantos articulos tienen HOY un estado distinto al del proyecto: sin
          este aviso, el <select> de arriba dice "Cotizado" mientras la mitad de
@@ -284,7 +290,8 @@ function _pipeTablaHTML(filas, scope, opts){
         celdaAcc = _pipeBotonesCotiz(r)
           + '<button class="bs" data-act="restore" data-k="'+kA+'" data-mk="'+cevenEsc(opts.monthKey||'')+'" title="Devolver este proyecto al pipeline actual" style="font-size:11px;padding:2px 8px">↩ Restaurar</button>';
       } else {
-        celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'});
+        celdaMes = cevenMonthField(r.mesCierre||'', ' data-act="mes" data-k="'+kA+'"', {cls:'mpk-sm'})
+          + cevenMesAutoRollBadge(r);
         celdaEstado = '<select data-act="est" data-k="'+kA+'" title="Cambia el estado de todos los artículos, menos los que tengan uno propio" style="padding:3px 6px;border:0.5px solid #d2d2d7;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;width:100%">'
           + cevenEstadoOptions(estado, false) + '</select>'
           + chipPropios
@@ -309,6 +316,9 @@ function _pipeTablaHTML(filas, scope, opts){
           +cevenEsc(r.proyecto||'—')
           +' <span style="color:#6e6e73;font-size:11px;white-space:nowrap">▸</span>'
         +'</div></td>'
+        +'<td style="font-size:12px;color:#6e6e73">'
+          +'<div style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"'+(obsTxt?' title="'+cevenEsc(obsTxt)+'"':'')+'>'+cevenEsc(obsTxt||'—')+'</div>'
+        +'</td>'
         +'<td style="font-size:12px;white-space:nowrap">'+celdaMes+'</td>'
         +'<td style="text-align:center">'+celdaEstado+'</td>'
         +'<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px'+(tint.bg?';background:'+tint.bg:'')+(tint.fg?';color:'+tint.fg:'')+'">USD '+fI(r.monto||0)+'</td>'

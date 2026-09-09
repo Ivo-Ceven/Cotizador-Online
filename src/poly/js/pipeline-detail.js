@@ -85,7 +85,7 @@ function editOpgValue(id){
   if(idx < 0) return;
   if(!cevenCanEditPipelineRow(pipe[idx].ejecutivo)){ showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.'); return; }
   var current = pipe[idx].opg || '';
-  promptModal('Editar OPG (pegá acá el código REGI de HP para vincular este proyecto)', current, function(val){
+  promptModal('Editar Oportunidad (pegá acá el código REGI de HP para vincular este proyecto)', current, function(val){
     val = (val||'').trim();
     if(val === current) return;
     if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
@@ -93,7 +93,7 @@ function editOpgValue(id){
     for(var i=0;i<pipe2.length;i++){ if(pipe2[i].id === id){ pipe2[i].opg = val === '' ? null : val; break; } }
     savePipeline(pipe2);
     renderPipeline();
-    notifyUndo(val ? '✓ OPG actualizado' : '✓ OPG quitado', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
+    notifyUndo(val ? '✓ Oportunidad actualizada' : '✓ Oportunidad quitada', function(){ if(typeof undoPipelineChange==='function') undoPipelineChange(); });
   }, {okLabel:'Guardar'});
 }
 
@@ -132,7 +132,9 @@ function updatePipelineMesCierreValue(id, fullValue){
   var row = pipe.find(function(r){ return r.id === id; });
   if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.'); return; }
   if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
-  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ pipe[i].mesCierre = fullValue || ''; break; } }
+  // Editar el mes a mano confirma el cierre: se limpia la marca de auto-movido
+  // (chapita "↪ auto"). Ver rollOverdueEntries() en pipeline-data.js.
+  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ pipe[i].mesCierre = fullValue || ''; delete pipe[i].mesAutoRoll; break; } }
   savePipeline(pipe);
   renderPipeline();
 }
@@ -188,7 +190,7 @@ function renderPipelineDetailRow(r, esArchivo, db){
   if(!lines.length){
     /* La cotización puede haberse borrado del historial y la fila del pipeline
        sobrevive: decirlo es mejor que mostrar una tabla vacía. */
-    return '<tr class="pipe-detail"><td colspan="9" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">'
+    return '<tr class="pipe-detail"><td colspan="10" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">'
       + 'No se encontraron los artículos de la cotización #' + cevenEsc(qn||'—')
       + ' — puede haberse borrado del historial.</td></tr>';
   }
@@ -258,7 +260,7 @@ function renderPipelineDetailRow(r, esArchivo, db){
   var inner = '<div style="padding:10px 14px 14px;background:#fafafa">'
     +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">'
       +'Artículos · cotización <span data-act="openq" data-qn="'+qnA+'" style="color:var(--acc,#0071e3);font-weight:700;cursor:pointer">#'+qnA+'</span>'
-      +(r.opg ? ' · OPG '+cevenEsc(r.opg) : '')
+      +(r.opg ? ' · Oportunidad '+cevenEsc(r.opg) : '')
     +'</div>'
     +'<table style="width:100%;font-size:12px;border-collapse:collapse;background:#fff;border:0.5px solid #e5e5e7;border-radius:8px;overflow:hidden">'
     +'<thead><tr style="background:#f5f5f7">'
@@ -276,7 +278,7 @@ function renderPipelineDetailRow(r, esArchivo, db){
       +'<td style="padding:6px 10px;text-align:right;font-weight:600">USD '+fI(total)+'</td>'
       +'<td colspan="2"></td>'
     +'</tr></tfoot></table></div>';
-  return '<tr class="pipe-detail"><td colspan="9" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
+  return '<tr class="pipe-detail"><td colspan="10" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
 }
 
 /* ── ESTADO PROPIO DE UNA LÍNEA ──────────────────────────────────────────────
@@ -404,6 +406,15 @@ function buildPipelineWorkbook(){
       return cevenEstadoLabel(st) + ': USD ' + Math.round(rep[st]);
     }).join(' · ');
   }
+  /* "Proyecto/observaciones": texto libre de la cotización (clave `Observaciones`
+     de cquotes). Igual que en pantalla, se lee de la cotización por su número. */
+  function _obsDe(r){
+    if(!r.qNum) return '';
+    if(_db === null) _db = getDB();
+    var row = _db.filter(function(x){ return x['N° Cotización'] === r.qNum; })[0];
+    var v = row ? String(row['Observaciones'] || '') : '';
+    return v === '—' ? '' : v;
+  }
 
   var data = pipe.map(function(r){
     var mesLabel = '';
@@ -424,6 +435,7 @@ function buildPipelineWorkbook(){
       'Cliente': r.cliente,
       'OPG': r.opg || '',
       'Proyecto': r.proyecto || '',
+      'Proyecto/observaciones': _obsDe(r),
       'Cotización': r.qNum || '',
       'Cierre estimado': mesLabel,
       'Estado': cevenEstadoLabel(r.estado || 'Cotizado'),
@@ -435,7 +447,7 @@ function buildPipelineWorkbook(){
     };
   });
   var ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{wch:11},{wch:18},{wch:24},{wch:14},{wch:26},{wch:12},{wch:14},{wch:13},{wch:34},{wch:14},{wch:16}];
+  ws['!cols'] = [{wch:11},{wch:18},{wch:24},{wch:14},{wch:26},{wch:30},{wch:12},{wch:14},{wch:13},{wch:34},{wch:14},{wch:16}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pipeline');
   return wb;

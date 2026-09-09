@@ -328,8 +328,8 @@ function emitirAMarcas(){
     return;
   }
   var ctx = cevenEmitirContexto();
-  if(ctx.cliente === '—'){ showToast('Cargá el nombre del cliente antes de emitir.'); return; }
-  if(ctx.proyecto === '—'){ showToast('Cargá el proyecto antes de emitir: Poly lo necesita para su pipeline.'); return; }
+  if(ctx.cliente === '—'){ showToast('Cargá el canal antes de emitir.'); return; }
+  if(ctx.proyecto === '—'){ showToast('Cargá el cliente final antes de emitir: Poly lo necesita para su pipeline.'); return; }
   if(typeof cevenRequireExec === 'function' && !cevenRequireExec()) return;
 
   var brands = cevenMultiMarcasDe(vigentes);

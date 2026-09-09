@@ -66,16 +66,17 @@ create table public.pipeline (
 --
 -- 🔴 FALTA "esFOB" (boolean), Y EL CLIENTE LA ESCRIBE.
 -- Este bloque describe la base REAL, verificada contra information_schema el
--- 12/08/2026. La columna "esFOB" está declarada en
--- supabase/migrations/20260803120000_poly_pipeline_por_proyecto.sql, pero esa
--- migración NUNCA se aplicó (y hoy no se puede: empieza borrando los datos de
--- Poly, que ya son reales — ver el bloque rojo de docs/HISTORIAL.md).
+-- 12/08/2026. La columna "esFOB" está en
+-- supabase/migrations/20260909120000_pipeline_esfob_y_comentarios.sql (extraída
+-- el 09/09/2026 del viejo 20260803120000, que se eliminó porque empezaba
+-- borrando datos reales de Poly — ver docs/HISTORIAL.md). Esa migración aún NO
+-- se aplicó.
 --
--- Consecuencia: TODO insert/upsert que incluya "esFOB" se rechaza con 400 y la
--- fila entera no entra. Le pasa al multimarca al emitir Apple, y al propio
--- cotizador de Apple, cuyo `pipeCols` la incluye — ahí sync.js se come el error
--- con un console.warn, así que falla en silencio (0 filas de Apple en la tabla).
--- El arreglo, cuando se decida hacerlo, es aditivo y de una línea:
+-- Consecuencia mientras no se aplique: TODO insert/upsert que incluya "esFOB" se
+-- rechaza con 400 y la fila entera no entra. Le pasa al multimarca al emitir
+-- Apple, y al propio cotizador de Apple, cuyo `pipeCols` la incluye — ahí
+-- sync.js se come el error con un console.warn, así que falla en silencio (0
+-- filas de Apple en la tabla). El arreglo es aditivo y de una línea:
 --     alter table public.pipeline add column if not exists "esFOB" boolean;
 
 -- Tareas del equipo: organizador colaborativo del SHELL (src/index.html), NO es

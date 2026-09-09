@@ -158,6 +158,9 @@ function importFullBackup(input){
   reader.onload = function(e){
     try {
       var snap = JSON.parse(e.target.result);
+      // Backup COMBINADO (las cuatro marcas en un archivo): se restaura desde
+      // cualquier cotizador. Ver _importCombinedBackup() más abajo.
+      if(snap._app === CEVEN_FULL_BACKUP_APP){ _importCombinedBackup(snap, input); return; }
       // El tag identifica marca ademas de app: un backup de otra marca
       // no puede entrar aca aunque comparta el navegador.
       if(snap._app !== b.appTag){
@@ -229,6 +232,242 @@ function _applyBackupRestore(snap){
   cevenLsSet('_ceven_import_reload','1'); // fallback para file://
   showToast('✓ Backup restaurado — recargando...');
   setTimeout(function(){ location.reload(); }, 1000);
+}
+
+
+/* ════════════════════════════════════════════════════════════════════════════
+   BACKUP COMBINADO  ·  las cuatro marcas en UN archivo
+   ----------------------------------------------------------------------------
+   El backup a carpeta (backup-folder.js) y el botón "Descargar backup completo"
+   escriben desde 09/09/2026 un solo `Ceven_Backup_Completo.json` con Poly,
+   Apple, Legamaster y Multimarca juntos. Se puede restaurar desde cualquier
+   cotizador; cada marca empuja SU parte a Supabase la primera vez que se abre
+   (flag `<prefix>cimport_reload`, ver readImportFlag() en sync.js).
+
+   Todas las páginas son el mismo origin, así que localStorage tiene las claves
+   de las cuatro marcas. Pero solo hay UN CEVEN_BRAND cargado y el prefijo de
+   Apple es '' (no se puede distinguir por prefijo). Por eso cada cotizador
+   PUBLICA su lista blanca al cargar (_ceven_bkbases_<id>) y el snapshot
+   combinado la lee; si un cotizador nunca se abrió, hay un fallback mínimo. */
+
+var CEVEN_FULL_BACKUP_BRANDS = ['poly', 'apple', 'legamaster', 'multi'];
+var CEVEN_FULL_BACKUP_APP    = 'CevenCotizadorFull';
+
+// Bases (sin prefijo) que entran al backup combinado de una marca: sus
+// settingKeys + el pipeline. `cdark` NO va acá — es del navegador y se guarda
+// una sola vez a nivel raíz.
+function _cevenBrandBackupBases(){
+  return (window.CEVEN_BRAND.settingKeys || [])
+    .concat(CEVEN_BACKUP_LOCAL_ONLY)
+    .concat(window.CEVEN_BRAND.backupExtraKeys || []);
+}
+
+// Cada cotizador publica su spec al cargar este módulo.
+(function _publishBackupSpec(){
+  var b = window.CEVEN_BRAND;
+  if(!b || CEVEN_FULL_BACKUP_BRANDS.indexOf(b.id) === -1) return;
+  try{
+    localStorage.setItem('_ceven_bkbases_' + b.id, JSON.stringify({
+      prefix: b.prefix || '',
+      bases:  _cevenBrandBackupBases()
+    }));
+  }catch(e){}
+})();
+
+var _CEVEN_BACKUP_SPEC_FALLBACK = {
+  poly:       { prefix: 'poly_',       bases: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera','cpipeline'] },
+  apple:      { prefix: '',            bases: ['cquotes','cpl','carchive','cnac','cqc','cclientes','ctarget','ctarget_manual','clogo','clogo_dark','cpapelera','cnac_neo25_v3','cpipeline'] },
+  legamaster: { prefix: 'legamaster_', bases: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera','cpipeline'] },
+  multi:      { prefix: 'multi_',      bases: ['cquotes','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera'] }
+};
+
+function _cevenBrandBackupSpec(id){
+  try{
+    var pub = JSON.parse(localStorage.getItem('_ceven_bkbases_' + id) || 'null');
+    if(pub && pub.bases && pub.bases.length) return pub;
+  }catch(e){}
+  return _CEVEN_BACKUP_SPEC_FALLBACK[id] || null;
+}
+
+// { prefix, bases } -> { 'poly_cquotes': 1, ... } de claves REALES permitidas.
+function _cevenSpecKeySet(spec){
+  var set = {};
+  (spec.bases || []).forEach(function(base){
+    var k = (spec.prefix || '') + base;
+    if(!_cevenBackupIsSecret(k)) set[k] = 1;
+  });
+  return set;
+}
+
+function buildCombinedFullBackupSnapshot(){
+  var snap = {
+    _version:   2,
+    _timestamp: new Date().toISOString(),
+    _app:       CEVEN_FULL_BACKUP_APP,
+    brands:     {}
+  };
+  try{ var cdark = localStorage.getItem('cdark'); if(cdark !== null) snap._cdark = cdark; }catch(e){}
+  CEVEN_FULL_BACKUP_BRANDS.forEach(function(id){
+    var spec = _cevenBrandBackupSpec(id);
+    if(!spec) return;
+    var all = {}, keys = _cevenSpecKeySet(spec);
+    Object.keys(keys).forEach(function(k){
+      var v;
+      try{ v = localStorage.getItem(k); }catch(e){ v = null; }
+      if(v !== null) all[k] = v;   // valor CRUDO — lossless, sin parsear
+    });
+    snap.brands[id] = { prefix: spec.prefix || '', _all: all };
+  });
+  return snap;
+}
+
+function exportCombinedFullBackup(){
+  var snap = buildCombinedFullBackupSnapshot();
+  var blob = new Blob([JSON.stringify(snap, null, 2)], {type: 'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.href = url;
+  a.download = 'Ceven_Backup_Completo_' + ts + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  var n = 0;
+  Object.keys(snap.brands).forEach(function(id){ n += Object.keys(snap.brands[id]._all).length; });
+  showToast('✓ Backup combinado descargado (' + n + ' claves, ' + Object.keys(snap.brands).length + ' cotizadores) — guardalo en un lugar seguro');
+}
+
+function _importCombinedBackup(snap, input){
+  if(!snap.brands || typeof snap.brands !== 'object'){
+    showToast('El archivo dice ser un backup combinado pero no trae datos de ninguna marca.');
+    input.value = '';
+    return;
+  }
+  var ts = snap._timestamp ? new Date(snap._timestamp).toLocaleString('es-AR') : 'desconocida';
+  var lineas = [];
+  CEVEN_FULL_BACKUP_BRANDS.forEach(function(id){
+    var br = snap.brands[id];
+    if(!br || !br._all) return;
+    var spec = _cevenBrandBackupSpec(id) || _CEVEN_BACKUP_SPEC_FALLBACK[id] || {prefix:''};
+    var pref = (br.prefix != null ? br.prefix : spec.prefix) || '';
+    var cot  = br._all[pref + 'cquotes'];
+    var pipe = br._all[pref + 'cpipeline'];
+    var nCot  = cot  ? (function(){ try{ return JSON.parse(cot).length; }catch(e){ return '?'; } })() : 0;
+    var nPipe = pipe ? (function(){ try{ return JSON.parse(pipe).length; }catch(e){ return '?'; } })() : 0;
+    lineas.push('• ' + id + ': ' + nCot + ' filas de cotizaciones, ' + nPipe + ' de pipeline');
+  });
+  confirmModal(
+    'Restaurar backup COMBINADO del ' + ts + '?\n\n' +
+    lineas.join('\n') + '\n\n' +
+    '⚠ Esto REEMPLAZA los datos locales de TODOS los cotizadores en este navegador. ' +
+    'Cada uno vuelve a subir su parte a Supabase la primera vez que lo abras.',
+    function(){ _applyCombinedBackupRestore(snap); input.value = ''; },
+    {okLabel: 'Restaurar todo', danger: true}
+  );
+}
+
+function _applyCombinedBackupRestore(snap){
+  if(typeof window._syncPause === 'function') window._syncPause();
+  var failed = 0, escritas = 0;
+
+  if(snap._cdark != null){ if(!cevenLsSet('cdark', String(snap._cdark))) failed++; else escritas++; }
+
+  CEVEN_FULL_BACKUP_BRANDS.forEach(function(id){
+    var br = snap.brands && snap.brands[id];
+    if(!br || !br._all) return;
+    var spec = _cevenBrandBackupSpec(id) || _CEVEN_BACKUP_SPEC_FALLBACK[id];
+    if(!spec) return;
+    // El prefijo sale del archivo, pero la lista de BASES permitidas sale del
+    // spec de ESTE navegador: un archivo ajeno no puede inyectar claves
+    // arbitrarias ni la sesión (doble filtro con _cevenBackupIsSecret).
+    var permitido = _cevenSpecKeySet({ prefix: (br.prefix != null ? br.prefix : spec.prefix), bases: spec.bases });
+    Object.keys(br._all).forEach(function(k){
+      if(!permitido[k] || _cevenBackupIsSecret(k)) return;
+      if(!cevenLsSet(k, br._all[k])) failed++; else escritas++;
+    });
+    // Flag por marca: en el próximo arranque de ese cotizador, manda el local.
+    var pref = (br.prefix != null ? br.prefix : spec.prefix) || '';
+    try{ localStorage.setItem(pref + 'cimport_reload', '1'); }catch(e){}
+  });
+
+  if(failed){
+    showToast('⚠ Restauración incompleta: ' + failed + ' claves no se pudieron guardar. ' +
+              'Liberá espacio y volvé a importar — no se recargó la app.');
+    return;
+  }
+  // Flag global además: por si el primer cotizador que se abre es este mismo.
+  try{ sessionStorage.setItem('_ceven_import_reload', '1'); }catch(e){}
+  cevenLsSet('_ceven_import_reload', '1');
+  showToast('✓ Backup combinado restaurado (' + escritas + ' claves) — recargando...');
+  setTimeout(function(){ location.reload(); }, 1200);
+}
+
+
+/* ── EXCEL COMBINADO DE PIPELINE (solo lectura, NO restaura) ──────────────────
+   Un `Ceven_Pipeline.xlsx` con una hoja por cotizador con pipeline (poly,
+   apple, legamaster). Tabla plana leída CRUDA de `<prefix>cpipeline`, con el
+   texto de "Proyecto/observaciones" traído de la cotización por su número.
+   Es un reporte para mirar/compartir — el restore de verdad es el JSON. */
+var CEVEN_PIPELINE_XLSX_BRANDS = ['poly', 'apple', 'legamaster'];
+
+function _lsJSONraw(k){
+  try{ var v = localStorage.getItem(k); return v == null ? null : JSON.parse(v); }
+  catch(e){ return null; }
+}
+
+function buildCombinedPipelineWorkbook(){
+  if(typeof XLSX === 'undefined') return null;
+  var wb = XLSX.utils.book_new();
+  var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  function mesLabel(mk){
+    var p = String(mk || '').split('-');
+    if(p.length !== 2) return mk || '';
+    var m = meses[parseInt(p[1], 10) - 1];
+    return m ? (m + ' ' + p[0]) : (mk || '');
+  }
+  var algo = false;
+  CEVEN_PIPELINE_XLSX_BRANDS.forEach(function(id){
+    var spec = _cevenBrandBackupSpec(id) || _CEVEN_BACKUP_SPEC_FALLBACK[id];
+    var pref = (spec && spec.prefix) || '';
+    var pipe = _lsJSONraw(pref + 'cpipeline');
+    if(!Array.isArray(pipe)) return;
+    var db = _lsJSONraw(pref + 'cquotes') || [];
+    var obsPorQ = {};
+    if(Array.isArray(db)){
+      db.forEach(function(row){
+        var qn = row && row['N° Cotización'];
+        if(qn && obsPorQ[qn] === undefined) obsPorQ[qn] = row['Observaciones'] || '';
+      });
+    }
+    var data = pipe.map(function(r){
+      r = r || {};
+      var obs = obsPorQ[r.qNum]; if(obs === '—') obs = '';
+      return {
+        'Fecha': r.fecha || '',
+        'Ejecutivo': r.ejecutivo || '',
+        'Canal': r.cliente || '',
+        'Cliente final': r.proyecto || '',
+        'Oportunidad': r.opg || '',
+        'Proyecto/observaciones': obs || '',
+        'Cierre estimado': mesLabel(r.mesCierre),
+        'Cierre movido de': r.mesAutoRoll ? mesLabel(r.mesAutoRoll) : '',
+        'Estado': r.estado || 'Cotizado',
+        'Monto USD': (typeof r.monto === 'number') ? r.monto : (parseFloat(r.monto) || 0),
+        'OV / Netsuite': r.factura || r.ovLink || '',
+        'N° Cotización': r.qNum || ''
+      };
+    });
+    var ws = XLSX.utils.json_to_sheet(data.length ? data : [{
+      'Fecha':'','Ejecutivo':'','Canal':'','Cliente final':'','Oportunidad':'',
+      'Proyecto/observaciones':'','Cierre estimado':'','Cierre movido de':'',
+      'Estado':'(pipeline vacío)','Monto USD':0,'OV / Netsuite':'','N° Cotización':''
+    }]);
+    ws['!cols'] = [{wch:11},{wch:16},{wch:22},{wch:24},{wch:14},{wch:30},{wch:14},{wch:14},{wch:13},{wch:13},{wch:24},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws, id.charAt(0).toUpperCase() + id.slice(1));
+    algo = true;
+  });
+  return algo ? wb : null;
 }
 
 

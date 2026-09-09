@@ -37,7 +37,8 @@ function updatePipelineMesCierreValue(id, fullValue){
   var row = pipe.find(function(r){ return r.id === id; });
   if(row && !cevenCanEditPipelineRow(row.ejecutivo)){ showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.'); return; }
   if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
-  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ pipe[i].mesCierre = fullValue || ''; break; } }
+  // Editar el mes a mano confirma el cierre: se limpia la marca de auto-movido.
+  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ pipe[i].mesCierre = fullValue || ''; delete pipe[i].mesAutoRoll; break; } }
   savePipeline(pipe);
   renderPipeline();
 }
@@ -85,7 +86,7 @@ function renderPipelineDetailRow(r, esArchivo, db){
   if(!lines.length){
     /* La cotización puede haberse borrado del historial y la fila del pipeline
        sobrevive: decirlo es mejor que mostrar una tabla vacía. */
-    return '<tr class="pipe-detail"><td colspan="8" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">'
+    return '<tr class="pipe-detail"><td colspan="9" style="padding:14px 18px;background:#fafafa;color:#aeaeb2;font-size:12px">'
       + 'No se encontraron los artículos de la cotización #' + cevenEsc(qn||'—')
       + ' — puede haberse borrado del historial.</td></tr>';
   }
@@ -172,7 +173,7 @@ function renderPipelineDetailRow(r, esArchivo, db){
       +'<td style="padding:6px 10px;text-align:right;font-weight:600">USD '+fI(total)+'</td>'
       +'<td colspan="2"></td>'
     +'</tr></tfoot></table></div>';
-  return '<tr class="pipe-detail"><td colspan="8" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
+  return '<tr class="pipe-detail"><td colspan="9" style="padding:0;background:#fafafa">'+inner+'</td></tr>';
 }
 
 /* ── ESTADO PROPIO DE UNA LÍNEA ──────────────────────────────────────────────
@@ -294,6 +295,15 @@ function buildPipelineWorkbook(){
       return cevenEstadoLabel(st) + ': USD ' + Math.round(rep[st]);
     }).join(' · ');
   }
+  /* "Proyecto/observaciones": texto libre de la cotización (clave `Observaciones`
+     de cquotes). Igual que en pantalla, se lee de la cotización por su número. */
+  function _obsDe(r){
+    if(!r.qNum) return '';
+    if(_db === null) _db = getDB();
+    var row = _db.filter(function(x){ return x['N° Cotización'] === r.qNum; })[0];
+    var v = row ? String(row['Observaciones'] || '') : '';
+    return v === '—' ? '' : v;
+  }
 
   var data = pipe.map(function(r){
     var mesLabel = '';
@@ -309,6 +319,7 @@ function buildPipelineWorkbook(){
       'Ejecutivo': r.ejecutivo,
       'Cliente': r.cliente,
       'Proyecto': r.proyecto || '',
+      'Proyecto/observaciones': _obsDe(r),
       'Cotización': r.qNum || '',
       'Cierre estimado': mesLabel,
       'Estado': cevenEstadoLabel(r.estado || 'Cotizado'),
@@ -317,7 +328,7 @@ function buildPipelineWorkbook(){
     };
   });
   var ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{wch:11},{wch:18},{wch:24},{wch:26},{wch:12},{wch:14},{wch:13},{wch:34},{wch:14}];
+  ws['!cols'] = [{wch:11},{wch:18},{wch:24},{wch:26},{wch:30},{wch:12},{wch:14},{wch:13},{wch:34},{wch:14}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pipeline');
   return wb;

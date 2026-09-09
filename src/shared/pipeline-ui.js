@@ -20,9 +20,31 @@ window._pipeStatusFilters = window._pipeStatusFilters || [];
 window._pipeMonthFilter   = window._pipeMonthFilter   || '';
 
 // Tocar el mismo mes de nuevo limpia el filtro (es un toggle, no un select).
+// Queda para cualquier llamador viejo; el control de la vista es un <select>
+// (ver cevenPintarPillsMes) que usa pipeSetMonthFilter(), sin toggle.
 function setPipeMonth(val){
   window._pipeMonthFilter = (window._pipeMonthFilter === val) ? '' : val;
   renderPipeline();
+}
+
+// El <select> de meses: el valor elegido ES el filtro, sin toggle (para eso
+// está la opción "Todos los meses").
+function pipeSetMonthFilter(val){
+  window._pipeMonthFilter = val || '';
+  renderPipeline();
+}
+
+/* Chapita "↪ auto" para una fila del pipeline cuyo cierre estimado vencido lo
+   movió el sistema al mes actual (rollOverdueEntries() en pipeline-data.js).
+   Se pinta al lado del selector de mes; el tooltip dice de qué mes venía y qué
+   hacer si en realidad ya cerró. Devuelve '' si la fila no fue auto-movida. */
+function cevenMesAutoRollBadge(r){
+  if(!r || !r.mesAutoRoll) return '';
+  var m = (typeof cevenMesLabel === 'function') ? cevenMesLabel(r.mesAutoRoll) : r.mesAutoRoll;
+  return ' <span title="El sistema movió este cierre estimado: venció en ' + cevenEsc(m)
+    + '. Si el negocio ya cerró, poné el mes real y marcá Facturado."'
+    + ' style="background:#fff4e5;color:#c86400;font-size:9px;font-weight:600;'
+    + 'padding:1px 5px;border-radius:5px;margin-left:4px;cursor:help;white-space:nowrap">↪ auto</span>';
 }
 
 // Click en un nombre de cliente del panel de totales: filtra por ese cliente,
@@ -47,8 +69,13 @@ function togglePillFilter(status){
   renderPipeline();
 }
 
-/* ── PASTILLAS DE "CIERRE ESTIMADO" ───────────────────────────────────────────
-   La fila de meses del dashboard. Estaba escrita dos veces, igual que "Top
+/* ── SELECTOR DE "CIERRE ESTIMADO" ────────────────────────────────────────────
+   Antes era una fila de pastillas (una por mes); desde 08/09/2026 es un
+   <select>. Cada opción muestra info "de top": cuántos proyectos cierran ese
+   mes y por cuánto (de `rows`, el pipeline SIN filtrar por mes), y el mes con
+   más plata lleva un 🔝. La función sigue devolviendo el filtro YA RESUELTO.
+
+   Nota histórica: la fila de meses estaba escrita dos veces, igual que "Top
    clientes", y con el mismo criterio se unificó acá.
 
    Dos cosas que hace y la versión duplicada no hacía:
@@ -73,8 +100,9 @@ function togglePillFilter(status){
 
    `meses` son las claves 'AAAA-MM' presentes, ordenadas. `haySinFecha` lo
    decide cada marca porque no significan lo mismo: en Poly es `!r.mesCierre`;
-   en Apple, además, que la fila no tenga ningún `skuMesCierre`.             */
-function cevenPintarPillsMes(meses, haySinFecha){
+   en Apple, además, que la fila no tenga ningún `skuMesCierre`. `rows` es
+   opcional: el pipeline SIN filtrar por mes, para la info por opción.        */
+function cevenPintarPillsMes(meses, haySinFecha, rows){
   meses = meses || [];
   var cur = window._pipeMonthFilter || '';
 
@@ -86,33 +114,57 @@ function cevenPintarPillsMes(meses, haySinFecha){
   var box = document.getElementById('pipe-month-pills');
   if(box){
     var MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    /* `data-act` y `data-pill` son el MISMO dato: Poly delega los clicks por uno
-       y Apple por el otro. Se emiten los dos para no tener que tocar las dos
-       delegaciones, igual que en cevenPintarTopClientes(). */
-    var pill = function(val, label){
-      var on = (cur === val);
-      return '<div class="pipe-mpill' + (on ? ' pipe-mpill-on' : '') + '"'
-        + ' data-act="month" data-pill="month" data-val="' + cevenEsc(val) + '"'
-        + ' style="cursor:pointer;border:0.5px solid ' + (on ? '#1d1d1f' : '#d2d2d7')
-        + ';background:' + (on ? '#1d1d1f' : '#fff') + ';color:' + (on ? '#fff' : '#1d1d1f')
-        + ';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:' + (on ? '600' : '500')
-        + ';white-space:nowrap;transition:transform .1s">' + cevenEsc(label) + '</div>';
+
+    /* Info por mes: cuántas filas cierran ese mes y por cuánto. Se arma del
+       `rows` que pasa el llamador (el pipeline sin filtrar por mes). El monto
+       de una fila va entero a su `mesCierre` — no se reparte por skuMesCierre,
+       que para un texto de opción no aporta. */
+    var info = null, topKey = null;
+    if(rows && rows.length){
+      info = { __total:{n:0,m:0}, __sin:{n:0,m:0} };
+      rows.forEach(function(r){
+        var k = r.mesCierre || '';
+        var b = k ? (info[k] || (info[k] = {n:0,m:0})) : info.__sin;
+        var mm = +r.monto || 0;
+        b.n++; b.m += mm; info.__total.n++; info.__total.m += mm;
+      });
+      if(meses.length > 1){
+        var topM = -1;
+        for(var kk = 0; kk < meses.length; kk++){
+          var bb = info[meses[kk]];
+          if(bb && bb.m > topM){ topM = bb.m; topKey = meses[kk]; }
+        }
+      }
+    }
+    var suf = function(b){ return (info && b) ? (' · ' + b.n + ' proy · USD ' + fI(b.m)) : ''; };
+    var opt = function(val, label){
+      return '<option value="' + cevenEsc(val) + '"' + (cur === val ? ' selected' : '') + '>'
+        + cevenEsc(label) + '</option>';
     };
 
-    var h = pill('', 'Todos');
-    if(haySinFecha) h += pill('sin-fecha', 'Sin fecha');
+    var h = opt('', 'Todos los meses' + suf(info && info.__total));
+    if(haySinFecha) h += opt('sin-fecha', 'Sin fecha' + suf(info && info.__sin));
     for(var i = 0; i < meses.length; i++){
       var p = String(meses[i]).split('-');
       var idx = parseInt(p[1], 10) - 1;
-      h += pill(meses[i], (p.length === 2 && idx >= 0 && idx < 12) ? (MESES[idx] + ' ' + p[0]) : meses[i]);
+      var nom = (p.length === 2 && idx >= 0 && idx < 12) ? (MESES[idx] + ' ' + p[0]) : meses[i];
+      h += opt(meses[i], (meses[i] === topKey ? '🔝 ' : '') + nom + suf(info && info[meses[i]]));
     }
-    box.innerHTML = h;
+    box.innerHTML = '<select id="pipe-month-sel" class="pipe-flt-sel" '
+      + 'onchange="pipeSetMonthFilter(this.value)" '
+      + 'title="Filtrar el pipeline por mes de cierre estimado">' + h + '</select>';
   }
   return cur;
 }
 
-/* ── TOP CLIENTES ─────────────────────────────────────────────────────────────
-   Las pastillas de "Top clientes" del dashboard. Estaba escrito dos veces
+/* ── SELECTOR DE "TOP CANALES" ────────────────────────────────────────────────
+   Antes eran las pastillas "Top clientes" (top 5 por monto); desde 08/09/2026
+   es un <select> con TODOS los canales del pipeline filtrado, ordenados por
+   monto abierto. Cada opción trae la info que antes vivía en la pastilla:
+   medalla o puesto, cantidad de proyectos y monto. Elegir uno escribe su
+   nombre en el buscador (setPipeClientFilter), igual que el clic en la pastilla.
+
+   Nota histórica: estaba escrito dos veces
    —apple/js/pipeline-view.js y poly/js/pipeline-view.js, casi identico— y las
    dos copias tenian los mismos cuatro errores, arreglados aca de una vez
    (24/08/2026):
@@ -152,49 +204,26 @@ function cevenPintarTopClientes(rows){
   grupos.sort(function(a, b){
     return (b.monto - a.monto) || (b.n - a.n) || a.label.localeCompare(b.label, 'es');
   });
-  var top = grupos.slice(0, 5);
+  grupos = grupos.slice(0, 60);   // un <select> con cientos de opciones no ayuda
 
-  var medallas = ['🥇','🥈','🥉','4°','5°'];
-  var busq = (document.getElementById('pipe-search') || {}).value || '';
-  busq = cevenNormClient(busq);
-  var h = '';
-  top.forEach(function(g, i){
-    var activo = busq === g.clave;
-    var bg = activo ? '#1d1d1f' : '#fff';
-    var fg = activo ? '#fff' : '#1d1d1f';
-    var bd = activo ? '#1d1d1f' : '#d2d2d7';
-    /* El nombre viaja en data-cli y lo lee un listener delegado. Cuando iba
-       dentro de un onclick, el escapado (`\'` + &quot;) no cubría la barra
-       invertida: un cliente llamado  \');alert(1);//  cerraba el string y
-       ejecutaba código en la pantalla de todo el equipo.
+  var medallas = ['🥇','🥈','🥉'];
+  var busq = cevenNormClient((document.getElementById('pipe-search') || {}).value || '');
+  var elegido = grupos.some(function(g){ return g.clave === busq; });
 
-       `data-pill` y `data-act` son el MISMO dato: Apple delega por uno y Poly
-       por el otro. Se emiten los dos para no tener que tocar las dos
-       delegaciones (que además difieren en el hover). */
-    h += '<div class="pipe-mpill' + (activo ? ' pipe-mpill-on' : '') + '"'
-      + ' data-pill="client" data-act="client" data-cli="' + cevenEsc(g.label) + '"'
-      + ' title="' + cevenEsc(g.label + ' · USD ' + fI(g.monto) + ' en ' + g.n
-          + (g.n === 1 ? ' proyecto' : ' proyectos') + ', sin contar lo perdido') + '"'
-      + ' style="cursor:pointer;border:0.5px solid ' + bd + ';background:' + bg + ';color:' + fg
-      + ';border-radius:980px;padding:5px 13px;font-size:12px;font-weight:' + (activo ? '600' : '500')
-      + ';white-space:nowrap;transition:transform .1s">'
-      + medallas[i] + ' ' + cevenEsc(g.label)
-      + ' <span style="opacity:.7;font-weight:400">· USD ' + cevenEsc(fI(g.monto))
-      + ' <span style="opacity:.75">(' + cevenEsc(g.n) + ')</span></span></div>';
+  var h = '<option value=""' + (elegido ? '' : ' selected') + '>'
+    + 'Todos los canales' + (grupos.length ? (' · ' + grupos.length + (grupos.length === 1 ? ' canal' : ' canales')) : '')
+    + '</option>';
+  grupos.forEach(function(g, i){
+    var puesto = i < 3 ? (medallas[i] + ' ') : ((i + 1) + '. ');
+    var lbl = puesto + g.label + ' · ' + g.n + ' proy · USD ' + fI(g.monto);
+    h += '<option value="' + cevenEsc(g.label) + '"' + (busq === g.clave ? ' selected' : '') + '>'
+      + cevenEsc(lbl) + '</option>';
   });
 
-  box.innerHTML = h || '<span style="font-size:12px;color:#aeaeb2">Sin proyectos abiertos</span>';
-
-  /* Achicar a UNA sola fila: se sacan los últimos si no entran (mínimo 3). El
-     contenedor tiene overflow:hidden, así que sin esto el 4° y el 5° quedaban
-     cortados a la mitad en vez de desaparecer. */
-  var fila = document.getElementById('pipe-pills-row');
-  if(!fila) return;
-  var guard = 0;
-  while(fila.scrollWidth > fila.clientWidth + 1 && box.children.length > 3 && guard < 8){
-    box.removeChild(box.lastElementChild);
-    guard++;
-  }
+  box.innerHTML = '<select id="pipe-client-sel" class="pipe-flt-sel"' + (grupos.length ? '' : ' disabled')
+    + ' onchange="setPipeClientFilter(this.value)"'
+    + ' title="Filtrar el pipeline por canal (ordenados por monto abierto, sin contar lo perdido)">'
+    + h + '</select>';
 }
 
 // ── SORT ──

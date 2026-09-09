@@ -12,6 +12,8 @@ if(typeof refreshOpgDatalist === 'function') refreshOpgDatalist();
 // pipeline y con su propio nivel de precio. Ver shared/clientes.js.
 if(typeof cevenRefreshClienteDatalist === 'function') cevenRefreshClienteDatalist();
 if(typeof cevenClientesDbRefreshDatalist === 'function') cevenClientesDbRefreshDatalist();
+// Cliente final (id `proyecto`): mismo combo, lista de lo ya usado antes.
+if(typeof cevenRefreshProyectoDatalist === 'function') cevenRefreshProyectoDatalist();
 
 // ── EJECUTIVOS (#exec) ──────────────────────────────────────────────────
 // Dos defectos que se sumaban y dejaban el campo Ejecutivo inservible:

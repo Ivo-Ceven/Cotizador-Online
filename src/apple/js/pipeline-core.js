@@ -93,7 +93,7 @@ function addToPipeline(){
     return;
   }
   var fields = computeQuotePipeFields();
-  if(!fields.cliente){ showToast('Cargá el nombre del cliente antes de agregar al pipeline.'); return; }
+  if(!fields.cliente){ showToast('Cargá el canal antes de agregar al pipeline.'); return; }
   var qn = String(qNum).padStart(4,'0');
 
   var pipe = getPipeline();

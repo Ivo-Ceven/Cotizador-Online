@@ -97,7 +97,7 @@
         <summary title="Más acciones" aria-label="Más acciones">⋯</summary>
         <div class="ovf-menu">
           <div class="ovf-hd">Copia de seguridad</div>
-          <button onclick="exportFullBackup()"><span class="act-i">⬇️</span>Descargar backup completo</button>
+          <button onclick="exportCombinedFullBackup()"><span class="act-i">⬇️</span>Descargar backup completo</button>
           <button onclick="document.getElementById('backup-import').click()"><span class="act-i">⬆️</span>Restaurar desde un archivo</button>
         </div>
       </details>
@@ -108,13 +108,15 @@
     <div class="g2">
       <!-- Al salir del campo se propone el nivel de precio con el que se le
            cotizó la última vez a ese cliente (shared/clientes.js). -->
-      <div><label class="lbl">Cliente</label><input id="client" type="text" placeholder="Buscar o escribir un cliente" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
-      <div><label class="lbl">OPG <span style="color:#6e6e73;font-weight:400">— opcional, solo si la marca asignó precio especial</span></label><input id="opg" type="text" placeholder="Dejar vacío si no aplica" list="opg-datalist"><datalist id="opg-datalist"></datalist></div>
-      <!-- Sin datalist a propósito, al revés que OPG: dos proyectos distintos
-           pueden llamarse parecido y autocompletar invitaría a pisar uno con
-           otro. El OPG sí lo lleva porque un mismo OPG se repite entre proyectos. -->
-      <div><label class="lbl">Proyecto <span style="color:#6e6e73;font-weight:400">(cliente final)</span></label><input id="proyecto" type="text" placeholder="Ej: Hospital Italiano — Sala Directorio"></div>
-      <div><label class="lbl">Ejecutivo</label>
+      <div><label class="lbl">Canal <span class="req">*</span></label><input id="client" type="text" placeholder="Buscar o escribir un canal" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" onchange="aplicarTierDelCliente();cevenClienteCambio()" style="font-size:14px;font-weight:500"><datalist id="cliente-datalist"></datalist></div>
+      <div><label class="lbl">Oportunidad <span style="color:#6e6e73;font-weight:400">— opcional, solo si la marca asignó precio especial</span></label><input id="opg" type="text" placeholder="Dejar vacío si no aplica" list="opg-datalist"><datalist id="opg-datalist"></datalist></div>
+      <!-- El campo Cliente final tiene el mismo combo con autocompletado que Canal
+           (shared/clientes.js): lista lo que ya se usó antes para reducir el
+           riesgo de que un typo cree un "cliente final" nuevo que después arma
+           su propio grupo en el pipeline. -->
+      <div><label class="lbl">Cliente <span class="req">*</span> <span style="color:#6e6e73;font-weight:400">(cliente final)</span></label><input id="proyecto" type="text" placeholder="Buscar o escribir un cliente final" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false"><datalist id="proyecto-datalist"></datalist></div>
+      <div><label class="lbl">Proyecto/observaciones</label><input id="obs" type="text" placeholder="Referencia del proyecto o nota de la cotización..."></div>
+      <div><label class="lbl">Ejecutivo <span class="req">*</span></label>
         <select id="exec">
           <option value="">Seleccionar ejecutivo</option>
         </select>
@@ -146,7 +148,6 @@
           <option value="">— Elegir nivel —</option>
         </select>
       </div>
-      <div><label class="lbl">Observaciones</label><input id="obs" type="text" placeholder="Notas de la cotización..."></div>
       <!-- Moneda + TC. Vivían en la vista Catálogo, pero ahí no pintaban nada:
            la tabla del catálogo muestra los niveles en USD crudo. Los leen dp()
            y upUnitPrice(), que son de ESTA pantalla. Los ids no cambian. -->
@@ -387,7 +388,7 @@
   </div>
   <div class="card" style="margin-bottom:12px">
     <div class="gf">
-      <div><label class="lbl">Buscar cliente / OPG / proyecto</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
+      <div><label class="lbl">Buscar canal / Oportunidad / cliente final</label><input id="hclient" type="text" placeholder="Nombre..." oninput="renderHistory()"></div>
       <div><label class="lbl">Ejecutivo</label><select id="hexec" onchange="renderHistory()"><option value="">Todos</option></select></div>
       <div><label class="lbl">Desde</label><input id="hfrom" type="date" onchange="renderHistory()"></div>
       <div><label class="lbl">Hasta</label><input id="hto" type="date" onchange="renderHistory()"></div>
@@ -442,10 +443,10 @@
     <select id="archive-month-sel" onchange="renderPipeline()" style="padding:4px 8px;border:0.5px solid #d2d2d7;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;max-width:180px">
       <option value="">Pipeline actual</option>
     </select>
-    <!-- El Cliente dejó de ser una columna (ahora es el encabezado del grupo),
+    <!-- El Canal dejó de ser una columna (ahora es el encabezado del grupo),
          así que perdió su <th> ordenable. Este botón lo repone: ordena los
          GRUPOS alfabéticamente, y volver a tocarlo invierte. -->
-    <button class="bo" id="pipe-sort-cli" onclick="setPipeSort('cliente')" title="Ordenar los clientes de la A a la Z">A–Z Clientes</button>
+    <button class="bo" id="pipe-sort-cli" onclick="setPipeSort('cliente')" title="Ordenar los canales de la A a la Z">A–Z Canales</button>
     <!-- "✕ Limpiar filtros" se fue de acá a la tarjeta de filtros de abajo
          (24/08/2026): perdido entre Excel, backup y deshacer, no se encontraba
          cuando hacía falta — que es siempre mirando los filtros, no la barra. -->
@@ -459,7 +460,7 @@
   </div>
   <div class="card" style="margin-bottom:12px">
     <div class="gf">
-      <div><label class="lbl">Buscar cliente / OPG / proyecto</label><input id="pipe-search" type="text" placeholder="Nombre, OPG o proyecto..." oninput="renderPipeline()"></div>
+      <div><label class="lbl">Buscar canal / Oportunidad / cliente final</label><input id="pipe-search" type="text" placeholder="Nombre, Oportunidad o cliente final..." oninput="renderPipeline()"></div>
       <!-- Ejecutivo/Estado no aplican al pipeline REGI (no hay ejecutivo Ceven
            ni estado del embudo detrás de una fila importada del Excel de HP):
            pipeline-regi.js oculta estos dos <div> mientras esa vista está
@@ -546,11 +547,11 @@
   <div id="pipe-dashboard" style="display:none;margin-bottom:14px">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
       <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
-        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Clientes</div>
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Canales</div>
         <div id="dash-count" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
       </div>
       <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
-        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Proyectos</div>
+        <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Clientes finales</div>
         <div id="dash-proyectos" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
       </div>
       <div id="dash-facturado-card" class="kpi" style="background:#17a589;color:#fff;border-radius:12px;padding:12px 14px">
@@ -582,13 +583,13 @@
         <div style="font-size:11px;color:#15863a;margin-top:2px">monto del pipeline Ceven</div>
       </div>
     </div>
-    <div id="pipe-pills-row" style="display:flex;flex-wrap:nowrap;gap:8px 20px;align-items:center;margin-bottom:10px;overflow:hidden">
+    <div id="pipe-pills-row" style="display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;margin-bottom:10px">
       <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;flex-shrink:0">
         <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Cierre estimado</span>
         <div id="pipe-month-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
       </div>
       <div style="display:flex;flex-wrap:nowrap;gap:6px;align-items:center;min-width:0">
-        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Top clientes</span>
+        <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Top canales</span>
         <div id="pipe-topclients-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
       </div>
     </div>
@@ -596,17 +597,22 @@
   </div>
 
   <div class="tw">
-    <table style="min-width:1100px;--stk-act-w:172px" id="pipe-table-normal">
+    <table style="min-width:1240px;--stk-act-w:172px" id="pipe-table-normal">
       <thead><tr>
         <th class="srt" data-sort="fechaISO">Fecha</th>
         <th class="srt" data-sort="ejecutivo">Ejecutivo</th>
-        <!-- El cliente ya no es una columna: es el encabezado del grupo. Ordenar
-             por acá reordena los GRUPOS, no las filas de adentro. -->
-        <th class="srt" data-sort="opg">OPG</th>
+        <!-- El canal ya no es una columna: es el encabezado del grupo. Ordenar
+             por acá reordena los GRUPOS, no las filas de adentro. La clave de
+             orden sigue siendo "opg". -->
+        <th class="srt" data-sort="opg">Oportunidad</th>
         <th style="text-align:center">Cotiz.</th>
         <!-- Ordenable desde el corte de modelo: era un array (las salas del OPG)
-             y ahora es un texto. -->
-        <th class="srt" data-sort="proyecto">Proyecto</th>
+             y ahora es un texto. La clave de orden sigue siendo "proyecto". -->
+        <th class="srt" data-sort="proyecto">Cliente final</th>
+        <!-- Texto libre de la cotización (clave `Observaciones` en cquotes). No es
+             una columna propia del pipeline: se lee de la cotización por su
+             número en cada render, así que refleja ediciones posteriores. -->
+        <th>Proyecto/observaciones</th>
         <th class="srt" data-sort="mesCierre">Cierre estimado</th>
         <th class="srt" data-sort="estado" style="text-align:center">Estado</th>
         <th class="srt stk-monto" data-sort="monto" style="text-align:right;min-width:110px">Monto</th>

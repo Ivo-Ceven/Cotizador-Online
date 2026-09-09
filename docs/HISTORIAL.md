@@ -122,29 +122,497 @@ de ahora, cualquier cosa que toque `pipeline`, `app_settings` o las claves
   empezar con un `delete` que en su momento era correcto;
 - ante la duda, primero un `select count(*)` para saber qué hay del otro lado.
 
-### ⚠ La trampa concreta que ya está en el repo
+### La trampa que había en el repo — resuelta el 09/09/2026
 
-`supabase/migrations/20260803120000_poly_pipeline_por_proyecto.sql`
-**nunca se aplicó** a la base productiva (se ve en `supabase migration list`, y en
-que la columna `salas` —que ese archivo dropea— sigue existiendo). Y **NO se
-puede aplicar como está**, porque empieza con:
+`supabase/migrations/20260803120000_poly_pipeline_por_proyecto.sql` **se eliminó
+del repo**. Nunca se había aplicado a la base productiva, y no se podía: empezaba
+con
 
 ```sql
 delete from public.pipeline      where brand = 'poly';
 delete from public.app_settings  where brand = 'poly'
   and key in ('poly_cquotes', 'poly_carchive', 'poly_cqc');
+alter table public.pipeline drop column if exists salas;
 ```
 
-Era correcto el 03/08 —su encabezado dice "NO HAY DATOS PRODUCTIVOS"— y hoy
-borraría **18 filas de pipeline y ~34 KB de historial de Poly**. Si alguna vez
-hace falta lo que ese archivo agrega, hay que sacarle los `delete` y aplicar solo
-la parte de esquema.
+Era correcto el 03/08 —su encabezado decía "NO HAY DATOS PRODUCTIVOS"— y hoy
+borraría **18 filas de pipeline y ~34 KB de historial de Poly**. Con el archivo en
+`supabase/migrations/`, un `supabase db push` distraído lo disparaba.
 
-Consecuencia que sigue abierta: la columna `pipeline."esFOB"` **no existe en la
-base** porque venía en ese archivo. Ver la entrada del 12/08 más abajo.
+La única parte que seguía haciendo falta —la columna `pipeline."esFOB"`, que
+Apple declara en `pipeCols` y el cliente escribe— se extrajo, sin los `delete` ni
+el drop de `salas`, a **`supabase/migrations/20260909120000_pipeline_esfob_y_comentarios.sql`**.
+`salas` queda como columna sin uso (inofensiva). Ver la entrada del 09/09 más
+abajo y el bloque de `docs/BASE-DE-DATOS.md`.
 
 Los signups públicos están cerrados: la única alta es la Edge Function
 `admin-users`.
+
+---
+
+## 09/09/2026 · Backup: carpeta única + aviso de arranque + un solo archivo con las 4 marcas
+
+Pedido de Ivo. Tres piezas, todas en `shared/backup.js` / `shared/backup-folder.js`:
+
+### 1. Carpeta única + aviso "configurá una carpeta"
+
+- El handle de carpeta pasa de uno por marca (`brand.idbKey`, `pipeFolder_poly`…)
+  a **uno solo compartido** (`ceven_backup_folder` en la misma base IndexedDB).
+  `restoreBackupHandle()` migra el valor viejo de esa marca la primera vez para
+  que nadie pierda el permiso ya concedido.
+- Nueva `cevenBackupNagIfNeeded()`: al entrar (evento `ceven-session-ready` de
+  `auth.js`, + fallback por timeout), si no hay carpeta y el navegador soporta
+  la API, muestra un **`confirmModal`** (modal propio, NO popup nativo) →
+  "Elegir carpeta ahora" / "Ahora no". Se cierra pero **vuelve a salir en cada
+  carga** hasta que haya carpeta (`window._cevenBackupNagDone` es por-carga, no
+  se persiste). `confirmModal` acepta ahora `opts.cancelLabel`.
+
+### 2. Un solo JSON con las 4 marcas (lossless)
+
+- `buildCombinedFullBackupSnapshot()` → `{ _app:'CevenCotizadorFull', _cdark,
+  brands:{ poly:{_all:{…}}, apple, legamaster, multi } }`, con los valores
+  **crudos** de localStorage (sin parsear → jsonb intacto). Como Apple no tiene
+  prefijo, cada cotizador **publica su lista blanca** al cargar
+  (`_ceven_bkbases_<id>`) y el snapshot la lee; hay un fallback hardcodeado si
+  algún cotizador nunca se abrió en ese navegador.
+- El auto-backup a carpeta escribe **`Ceven_Backup_Completo.json`** (nombre
+  fijo, ya no uno por marca). El botón "Descargar backup completo" de los 4
+  cotizadores llama a `exportCombinedFullBackup()`.
+- **Restore combinado** (`_importCombinedBackup` / `_applyCombinedBackupRestore`):
+  se restaura desde cualquier cotizador, escribe todas las claves verbatim, y
+  deja un flag **`<prefix>cimport_reload`** por marca. `readImportFlag()` en
+  `sync.js` lo consume por marca → cada cotizador empuja SU parte a Supabase la
+  primera vez que se abre (antes el flag global lo consumía la primera marca y
+  las otras dos se pisaban con lo del servidor). Doble filtro anti-secretos en
+  ida y vuelta: un archivo adulterado no puede inyectar `ceven_auth_session` ni
+  claves fuera de la lista blanca. `importFullBackup()` sigue aceptando los
+  backups viejos de una sola marca.
+- El snapshot de emergencia en localStorage (`autoSnapshot` / `_checkRecovery`)
+  NO cambió: sigue siendo por marca (es la red para "el storage se vació").
+
+### 3. Excel combinado de lectura (NO restaura)
+
+`buildCombinedPipelineWorkbook()` → `Ceven_Pipeline_<fecha>.xlsx`, una hoja por
+cotizador con pipeline (Poly/Apple/Legamaster), tabla plana leída cruda de
+`<prefix>cpipeline` con "Proyecto/observaciones" traído de la cotización por su
+número, y la columna "Cierre movido de" (el `mesAutoRoll`). Es un reporte —
+Excel trunca a 32.767 chars por celda, así que no sirve como fuente de restore;
+eso es el JSON.
+
+### Verificación
+
+Nuevo **`scripts/check-backup-combinado.js`** (88 chequeos): corre las funciones
+REALES de `backup.js` sobre un localStorage de mentira con las 4 marcas —
+snapshot desde cada cotizador trae las 4 completas y crudas, nunca la sesión ni
+`_ceven_*`; restore escribe todo idéntico + flag por marca + flag global +
+recarga; un archivo con `ceven_auth_session` inyectado no lo escribe;
+`importFullBackup` rutea el formato combinado. `node --check` en los 4 shared
+tocados. Resto de `check-*.js` sin regresiones (los 5 de siempre igual que en
+HEAD; `check-precache` sigue con los 14 de `portal/`). `APP_VERSION` 7.1 → 7.2.
+**No verificado en navegador** (login `@ceven.com`; el nag y el `.xlsx` no
+tienen cobertura automática).
+
+---
+
+## 09/09/2026 · Se elimina la migración que borraba datos de Poly; se extrae solo `esFOB`
+
+`supabase/migrations/20260803120000_poly_pipeline_por_proyecto.sql` era un
+`db push` a un paso de nukear Poly: arrancaba con
+`delete from public.pipeline where brand = 'poly'` + borrado de
+`poly_cquotes`/`poly_carchive`/`poly_cqc` + `drop column salas`. Correcto el
+03/08 (base sin datos), destructivo hoy (18 filas de pipeline + ~34 KB de
+historial reales).
+
+- **Se borró el archivo** (`git rm`). El registro de por qué existía queda en
+  esta entrada y en el bloque "🔴 LOS DATOS DE POLY YA SON REALES" de arriba.
+- **Se creó `20260909120000_pipeline_esfob_y_comentarios.sql`** con lo único que
+  seguía pendiente y es seguro: `alter table public.pipeline add column if not
+  exists "esFOB" boolean` (+ los `comment on column` de qNum/proyecto/opg/
+  factura). Sin `delete`, sin `drop`. `salas` queda como columna muerta.
+- **Por qué `esFOB` importa**: Apple lo declara en `pipeCols` y el cliente lo
+  escribe (`isCotizacionFOB()`); como la columna no existe en la base, TODO
+  upsert de pipeline de Apple rebota 400 (PGRST204) y `sync.js` se lo come con
+  un `console.warn` → el pipeline de Apple no llega a Supabase, en silencio.
+  Aplicar esta migración lo arregla. Ver `docs/BASE-DE-DATOS.md`.
+- **Ninguna de las dos migraciones nuevas (`20260908120000_pipeline_mes_auto_roll`
+  y `20260909120000_pipeline_esfob_y_comentarios`) está aplicada todavía** — se
+  corren a mano por el SQL editor de Supabase, como el resto (el equipo no usa
+  `db push`; ver `supabase migration list`, casi todo figura `remote:""`).
+
+---
+
+## 08/09/2026 · Auto-roll del cierre estimado vencido + fecha de modificación por fila (Poly/Legamaster/Apple)
+
+Pedido de Ivo para que los números del pipeline sean confiables: que ninguna
+cotización **abierta** quede con cierre estimado en un mes ya pasado (ensucia el
+forecast, el `<select>` de meses, el `🔝`), y que quede registrada la última
+actividad de cada fila para armar alertas de estancamiento más adelante.
+
+### Qué hace
+
+Al entrar a la vista Pipeline (`_navApply('pipeline')` en `shared/ui-core.js`),
+ANTES de `archiveOldEntries()`, corre **`rollOverdueEntries()`** (nueva, en
+cada `<marca>/js/pipeline-data.js`): toda fila cuyo `mesCierre` sea un mes
+pasado y que **no** esté toda Facturada/Perdida se mueve al **mes actual** y
+queda marcada con `mesAutoRoll` = el mes que tenía la primera vez (se setea
+una sola vez, no se pisa en re-rolls). En la fila aparece una chapita ámbar
+**"↪ auto"** al lado del selector de mes (`cevenMesAutoRollBadge()` en
+`shared/pipeline-ui.js`), con tooltip que dice de qué mes venía y qué hacer si
+en realidad ya cerró. El toast (solo cuando hay filas nuevas marcadas) lleva
+acción "Ver" que filtra al mes actual.
+
+**Orden**: roll (vencida **y abierta** → mes actual) y después archivo (vencida
+**y cerrada** → 📦 cajita). Abierta/cerrada particionan; una fila nunca la
+tocan las dos. Corrección manual: poner el mes real + Facturado → el archivado
+la lleva a la cajita; editar el mes a mano limpia `mesAutoRoll` (en
+`updatePipelineMesCierreValue` de las 3 marcas, el `updateSkuMesCierreValue`
+≤1-línea de Apple, y `restoreFromArchive`).
+
+### Fecha de modificación
+
+Se reusa **`fechaMod`** (ISO, ya la sella `savePipeline()` ante cualquier
+cambio real de la fila; ya alimenta el chip de estancadas de Apple). Para
+Poly/Legamaster solo se sumó `'fechaMod'` a `pipeCols` — la columna en Supabase
+ya existía (`20260818130000`), **sin migración**. `savePipeline()` ahora acepta
+`opts.systemChange`: el auto-roll guarda con `{systemChange:true}` para **NO**
+mover `fechaMod` (si no, el reloj de "días sin movimiento" se resetearía solo
+cada mes y la alerta futura nunca dispararía).
+
+El chip visible de estancamiento para Poly/Legamaster NO entra ahora (es parte
+de las alertas, que van después); solo se activa el guardado del dato.
+
+### Cambios
+
+- `shared/pipeline-store.js`: `savePipeline(p, opts)` + helper nuevo
+  `cevenMonthAdd('YYYY-MM', n)` (con acarreo de año; lo usa el test y lo va a
+  usar la capa de alertas).
+- `shared/ui-core.js`: hook llama `rollOverdueEntries()` (con guarda `typeof`)
+  antes de `archiveOldEntries()`.
+- `shared/pipeline-ui.js`: `cevenMesAutoRollBadge(r)`.
+- Por marca: `brand.js` (`'mesAutoRoll'` en `pipeCols`+`nullableCols`;
+  `'fechaMod'` en `pipeCols` de Poly/Lega), `js/pipeline-data.js`
+  (`rollOverdueEntries`), `js/pipeline-view.js` (chapita en la celda de mes;
+  Apple con gate `!r._virtual`), `js/pipeline-detail.js` + `js/archive-view.js`
+  (`delete r.mesAutoRoll` al confirmar el mes).
+- **Migración `20260908120000_pipeline_mes_auto_roll.sql`** (columna text
+  `pipeline."mesAutoRoll"`, aditiva). 🔴 **Aplicar ANTES de deployar**: sumar
+  una col a `pipeCols` sin la columna server-side rebota el lote entero de
+  pipeline de esa marca, en silencio (trampa `esFOB`).
+- `APP_VERSION` 7.0 → 7.1.
+
+### Límites conocidos
+
+- Apple con overrides por SKU: una fila auto-movida que además tiene
+  `skuStatus`/`skuMesCierre` se muestra explotada en filas virtuales → la
+  chapita no se ve (gate `!r._virtual`). Las líneas fijadas a un mes propio no
+  se rollean (decisión explícita del vendedor).
+- `fechaMod` de filas viejas de Poly/Legamaster que nunca pasaron por un cambio
+  real queda `undefined` hasta el primer edit.
+- Churn de una vez: sumar cols a `pipeCols` cambia el `snapKey` → primer flush
+  post-deploy re-sube todas las filas de Poly/Lega una vez. Se estabiliza en un
+  poll.
+
+### Verificación
+
+`node --check` sobre los 19 archivos tocados. **`scripts/check-archivado.js`**
+extendido (54 chequeos: casos de roll por marca — abierta vencida → mes
+actual + `mesAutoRoll`, cerrada NO se rollea, ya-en-mes-actual/sin-fecha
+intactas, re-roll no pisa `mesAutoRoll`, y flujo real roll+archivo sin fila en
+los dos lados). **`scripts/check-pipe-roll.js`** nuevo (49 chequeos: carga el
+`savePipeline` REAL + el `pipeline-data.js` de cada marca — `fechaMod` NO se
+mueve con `{systemChange}`, un `savePipeline` normal SÍ lo mueve, re-roll,
+`cevenMonthAdd`, asserts de fuente del `delete mesAutoRoll` y del orden del
+hook, y `brand.js` con `mesAutoRoll` en `pipeCols`+`nullableCols`).
+`check-pipe-roundtrip` verde (las cols text nuevas round-trippean limpio, sin
+re-render infinito). `check-globals`, `check-pipe-pills`, `check-pipe-regi-*`,
+`check-pipeline-sku`, `check-multi`, `check-comprobante` etc. sin regresiones.
+Los 5 de siempre (`check-emitir`/`entrega`/`poly-deals`/`portal-pricing-parity`/
+`precache`) fallan igual que en HEAD. **No verificado logueado en un navegador**
+(login `@ceven.com`).
+
+---
+
+## 08/09/2026 · Bug: un proyecto ya archivado podía seguir vivo en el pipeline (figuraba en los dos lados)
+
+Ivo reportó que algunos proyectos con cierre de agosto y estado Facturado
+seguían apareciendo en "Pipeline actual" **además** de en 📦 Ago 2026.
+
+### La causa
+
+`archiveOldEntries()` (en `src/{poly,legamaster,apple}/js/pipeline-data.js`)
+guardaba el pipeline **solo si había archivado algo NUEVO** (`if(moved > 0)`).
+El recorrido arma `toKeep` (lo que sigue vivo) y NO mete ahí las filas
+`shouldArchive`. Pero si una fila `shouldArchive` YA estaba en el archivo
+(`exists`), no incrementaba `moved`. Entonces: si esa fila era lo único que
+había que sacar, `moved` quedaba en 0, `savePipeline(toKeep)` no corría, y la
+fila —excluida de `toKeep` pero nunca persistida esa exclusión— **seguía en el
+pipeline vivo**, a la vez que estaba en `carchive`.
+
+¿Cómo llega una fila a estar en el archivo Y viva en el pipeline? Los dos se
+sincronizan por caminos distintos: `carchive` es un blob de `app_settings`
+(last-write-wins) y `cpipeline` va fila por fila a la tabla `pipeline`. Una
+carrera entre dispositivos (B tiene la fila en `_dirtyUp` cuando A la archiva y
+la borra de la tabla; B no la ve borrada porque la tiene pendiente de subir, y
+la vuelve a upsertear) la resucita en la tabla. A la baja de vuelta, y su
+`archiveOldEntries` ya no la re-saca por el bug de arriba. Quedaba pegada.
+
+### El arreglo
+
+Las tres marcas: el guardado pasa a decidirse por **si el pipeline vivo
+cambió** (`toKeep.length !== pipe.length`), no por `moved`. `moved` queda solo
+para el texto del cartel ("Se archivaron N proyectos"). Apple ya tenía la idea
+a medias (`|| partialMoved || pipeChanged`); se le sumó la misma condición.
+
+Efecto: cada vez que se entra a la vista Pipeline (que es cuando corre
+`archiveOldEntries`), una fila resucitada se vuelve a sacar del vivo. Si la
+carrera de sync la trae de nuevo, se limpia sola en la siguiente entrada. La
+causa raíz (que la tabla `pipeline` no debería resucitar una fila que está en
+`carchive`) queda para un fix aparte de `sync.js`, más invasivo; este arreglo
+la neutraliza en la práctica.
+
+### El arreglo NO alcanzó: la fila reaparecía
+
+Ivo probó y las filas se sacaban un instante y volvían. La causa: el fix de
+arriba limpia el `cpipeline` LOCAL, pero la fila seguía en la tabla `pipeline`
+de Supabase y el poll (cada 15 s) la baja de nuevo. Cómo queda en la tabla
+después de archivar en un equipo:
+
+- otro equipo la tenía en `_dirtyUp` (la tocó — p. ej. la marcó Facturado) y la
+  re-sube a la tabla antes de recibir el `carchive` nuevo; o
+- alguien la re-agregó al pipeline (o la copió desde REGI) después de archivar; o
+- el `DELETE` a `pipeline` no pasó por RLS (usuario `lector` o de otra marca) y
+  el cliente lo dio por hecho.
+
+Por eso **pasa con algunas y no con otras**: son las que algún equipo re-sube.
+NO depende de la fecha de modificación del Facturado — un Facturado de
+septiembre con cierre estimado en agosto se archiva igual (`shouldArchive` mira
+`mesCierre`, no `fechaMod`). Lo que decide es quién tocó esa fila y si su
+dispositivo la volvió a sincronizar.
+
+### El arreglo de verdad: en `sync.js`
+
+Nueva invariante: **una fila cuyo `id` está en `carchive` no puede estar en el
+`cpipeline` vivo**. `pipeArchivedIds()` (lee `carchive` de localStorage directo,
+con cache por string crudo) arma ese set, y:
+
+- **El poll**: filtra de `merged` las filas archivadas antes de escribir el
+  pipeline local, y encola su `DELETE` (`_dirtyDel` + `markDirty` + `schedule`).
+- **El merge de arranque** (`mergePipeIntoLocal`): igual, y el archivo gana
+  incluso sobre `_dirtyUp` (si se archivó, la decisión fue sacarla del vivo).
+
+Efecto: aunque otro equipo la re-suba, el próximo poll la vuelve a sacar del
+vivo Y borra la fila huérfana de la tabla. Se estabiliza en ≤15 s. (Límite
+menor: en un dispositivo 100% nuevo, el `carchive` del server llega en el mismo
+poll que la filtra, así que hay una ventana de un ciclo — se resuelve solo.)
+
+### Verificación
+
+Nuevo **`scripts/check-archivado.js`** (21 chequeos, patrón `vm`): corre el
+`archiveOldEntries()` REAL de cada marca contra un pipeline a mano. El caso 2
+—fila ya archivada que sigue viva— **falla en HEAD** (3/21, uno por marca,
+confirmado con `git stash`) y pasa con el fix local. Además: archivado normal,
+que no se duplique en el archivo, que un Facturado del mes en curso NO se
+archive, y que sin nada que hacer no se toque nada. `node --check` sobre los 4
+archivos (3 marcas + `sync.js`). `check-pipe-roundtrip` sigue verde (no toqué
+`pickPipe`/`coerce`). El filtro de `sync.js` NO tiene test unitario propio —
+el módulo no es aislable en un `vm` sin reescribir medio runtime. Resto de
+`check-*.js` sin cambios (los 5 de siempre siguen fallando igual que en HEAD).
+
+---
+
+## 08/09/2026 · Las pastillas del pipeline ("Cierre estimado" y "Top canales") pasan a ser dos `<select>`
+
+Pedido de Ivo: reemplazar las dos filas de pastillas del dashboard del pipeline
+por sendos `<select>`, y que cada opción muestre info "de top" — para los meses
+y para los canales.
+
+### Qué se hizo (todo en `shared/pipeline-ui.js`, más 4 call-sites)
+
+- **`cevenPintarPillsMes(meses, haySinFecha, rows)`** ahora pinta
+  `<select id="pipe-month-sel" class="pipe-flt-sel">` en el mismo contenedor
+  `#pipe-month-pills`. Nuevo 3er argumento opcional `rows` (el pipeline SIN
+  filtrar por mes): con él, cada opción dice `· N proy · USD X` (el monto de la
+  fila va entero a su `mesCierre`, sin repartir por `skuMesCierre` — para un
+  texto de opción no aporta), "Todos los meses" trae el total y el mes con más
+  plata lleva un `🔝`. Sin `rows` las opciones van peladas (compatibilidad).
+  El `<select>` llama a **`pipeSetMonthFilter(val)`** (nuevo, SIN toggle: para
+  eso está "Todos los meses"). `setPipeMonth()` (toggle) queda para llamadores
+  viejos. Toda la lógica de "el filtro apunta a algo que ya no existe → volvé a
+  Todos" no cambió.
+- **`cevenPintarTopClientes(rows)`** pinta `<select id="pipe-client-sel">` en
+  `#pipe-topclients-pills`. Ya no son 5 pastillas: entran TODOS los canales del
+  pipeline filtrado (tope 60), ordenados por monto abierto, con
+  medalla/puesto + `N proy · USD X` en cada opción. Elegir uno sigue llamando a
+  `setPipeClientFilter()` (escribe el nombre en el buscador, igual que el clic
+  en la pastilla). Se fue el hack de "achicar a una fila" (`while scrollWidth`),
+  que solo tenía sentido con pastillas y `overflow:hidden`.
+- `#pipe-pills-row` pasó de `flex-wrap:nowrap;overflow:hidden` a `flex-wrap:wrap`
+  en los 3 index.html (Poly/Legamaster/Apple).
+- Nueva clase `.pipe-flt-sel` en `base.css` (tamaño/forma; color/borde/fondo y
+  el override de modo oscuro los hereda del `select` genérico).
+- Los 4 llamadores de `cevenPintarPillsMes` (Poly view, Legamaster view, Apple
+  view, Poly REGI) pasan ahora su array de filas como 3er arg. La vista REGI de
+  Poly usa las MISMAS funciones, así que hereda los dos `<select>` sin código
+  aparte.
+
+### Límite conocido (preexistente, no se tocó)
+
+La vista de un mes archivado (`archive-view.js`) muestra `#pipe-dashboard` pero
+no re-renderiza estos dos controles, así que quedan con lo último que pintó el
+pipeline vivo. Ya pasaba con las pastillas; el `<select>` no lo empeora.
+
+### Verificación
+
+`node --check` sobre los 5 JS tocados. `scripts/check-pipe-pills.js` reescrito
+para el nuevo shape (`<option>` en vez de `.pipe-mpill`, `selected` en vez de
+`pipe-mpill-on`), + 7 chequeos nuevos para la info por opción y el `🔝` — 58/58.
+`check-globals`, `check-pipe-regi-opg`, `check-pipe-regi-stats`, `check-multi`,
+`check-comprobante`, `check-opciones`, `check-pipe-roundtrip`,
+`check-pipeline-sku`, y el resto en verde. Los 5 de siempre
+(`check-emitir`/`entrega`/`poly-deals`/`portal-pricing-parity`/`precache`)
+fallan igual que en HEAD. Se generó a mano la salida de los dos `<select>` en un
+`vm` y se confirmó a ojo (medallas, `N proy · USD X`, `🔝` en el mes de mayor
+monto). **No verificado logueado en un navegador** (login `@ceven.com`).
+
+---
+
+## 08/09/2026 · OPG→"Oportunidad", selector en Cliente final, y "Proyecto/observaciones" con columna en el pipeline
+
+Segunda tanda de cambios de nomenclatura/forma de Ivo sobre la de más abajo,
+en **los cuatro cotizadores**:
+
+### 1. Campo OPG → "Oportunidad"
+
+Solo Poly y Multi tienen ese campo. Se renombró la etiqueta del formulario, el
+`<th>` del pipeline (clave `data-sort="opg"` sin tocar), los rótulos de
+búsqueda ("Buscar canal / OPG / …" → "… / Oportunidad / …"), la ficha del
+historial, y el prompt/toasts de `editOpgValue()` en Poly. **No** se tocó la
+lógica REGI ni sus comentarios internos (el vínculo Deal-Registration sigue
+matcheando por el mismo campo).
+
+### 2. "Cliente final" (id `proyecto`) con el mismo combo que Canal
+
+`shared/clientes.js` pasó de servir un solo campo a servir dos: un mapa `CAMPOS`
+keyea por id (`client` / `proyecto`) el `<datalist>` fuente, si muestra el nivel
+de precio, y cómo se nombra en el cartel de "no existe / se va a crear". El de
+Canal es idéntico a antes. El de Cliente final NO tiene tabla ni ficha:
+`cevenProyectosConocidos()` arma la lista con los `proyecto` que ya aparecen en
+`getPipeline()` + `getDB()` (clave `Proyecto` de cquotes), y
+`cevenRefreshProyectoDatalist()` la vuelca al `<datalist id="proyecto-datalist">`
+nuevo de cada formulario. Se llama en el boot de las tres marcas + Apple
+(`warranties.js`), al lado del refresh de Canal — misma frescura (boot, no
+poll). Deshace a propósito el "sin datalist a propósito" que decían los
+comentarios viejos de Poly/Legamaster.
+`scripts/check-combo-cliente.js`: `_todos()` cae a `CAMPOS.client` cuando no
+hay un campo reconocido (los tests llaman `_filtrar` sin abrir el combo) —
+39/39.
+
+### 3. "Observaciones" → "Proyecto/observaciones", movido y con columna propia en el pipeline
+
+- **Renombre + reposición**: la etiqueta pasa a "Proyecto/observaciones" y el
+  `<div>` se movió a **justo debajo de "Cliente (cliente final)"** en los
+  cuatro (en Apple ya estaba ahí). El id sigue siendo `obs` y la clave de
+  cquotes sigue siendo `Observaciones` — Apple sigue leyendo "FOB" de ahí.
+- **Columna en el pipeline** (Apple, Poly, Legamaster; Multi no tiene pipeline
+  propio): **sin migración**. La celda no es un campo de la fila del pipeline —
+  se lee de la cotización por su `qNum` en cada render, con el `getDB()` que la
+  vista ya parsea una vez. Consecuencia buscada: si se edita la cotización
+  después, el pipeline refleja el texto nuevo. La columna NO es ordenable (la
+  fila del pipeline no lleva el dato). `pipeColCount` subió (Poly 9→10,
+  Legamaster 8→9, Apple 15→16) y con él los `colspan` hardcodeados de los
+  detalles / estados vacíos / meses archivados, y el export a Excel del
+  pipeline suma la columna "Proyecto/observaciones". En Apple la fila "Otras
+  ventas" del archivo llevaba un `<td>` de más de descuadre preexistente: se le
+  sumó una celda vacía para que siga igual de descuadrada, no peor.
+- La ficha del historial de las cuatro marcas muestra ahora Canal / Cliente
+  final / Proyecto-observaciones / Ejecutivo (Apple sumó Canal-final y
+  Cliente-final, que no tenía).
+
+### Verificación
+
+`node --check` sobre los ~22 JS tocados. `scripts/check-*.js`: `check-globals`
+(las funciones nuevas están en los cuatro bundles), `check-combo-cliente`
+(39/39), `check-pipe-pills`, `check-pipe-regi-opg/stats`, `check-multi`,
+`check-comprobante`, `check-opciones`, `check-pipe-roundtrip`, `check-papelera`,
+`check-pipeline-sku`, `check-poly-*`, `check-apple-*` etc. en verde.
+`check-emitir`, `check-entrega`, `check-poly-deals`,
+`check-portal-pricing-parity` y `check-precache` fallan **igual que en HEAD**.
+`APP_VERSION` sigue en 7.0 (la subió la tanda anterior, misma sesión sin
+deploy).
+
+**NO verificado en un navegador real** (PWA con login `@ceven.com`, sin
+credenciales): sí se confirmó por `curl` + un probe de CSS en el shell que
+`.lbl .req` renderiza rojo (`#d70015` claro). Falta abrir cada cotizador
+logueado y ver a ojo el nuevo orden del formulario, el combo del Cliente final,
+y —lo más delicado— que las tablas del pipeline (normal + mes archivado +
+detalle expandido) sigan con las columnas alineadas ahora que tienen una más.
+
+---
+
+## 08/09/2026 · "Cliente" pasa a ser "Canal" y "Proyecto" pasa a ser "Cliente final" en toda la UI
+
+Pedido de Ivo: en los cuatro cotizadores, el campo que decía **Cliente** pasa a
+llamarse **Canal** (es el revendedor/partner que le compra a Ceven) y el que
+decía **Proyecto** pasa a **Cliente** con la aclaración *(cliente final)*. Más
+un asterisco rojo en los campos obligatorios.
+
+### Alcance (confirmado con `AskUserQuestion`)
+
+- **Renombre**: no solo el formulario de carga — también encabezados de columna
+  del pipeline/historial, tarjetas del dashboard ("Clientes"→"Canales",
+  "Proyectos"→"Clientes finales"), el botón "A–Z Clientes"→"A–Z Canales", los
+  placeholders de búsqueda ("Buscar cliente / … / proyecto" → "Buscar canal / …
+  / cliente final"), las fichas del historial, las pastillas "Top clientes"→"Top
+  canales" y, en Poly, la tabla de desglose de Estadísticas REGI. En Apple
+  también el modal "📦 Por SKU" ("Clientes cotizando …"→"Canales cotizando …").
+- **NO se tocó**: ningún `id` (`#client`, `#proyecto` siguen igual), ninguna
+  clave de `cquotes`/`pipeline` (`'Cliente'`, `'Proyecto'` siguen siendo los
+  nombres de columna en Supabase, en el Excel exportado y en `data-sort`), ni
+  el estado del embudo `'Proyecto'` / "En proyecto" (es otra cosa: una etapa,
+  no un campo). El comprobante PDF (`shared/comprobante.js`) sigue diciendo
+  "Cliente:" / "Proyecto:" — es un documento que se reimprime para clientes y
+  no estaba en el alcance; queda para decidir aparte.
+
+### Asterisco de obligatorio
+
+Nuevo `.lbl .req` en `shared/css/base.css` (`color:var(--cred)`, gana sobre el
+`!important` de modo oscuro porque apunta al hijo `<span>`, no a la `.lbl`).
+Se puso en **Canal + Cliente (final) + Ejecutivo** en los cuatro, con criterio
+parejo. Hoy Poly/Legamaster/Multi ya bloquean por los tres (`addToPipeline` /
+`emitirAMarcas` / `doSave`→`cevenRequireExec`); **Apple solo bloquea por Canal**
+— el asterisco en sus otros dos campos es una guía visual, no se le agregó
+validación nueva (elección explícita de Ivo, no ampliar el comportamiento).
+
+### Mensajes de validación
+
+Los toasts que nombraban los campos se actualizaron para no contradecir la
+etiqueta nueva: "Cargá el nombre del cliente…" → "Cargá el canal…", "Cargá el
+proyecto…" → "Cargá el cliente final…" (Poly/Legamaster `pipeline-core.js`,
+Apple `pipeline-core.js`, Multi `emitir.js`), más el aviso de "el proyecto pasó
+de X a Y" → "el cliente final pasó de X a Y" en Poly/Legamaster. En
+`shared/pipeline-group.js` el grupo sin canal se rotula "Sin canal" (la clave
+interna `(sin cliente)` NO cambió: la compara `pipeline-ui.js`), y en
+`shared/pipeline-ui.js` el vacío de "Top canales" dice "Sin clientes finales
+abiertos".
+
+### Verificación
+
+`APP_VERSION` 6.9 → 7.0 (para que el service worker ofrezca "Actualizar";
+`shared/css/base.css` y los `shared/*.js` tocados ya estaban en el precache).
+`node --check` sobre los 13 JS tocados. `scripts/check-pipe-pills.js` tenía un
+assert que grepeaba el literal "Sin proyectos abiertos" — actualizado al texto
+nuevo (50/50). El resto de `scripts/check-*.js` sin regresiones: `check-globals`,
+`check-multi` (139), `check-comprobante` (48), `check-pipe-regi-stats` (65),
+`check-pipe-regi-opg` (79), `check-pipeline-sku` (32), `check-opciones` (60),
+`check-pipe-roundtrip`, `check-papelera` (49), etc. en verde. `check-emitir`,
+`check-entrega`, `check-poly-deals`, `check-portal-pricing-parity` y
+`check-precache` fallan **igual que en HEAD** (verificado con `git stash`) —
+gaps preexistentes, sin relación con esto.
+
+**NO verificado en un navegador real** (PWA con login `@ceven.com`, sin
+credenciales en esta sesión): falta abrir el formulario de cada cotizador y
+confirmar a ojo el asterisco rojo (claro y oscuro), y recorrer historial +
+pipeline para ver los encabezados/fichas/tarjetas con la nomenclatura nueva.
 
 ---
 
