@@ -385,6 +385,12 @@ function cevenRefreshToken(){
     }, remember);
     if(!cevenIsValidSession()){ cevenForceLogout(); return null; }
     cevenScheduleRefresh();
+    /* El token volvió: recomponer la UI que depende del rol. Sin esto, si el
+       token se venció en segundo plano, cevenMyRole() cayó a 'lector' por
+       fail-safe y el ítem/botón "Pipeline" quedó en display:none hasta un
+       cambio de vista o un reload — que es justo el síntoma reportado
+       ("a veces desaparece el botón de pipeline; al reiniciar vuelve"). */
+    if(typeof cevenSyncUserUI === 'function') cevenSyncUserUI();
     return j.access_token;
   }, function(){
     /* No hubo respuesta (sin conexión, Supabase caído): reintentar, NO cerrar
@@ -404,9 +410,19 @@ function cevenForceLogout(){
   location.reload();
 }
 document.addEventListener('visibilitychange', function(){
-  if(document.visibilityState === 'visible' && cevenIsValidSession()){
+  if(document.visibilityState !== 'visible') return;
+  if(cevenIsValidSession()){
     if(cevenSessionExpiresAt() - Date.now() < 60000) cevenRefreshToken();
     else cevenScheduleRefresh();
+  } else if(cevenGetSession()){
+    /* Sesión vencida mientras la pestaña estaba en segundo plano: los timers
+       de setTimeout se estrangulan/pausan (tab de fondo, notebook suspendida,
+       celu bloqueado), así que el refresh programado pudo no haber corrido.
+       El guard viejo exigía cevenIsValidSession() y en este caso salía sin
+       hacer nada: el token quedaba vencido hasta que un 401 lo renovara.
+       cevenRefreshToken() se autoprotege si no hay refresh_token, y si el
+       servidor lo rechaza hace cevenForceLogout() (sesión realmente muerta). */
+    cevenRefreshToken();
   }
 });
 

@@ -187,9 +187,18 @@
       links[i].setAttribute('aria-current', activo ? 'page' : 'false');
 
       // Un lector no usa el pipeline: sacarle el ítem evita el viaje en falso.
+      // Pero SOLO decidimos con un token válido y decodificado: si la sesión
+      // está transitoriamente vencida (timer de refresh estrangulado en una
+      // pestaña de fondo), cevenMyRole() devuelve 'lector' por fail-safe y no
+      // porque el usuario lo sea — esconder el ítem ahí lo dejaba oculto hasta
+      // un reload. Con la sesión así, dejamos el ítem como está; el próximo
+      // sync con token bueno (lo dispara ahora cevenRefreshToken) lo resuelve.
       if(links[i].getAttribute('data-needs-pipeline')){
-        var puede = (typeof cevenCanUsePipeline !== 'function') || cevenCanUsePipeline();
-        links[i].style.display = puede ? '' : 'none';
+        var sesionOk = (typeof cevenIsValidSession !== 'function') || cevenIsValidSession();
+        if(sesionOk){
+          var puede = (typeof cevenCanUsePipeline !== 'function') || cevenCanUsePipeline();
+          links[i].style.display = puede ? '' : 'none';
+        }
       }
     }
 
