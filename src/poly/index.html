@@ -420,20 +420,29 @@
          TODAS las vistas de este pipeline, no solo en 🎯 Pipeline REGI.
          Ver el comentario grande sobre _regiEnsureHeaderKpis (pipeline-regi.js)
          para el detalle de cómo se calcula cada uno. -->
-    <div style="display:flex;gap:20px;align-items:center;background:var(--c0);border:0.5px solid var(--cb);border-radius:12px;padding:9px 20px;white-space:nowrap" title="Todo el pipeline REGI importado — no cambia con los filtros">
+    <!-- Los tres KPI de la derecha (REGI vinculados / REGI CEVEN / REGIs
+         perdidas) son clickeables: abren un modal con las oportunidades y
+         cotizaciones que componen ese número (_regiDrilldownKpiAbrir,
+         js/pipeline-regi.js). "Monto total REGI" no: es el crudo del Excel. -->
+    <style>
+      #regi-hdr-kpis [data-act="regi-kpi-drill"]{cursor:pointer;border-radius:6px}
+      #regi-hdr-kpis [data-act="regi-kpi-drill"]:hover strong{text-decoration:underline}
+      #regi-hdr-kpis [data-act="regi-kpi-drill"]:focus-visible{outline:2px solid var(--cblue);outline-offset:3px}
+    </style>
+    <div id="regi-hdr-kpis" style="display:flex;gap:20px;align-items:center;background:var(--c0);border:0.5px solid var(--cb);border-radius:12px;padding:9px 20px;white-space:nowrap" title="Todo el pipeline REGI importado — no cambia con los filtros">
       <div style="line-height:1.25">
         <div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">Monto total REGI</div>
         <strong id="hdr-regi-total" style="font-size:16px;color:var(--ct1)">USD 0</strong>
       </div>
-      <div style="line-height:1.25" title="El monto que declara HP de todo lo que Ceven ya tiene contemplado (link real, activo o perdido, o declarado perdido a mano). El objetivo es que llegue a ser igual a 'Monto total REGI'.">
+      <div style="line-height:1.25" data-act="regi-kpi-drill" data-kpi="vinc" role="button" tabindex="0" title="El monto que declara HP de todo lo que Ceven ya tiene contemplado (link real, activo o perdido, o declarado perdido a mano). El objetivo es que llegue a ser igual a 'Monto total REGI'. Tocá para ver el detalle.">
         <div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">REGI vinculados</div>
         <strong id="hdr-regi-vinc" style="font-size:16px;color:var(--cgreen)">USD 0</strong>
       </div>
-      <div style="line-height:1.25" title="De lo vinculado por un link real, cuánto vale HOY en el pipeline de Ceven (activo, sin Perdido ni Facturado) — el monto de Ceven, no el de HP.">
+      <div style="line-height:1.25" data-act="regi-kpi-drill" data-kpi="ceven" role="button" tabindex="0" title="De lo vinculado por un link real, el monto de Ceven real de todas sus cotizaciones que no estén Perdidas (activo + facturado) — el monto de Ceven, no el de HP. Tocá para ver el detalle.">
         <div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">REGI CEVEN</div>
         <strong id="hdr-regi-ceven" style="font-size:16px;color:var(--cblue)">USD 0</strong>
       </div>
-      <div style="line-height:1.25" title="Monto que declara HP de lo que se da por perdido: la cotización real que existía pasó a Perdido, o se marcó perdida a mano con el checkbox de la tabla.">
+      <div style="line-height:1.25" data-act="regi-kpi-drill" data-kpi="perd" role="button" tabindex="0" title="Monto que declara HP de lo que se da por perdido: la cotización real que existía pasó a Perdido, o se marcó perdida a mano con el checkbox de la tabla. Tocá para ver el detalle.">
         <div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.3px">REGIs perdidas</div>
         <strong id="hdr-regi-perdidas" style="font-size:16px;color:var(--cred)">USD 0</strong>
       </div>

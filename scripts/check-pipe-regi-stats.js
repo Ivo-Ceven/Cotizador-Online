@@ -509,6 +509,125 @@ console.log('\n12 · _regiStatsParPasa / _regiStatsChartData / _regiFechaTxt');
      'el comparador uno-a-uno sigue listando TODAS las oportunidades');
 }
 
+/* ═══ 13 · Parte A: "REGI CEVEN" del header ahora incluye las Facturadas ════ */
+console.log('\n13 · _regiCevenMontoKpi / _regiTotalesGlobales: "REGI CEVEN" = activo + facturado, sin Perdido');
+{
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('m1', 4000, '2026-09', {estado:'Cotizado'}),
+    filaReal('m1', 6000, '2026-05', {estado:'Facturado'}),
+    filaReal('m1', 1000, '2026-04', {estado:'Perdido'})
+  ];
+  e._regiPipeRows = [ filaRegi('OPD1', 'm1', 20000, '2026-09') ];
+  const t = e._regiTotalesGlobales(e._regiPipeRows);
+  ok(t.vinculadosCeven === 10000, 'REGI CEVEN = activa 4000 + facturada 6000 (la Perdida afuera)', t.vinculadosCeven);
+  ok(t.perdidas === 0, 'no es "perdida": no están TODAS sus cotizaciones en Perdido', t.perdidas);
+  ok(t.vinculadosHP === 20000, 'REGI vinculados = monto HP de la oportunidad linkeada', t.vinculadosHP);
+  ok(e._regiCevenMontoKpi(e._regiCevenAgg(e._pipelineData)) === 10000, '_regiCevenMontoKpi = monto + montoFacturado');
+}
+{
+  const e = cargar();
+  e._pipelineData = [ filaReal('m2', 9000, '2026-07', {estado:'Facturado'}) ];
+  e._regiPipeRows = [ filaRegi('OPD2', 'm2', 10000, '2026-08') ];
+  ok(e._regiTotalesGlobales(e._regiPipeRows).vinculadosCeven === 9000,
+     'un REGI todo-Facturado aporta su monto facturado a REGI CEVEN (antes daba 0)');
+}
+
+/* ═══ 14 · _regiComposicionKpis: los buckets reconcilian con los KPI ═══════ */
+console.log('\n14 · _regiComposicionKpis: cada bucket suma EXACTO lo que muestra su cartel');
+{
+  const e = cargar();
+  e._pipelineData = [
+    filaReal('act', 5000, '2026-09', {estado:'Cotizado',  qNum: 101}),
+    filaReal('fac', 7000, '2026-06', {estado:'Facturado', qNum: 102}),
+    filaReal('per', 3000, '2026-05', {estado:'Perdido',   qNum: 103})
+  ];
+  e._regiPipeRows = [
+    filaRegi('A-act',  'act', 9000, '2026-09'),                       // linkeada activa
+    filaRegi('A-fac',  'fac', 8000, '2026-06'),                       // linkeada, solo facturada
+    filaRegi('A-per',  'per', 4000, '2026-05'),                       // linkeada, TODAS perdidas
+    filaRegi('A-man',  '',    2500, '',       {perdidaManual: true}), // perdida a mano, sin link
+    filaRegi('A-nada', 'xyz', 1234, '2026-08')                        // ni link ni perdida
+  ];
+  const t = e._regiTotalesGlobales(e._regiPipeRows);
+  const c = e._regiComposicionKpis(e._regiPipeRows);
+  const suma = (arr, k) => arr.reduce((a, it) => a + it[k], 0);
+  ok(suma(c.vinc, 'montoHP') === t.vinculadosHP,      'Σ montoHP de vinc === vinculadosHP',      suma(c.vinc,'montoHP') + ' vs ' + t.vinculadosHP);
+  ok(suma(c.ceven, 'montoCeven') === t.vinculadosCeven,'Σ montoCeven de ceven === vinculadosCeven', suma(c.ceven,'montoCeven') + ' vs ' + t.vinculadosCeven);
+  ok(suma(c.perd, 'montoHP') === t.perdidas,           'Σ montoHP de perd === perdidas',           suma(c.perd,'montoHP') + ' vs ' + t.perdidas);
+
+  const opds = a => a.map(it => it.hp.opd).sort().join(',');
+  ok(opds(c.vinc)  === 'A-act,A-fac,A-man,A-per', 'vinc = linkeadas + perdida a mano (no la "nada")', opds(c.vinc));
+  ok(opds(c.ceven) === 'A-act,A-fac,A-per',       'ceven = solo linkeadas (la todo-perdida entra, aporta 0)', opds(c.ceven));
+  ok(opds(c.perd)  === 'A-man,A-per',             'perd = todo-perdida + perdida a mano', opds(c.perd));
+
+  const man = c.vinc.filter(it => it.hp.opd === 'A-man')[0];
+  ok(man && man.filas.length === 0 && man.montoCeven === 0, 'la perdida a mano entra en vinc con filas:[] y montoCeven 0');
+  ok(c.ceven.every(it => it.hp.opd !== 'A-man'), 'y NO entra en ceven');
+  ok((c.perd.filter(it => it.hp.opd === 'A-man')[0] || {}).via === 'manual', 'su "via" es "manual"');
+  ok((c.perd.filter(it => it.hp.opd === 'A-per')[0] || {}).via === 'ceven',  'la todo-perdida marca via "ceven"');
+  ok((c.ceven.filter(it => it.hp.opd === 'A-fac')[0] || {}).montoCeven === 7000, 'la linkeada solo-facturada aporta 7000 a ceven');
+  ok((c.ceven.filter(it => it.hp.opd === 'A-per')[0] || {}).montoCeven === 0,    'la linkeada todo-perdida aporta 0 a ceven');
+}
+
+/* ═══ 15 · _regiStatsDesgloseHTML(ag, opts): clickeable + qué se atenúa ════ */
+console.log('\n15 · _regiStatsDesgloseHTML(ag, opts): linkQuotes y excluir configurables; sin opts NO cambia');
+{
+  const e = cargar();
+  const rows = [
+    filaReal('x', 4000, '2026-09', {estado:'Cotizado',  qNum: 201, cliente:'Cli A', proyecto:'Proy A'}),
+    filaReal('x', 6000, '2026-05', {estado:'Facturado', qNum: 202, cliente:'Cli A', proyecto:'Proy B'}),
+    filaReal('x', 1000, '2026-04', {estado:'Perdido',   qNum: 203, cliente:'Cli A', proyecto:'Proy C'})
+  ];
+  const ag = e._regiCevenAgg(rows);
+
+  const plano = e._regiStatsDesgloseHTML(ag);
+  ok(plano.indexOf('data-act="regi-drill-openq"') === -1, 'sin opts: ninguna fila clickeable (vista Estadísticas intacta)');
+
+  const drill = e._regiStatsDesgloseHTML(ag, { linkQuotes: true, excluir: { Perdido: 1 } });
+  ok((drill.match(/data-act="regi-drill-openq"/g) || []).length === 3, 'con linkQuotes: las 3 filas con nº de cotización son clickeables');
+  ok(drill.indexOf('data-qn="202"') !== -1, 'la fila facturada lleva su data-qn');
+  const trDe = (h, qn) => (h.split('<tr').filter(s => s.indexOf('data-qn="' + qn + '"') !== -1)[0] || '');
+  ok(trDe(drill, 202).indexOf('opacity:.55') === -1, 'con excluir:{Perdido}, la Facturada NO va atenuada');
+  ok(trDe(drill, 203).indexOf('opacity:.55') !== -1, 'la Perdida sí va atenuada');
+
+  const drillDef = e._regiStatsDesgloseHTML(ag, { linkQuotes: true });
+  ok(trDe(drillDef, 202).indexOf('opacity:.55') !== -1, 'sin "excluir", vuelve al default {Perdido,Facturado}: la Facturada atenuada');
+}
+
+/* ═══ 16 · _regiDrilldownHTML: total, conteo, vacío y bloque expandido ════ */
+console.log('\n16 · _regiDrilldownHTML: el total del modal = el cartel; expandir muestra las cotizaciones');
+{
+  const e = cargar();
+  const vac = e._regiDrilldownHTML({ kpi: 'vinc', abiertos: {}, comp: { vinc: [], ceven: [], perd: [] }, cargando: false, error: false });
+  ok(vac.indexOf('USD 0') !== -1, 'total USD 0 con bucket vacío');
+  ok(vac.indexOf('vinculada ni declarada perdida') !== -1, 'muestra el mensaje de vacío del bucket');
+  ok(vac.indexOf('<table') === -1, 'sin tabla rota');
+
+  e._pipelineData = [
+    filaReal('act', 5000, '2026-09', {estado:'Cotizado',  qNum: 301, cliente:'Cli', proyecto:'P act'}),
+    filaReal('fac', 7000, '2026-06', {estado:'Facturado', qNum: 302, cliente:'Cli', proyecto:'P fac'})
+  ];
+  e._regiPipeRows = [ filaRegi('A1', 'act', 9000, '2026-09'), filaRegi('A2', 'fac', 8000, '2026-06') ];
+  const c = e._regiComposicionKpis(e._regiPipeRows);
+  const t = e._regiTotalesGlobales(e._regiPipeRows);
+  const s = { kpi: 'ceven', abiertos: {}, comp: c, cargando: false, error: false };
+  const html = e._regiDrilldownHTML(s);
+  ok(html.indexOf('USD ' + e.fI(t.vinculadosCeven)) !== -1, 'el total del modal coincide con el KPI vinculadosCeven (USD ' + e.fI(t.vinculadosCeven) + ')');
+  ok((html.match(/data-act="regi-drill-grp"/g) || []).length === 2, 'un bloque colapsable por oportunidad');
+  ok(html.indexOf('Cotizaciones de Ceven para este REGI') === -1, 'colapsado: no pinta el desglose');
+  ok(html.indexOf('Expandir todas') !== -1, 'ofrece "Expandir todas"');
+
+  s.abiertos['A1'] = true;
+  const html2 = e._regiDrilldownHTML(s);
+  ok(html2.indexOf('Cotizaciones de Ceven para este REGI') !== -1, 'expandido: aparece el desglose de esa oportunidad');
+  ok(html2.indexOf('data-qn="301"') !== -1, 'y sus cotizaciones quedan clickeables');
+  ok(html2.indexOf('Colapsar todas') !== -1, 'con algo abierto, el link pasa a "Colapsar todas"');
+
+  ok(e._regiDrilldownHTML({ kpi: 'perd', abiertos: {}, comp: null, cargando: true,  error: false }).indexOf('Cargando') !== -1,       'estado "cargando" no explota');
+  ok(e._regiDrilldownHTML({ kpi: 'perd', abiertos: {}, comp: null, cargando: false, error: true  }).indexOf('No se pudo cargar') !== -1, 'estado "error" no explota');
+}
+
 console.log('\n' + (fallos
   ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
   : ('✓ ' + corridas + '/' + corridas + ' OK\n')));

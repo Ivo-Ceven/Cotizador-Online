@@ -150,6 +150,52 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 10/09/2026 · KPIs REGI del header: "REGI CEVEN" incluye lo facturado + los tres carteles abren un desglose
+
+Pedido de Ivo, sobre los cuatro montos globales de REGI de la barra de arriba de
+🎯 Pipeline (`src/poly/index.html`, `#regi-hdr-kpis`). Dos cosas:
+
+### 1. "REGI CEVEN" ahora suma también las Facturadas
+
+Antes `vinculadosCeven` usaba `_regiCevenAgg(filas).monto` a secas — la
+**posición viva**, que excluye Perdido **y Facturado** (bien para las
+Estadísticas, que comparan lo *vivo* contra el estimado de HP). Pero como KPI de
+"cuánto vale para Ceven este REGI" dejaba en 0 una venta ya cerrada.
+
+Definición corregida (confirmada por Ivo): **REGI CEVEN = monto Ceven real de
+todas las cotizaciones con REGI linkeado que NO estén Perdidas** = posición viva
+**+** lo facturado. Nuevo helper **`_regiCevenMontoKpi(ag)`** =
+`ag.monto + ag.montoFacturado`, usado en `_regiTotalesGlobales` y en el
+enriquecido de `_renderRegiPipelineFromCache` (`r.montoVinculado`) — los dos
+únicos consumidores. `_regiCevenAgg` NO se tocó. "REGI vinculados" y "REGIs
+perdidas" no cambian (ya eran `linkReal || perdidaManual` y
+`perdidaCeven || perdidaManual`, con el Amount de HP).
+
+Se ajustó el test de `scripts/check-pipe-regi-opg.js` que fijaba el valor viejo
+(9000+6000, sin la Facturada de 8000) → ahora 23.000.
+
+### 2. Los tres carteles abren un modal con lo que los compone
+
+`REGI vinculados` / `REGI CEVEN` / `REGIs perdidas` son clickeables
+(`data-act="regi-kpi-drill"`, `data-kpi="vinc|ceven|perd"`; Enter/Espacio también).
+Abren `#regi-kpi-drill-modal` (`_regiDrilldownKpiAbrir` → `_regiDrilldownHTML`),
+con el total arriba (== el número del cartel) y **una fila por oportunidad REGI**;
+cada una se expande a **sus cotizaciones de Ceven**, clickeables para abrir la
+cotización (`openPipelineQuote`). El detalle reusa `_regiStatsDesgloseHTML`, que
+ahora acepta un 2º arg `opts` (`linkQuotes`, `excluir`) sin cambiar la vista
+Estadísticas cuando se lo llama sin opts.
+
+Los buckets salen de **`_regiComposicionKpis(rowsTotal)`**, con el MISMO criterio
+de clasificación que `_regiTotalesGlobales` (comentario cruzado en los dos +
+test de reconciliación en `scripts/check-pipe-regi-stats.js`: la suma de cada
+bucket == su KPI). Sin fetch nuevo: `window._regiPipeRows` + `getPipeline()` ya
+están en memoria; si el Excel de REGI todavía no se pidió esta sesión, el modal
+muestra "Cargando…" y se repinta.
+
+`check-pipe-regi-stats.js` pasó de 100 a 135 chequeos.
+
+---
+
 ## 09/09/2026 · Backup: carpeta única + aviso de arranque + un solo archivo con las 4 marcas
 
 Pedido de Ivo. Tres piezas, todas en `shared/backup.js` / `shared/backup-folder.js`:

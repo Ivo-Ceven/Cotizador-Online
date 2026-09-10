@@ -251,6 +251,17 @@ function _regiCevenAgg(rows){
   };
 }
 
+/* Monto Ceven que suma a "REGI CEVEN" del header: TODO lo linkeado que no esté
+   Perdido — la posición viva (`.monto`, cotizaciones activas) MÁS lo ya
+   facturado (`.montoFacturado`, plata realizada). Es distinto de
+   `_regiCevenAgg().monto` a secas (solo la posición viva, que es lo que las
+   Estadísticas comparan contra el estimado de HP): acá una venta ya cerrada
+   sigue contando como monto Ceven real de ese REGI. */
+function _regiCevenMontoKpi(ag){
+  ag = ag || {};
+  return (Number(ag.monto) || 0) + (Number(ag.montoFacturado) || 0);
+}
+
 /* [{hp, ceven}] — hp es la fila REGI (shape de _regiRowToPipeRow), ceven es la
    AGREGACIÓN (_regiCevenAgg) de todas las filas del pipeline real con ese OPG.
    Devuelve TODAS las vinculadas: el recorte por período/estado lo hacen los
@@ -707,10 +718,12 @@ function _cevenRegiPipeFetch(){
        la tabla). Usa el monto que DECLARA HP (montoArchivo), no el de Ceven
        — el objetivo es que este número llegue a IGUALAR "Monto total REGI":
        ahí se sabe que no se está perdiendo de vista nada de lo que ve HP.
-     · REGI CEVEN (celeste)  — de las vinculadas por un link REAL, cuánto
-       valen en el pipeline de Ceven de verdad (activo, sin Perdido/
-       Facturado) — es el viejo cálculo de "REGI vinculados" de antes del
-       04/09, con otro nombre y otro color para no pisarse con el de arriba.
+     · REGI CEVEN (celeste)  — de las vinculadas por un link REAL, el monto
+       Ceven real de TODAS sus cotizaciones que NO estén Perdidas: la posición
+       viva más lo ya facturado (una venta cerrada sigue siendo monto Ceven de
+       ese REGI). Ver _regiCevenMontoKpi. Antes sacaba también las Facturadas
+       (era la "posición viva" a secas) — se corrigió el 10/09/2026 a pedido
+       del jefe.
      · REGIs perdidas        — el Amount de HP de lo que se da por perdido:
        la cotización real que existía pasó a 'Perdido' en el pipeline (todos
        sus links, ninguno activo ni Facturado), o Ceven la marcó perdida a
@@ -740,7 +753,7 @@ function _regiTotalesGlobales(rowsTotal){
       if(!vinculados) vinculados = _regiOpgVinculadosSet();
       var filasReales = vinculados[_regiCodigoVinculo(r)] || null;
       linkReal = !!(filasReales && filasReales.length);
-      montoVinc = linkReal ? (_regiCevenAgg(filasReales).monto || 0) : 0;
+      montoVinc = linkReal ? _regiCevenMontoKpi(_regiCevenAgg(filasReales)) : 0;
       perdidaCeven = !!(linkReal && filasReales.every(function(f){ return (f.estado || 'Cotizado') === 'Perdido'; }));
     }
     var perdidaManual = !!r.perdidaManual;
@@ -776,11 +789,266 @@ function _regiEnsureHeaderKpis(){
   var hayAlgunHeader = document.getElementById('hdr-regi-total') || document.getElementById('hdr-regi-vinc')
     || document.getElementById('hdr-regi-ceven') || document.getElementById('hdr-regi-perdidas');
   if(!hayAlgunHeader) return;
+  _regiBindHeaderKpiDrill();
   if(window._regiPipeRows){
     _regiPintarHeaderKpis(_regiTotalesGlobales(window._regiPipeRows));
     return;
   }
   _cevenRegiPipeFetch().then(function(){ _regiEnsureHeaderKpis(); }, function(){ /* sin datos: se deja en USD 0 */ });
+}
+
+/* ── Drill-down de los KPI del header (10/09/2026) ─────────────────────────
+   Los tres carteles de la derecha (REGI vinculados / REGI CEVEN / REGIs
+   perdidas) abren un modal con las OPORTUNIDADES REGI que componen ese número
+   y, adentro de cada una, sus COTIZACIONES de Ceven (clickeables para abrir la
+   cotización). Sin fetch nuevo: usa lo que ya está en memoria
+   (window._regiPipeRows + getPipeline()). */
+
+// {vinc, ceven, perd} — por bucket, un item por oportunidad REGI:
+// { hp, filas, montoHP, montoCeven, via }. MISMO criterio de clasificación que
+// _regiTotalesGlobales: si se toca uno, tocar el otro (hay un test de
+// reconciliación en scripts/check-pipe-regi-stats.js).
+//   · vinc  → linkReal || perdidaManual        (aporta montoHP al KPI)
+//   · ceven → linkReal                         (aporta montoCeven = _regiCevenMontoKpi)
+//   · perd  → perdidaCeven || perdidaManual    (aporta montoHP; via: 'manual'|'ceven'|'ambas')
+// `filas` es SIEMPRE la lista de cotizaciones reales con ese OPG (puede ser []).
+function _regiComposicionKpis(rowsTotal){
+  var vinculados = _regiOpgVinculadosSet();
+  var vinc = [], ceven = [], perd = [];
+  (rowsTotal || []).forEach(function(r){
+    var montoHP = Number(r.montoArchivo) || 0;
+    var filas = vinculados[_regiCodigoVinculo(r)] || [];
+    var linkReal = filas.length > 0;
+    var perdidaManual = !!r.perdidaManual;
+    var perdidaCeven = linkReal && filas.every(function(f){ return (f.estado || 'Cotizado') === 'Perdido'; });
+    var montoCeven = linkReal ? _regiCevenMontoKpi(_regiCevenAgg(filas)) : 0;
+    var item = { hp: r, filas: filas, montoHP: montoHP, montoCeven: montoCeven };
+    if(linkReal || perdidaManual) vinc.push(item);
+    if(linkReal) ceven.push(item);
+    if(perdidaCeven || perdidaManual){
+      perd.push(Object.assign({}, item, {
+        via: (perdidaCeven && perdidaManual) ? 'ambas' : (perdidaManual ? 'manual' : 'ceven')
+      }));
+    }
+  });
+  vinc.sort(function(a, b){ return b.montoHP - a.montoHP; });
+  ceven.sort(function(a, b){ return b.montoCeven - a.montoCeven; });
+  perd.sort(function(a, b){ return b.montoHP - a.montoHP; });
+  return { vinc: vinc, ceven: ceven, perd: perd };
+}
+
+// Metadatos por cartel: qué campo suma, qué estados atenuar en el desglose,
+// color del total y textos.
+var _REGI_DRILL_META = {
+  vinc: {
+    titulo: 'REGI vinculados', color: 'var(--cgreen)', campo: 'montoHP',
+    excluir: _REGI_ESTADOS_EXCLUIDOS,
+    sub: 'Monto que declara HP de cada oportunidad ya contemplada: hay un link real (activo o perdido) o Ceven la declaró perdida a mano.',
+    vacio: 'Ninguna oportunidad de REGI está vinculada ni declarada perdida todavía.'
+  },
+  ceven: {
+    titulo: 'REGI CEVEN', color: 'var(--cblue)', campo: 'montoCeven',
+    excluir: { Perdido: 1 },
+    sub: 'Monto de Ceven real de las cotizaciones con REGI linkeado, sin las Perdidas (posición viva + facturado).',
+    vacio: 'Ninguna oportunidad de REGI tiene todavía una cotización real de Ceven.'
+  },
+  perd: {
+    titulo: 'REGIs perdidas', color: 'var(--cred)', campo: 'montoHP',
+    excluir: _REGI_ESTADOS_EXCLUIDOS,
+    sub: 'Monto que declara HP de las oportunidades dadas por perdidas: switch "Perdida" a mano, o link real con todas sus cotizaciones en Perdido.',
+    vacio: 'Ninguna oportunidad de REGI está declarada perdida.'
+  }
+};
+
+// Estado del modal abierto (null = cerrado). `abiertos` es {opd: bool}.
+var _regiDrillState = null;
+
+function _regiDrilldownKpiAbrir(kpi){
+  if(!_REGI_DRILL_META[kpi]) return;
+  _regiDrillState = { kpi: kpi, abiertos: {}, comp: null, cargando: !window._regiPipeRows, error: false };
+  _regiDrilldownPaint();
+  if(_regiDrillState.cargando){
+    _cevenRegiPipeFetch().then(function(){
+      if(!_regiDrillState || _regiDrillState.kpi !== kpi) return;
+      _regiDrillState.cargando = false;
+      _regiDrillState.comp = _regiComposicionKpis(window._regiPipeRows || []);
+      _regiDrilldownPaint();
+    }, function(){
+      if(!_regiDrillState || _regiDrillState.kpi !== kpi) return;
+      _regiDrillState.cargando = false; _regiDrillState.error = true;
+      _regiDrilldownPaint();
+    });
+  } else {
+    _regiDrillState.comp = _regiComposicionKpis(window._regiPipeRows || []);
+    _regiDrilldownPaint();
+  }
+}
+
+function _regiDrilldownCerrar(){
+  _regiDrillState = null;
+  var w = document.getElementById('regi-kpi-drill-modal');
+  if(w && w.parentNode) w.parentNode.removeChild(w);
+}
+
+function _regiDrilldownPaint(){
+  var s = _regiDrillState;
+  if(!s) return;
+  var wrap = document.getElementById('regi-kpi-drill-modal');
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.id = 'regi-kpi-drill-modal';
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.4);'
+      + 'display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto;'
+      + 'font-family:-apple-system,BlinkMacSystemFont,sans-serif';
+    wrap.addEventListener('click', _regiDrilldownClick);
+    document.body.appendChild(wrap);
+  }
+  wrap.innerHTML = _regiDrilldownHTML(s);
+}
+
+function _regiDrilldownClick(ev){
+  var wrap = ev.currentTarget;
+  if(ev.target === wrap){ _regiDrilldownCerrar(); return; }
+  var el = cevenActEl(ev, wrap);
+  if(!el) return;
+  var act = el.getAttribute('data-act');
+  var s = _regiDrillState;
+  if(act === 'regi-drill-cerrar'){
+    _regiDrilldownCerrar();
+  } else if(act === 'regi-drill-openq'){
+    var qn = el.getAttribute('data-qn');
+    _regiDrilldownCerrar();
+    if(typeof openPipelineQuote === 'function') openPipelineQuote(qn);
+  } else if(act === 'regi-drill-grp' && s){
+    var opd = el.getAttribute('data-opd');
+    s.abiertos[opd] = !s.abiertos[opd];
+    _regiDrilldownPaint();
+  } else if(act === 'regi-drill-todas' && s && s.comp){
+    var abrir = el.getAttribute('data-modo') === 'abrir';
+    (s.comp[s.kpi] || []).forEach(function(it){ s.abiertos[it.hp.opd] = abrir; });
+    _regiDrilldownPaint();
+  }
+}
+
+function _regiDrilldownHTML(s){
+  var meta = _REGI_DRILL_META[s.kpi];
+  var card = 'background:var(--c1);border:0.5px solid var(--cb);border-radius:16px;width:760px;max-width:100%;'
+    + 'box-shadow:0 12px 44px rgba(0,0,0,.22);display:flex;flex-direction:column;max-height:88vh';
+
+  if(s.cargando || s.error){
+    return '<div style="' + card + '">'
+      + '<div style="padding:16px 20px;border-bottom:0.5px solid var(--cb);font-size:11px;font-weight:700;'
+        + 'text-transform:uppercase;letter-spacing:.5px;color:var(--ct2)">' + cevenEsc(meta.titulo) + '</div>'
+      + '<div style="padding:44px 20px;text-align:center;color:' + (s.error ? 'var(--cred)' : 'var(--ct2)') + '">'
+        + (s.error ? 'No se pudo cargar el pipeline REGI.' : 'Cargando…') + '</div>'
+      + _regiDrilldownFooterHTML('') + '</div>';
+  }
+
+  var items = (s.comp && s.comp[s.kpi]) || [];
+  var total = items.reduce(function(a, it){ return a + (Number(it[meta.campo]) || 0); }, 0);
+  var algunoAbierto = items.some(function(it){ return s.abiertos[it.hp.opd]; });
+
+  var head = '<div style="padding:16px 20px;border-bottom:0.5px solid var(--cb)">'
+    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ct2)">' + cevenEsc(meta.titulo) + '</div>'
+    + '<div style="display:flex;align-items:baseline;gap:10px;margin-top:5px">'
+      + '<strong style="font-size:24px;color:' + meta.color + '">USD ' + fI(total) + '</strong>'
+      + '<span style="font-size:12px;color:var(--ct2)">' + items.length + (items.length === 1 ? ' oportunidad' : ' oportunidades') + '</span>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--ct2);margin-top:6px;line-height:1.45">' + cevenEsc(meta.sub) + '</div>'
+  + '</div>';
+
+  var body = items.length
+    ? items.map(function(it){ return _regiDrilldownBloqueHTML(it, s, meta); }).join('')
+    : '<div style="padding:40px 20px;text-align:center;color:var(--ct2)">' + cevenEsc(meta.vacio) + '</div>';
+
+  var footLeft = items.length
+    ? '<button type="button" data-act="regi-drill-todas" data-modo="' + (algunoAbierto ? 'cerrar' : 'abrir') + '" '
+      + 'style="border:none;background:none;color:var(--cblue);font-size:12px;cursor:pointer;font-family:inherit;text-decoration:underline">'
+      + (algunoAbierto ? 'Colapsar todas' : 'Expandir todas') + '</button>'
+    : '';
+
+  return '<div style="' + card + '">'
+    + head
+    + '<div style="overflow:auto;padding:4px 10px;flex:1">' + body + '</div>'
+    + _regiDrilldownFooterHTML(footLeft)
+  + '</div>';
+}
+
+function _regiDrilldownFooterHTML(left){
+  return '<div style="padding:12px 20px;border-top:0.5px solid var(--cb);display:flex;justify-content:space-between;align-items:center;gap:12px">'
+    + '<span>' + (left || '') + '</span>'
+    + '<button type="button" data-act="regi-drill-cerrar" style="border:0.5px solid var(--cb);border-radius:980px;'
+      + 'padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;background:var(--c1);color:var(--ct1);font-family:inherit">Cerrar</button>'
+  + '</div>';
+}
+
+function _regiDrilldownBloqueHTML(it, s, meta){
+  var r = it.hp;
+  var abierto = !!s.abiertos[r.opd];
+  var filas = it.filas || [];
+  var linkReal = filas.length > 0;
+  var todasPerdidas = linkReal && filas.every(function(f){ return (f.estado || 'Cotizado') === 'Perdido'; });
+
+  var pillCss = 'border-radius:980px;padding:2px 9px;font-size:10px;font-weight:700;white-space:nowrap;flex-shrink:0';
+  var pill = todasPerdidas
+    ? '<span style="background:#fde8e6;color:#d70015;' + pillCss + '">✕ Perdida</span>'
+    : (linkReal
+      ? '<span style="background:#e6f7ec;color:#15863a;' + pillCss + '">✓ Vinculada</span>'
+      : '<span style="background:#fde8e6;color:#d70015;' + pillCss + '">✕ Perdida (declarada)</span>');
+
+  var codigo = cevenEsc(r.opd || '—') + (r.regi ? ' · ' + cevenEsc(r.regi) : '');
+  var monto = Number(it[meta.campo]) || 0;
+
+  var head = '<div data-act="regi-drill-grp" data-opd="' + cevenEsc(r.opd) + '" '
+    + 'style="display:flex;align-items:center;gap:10px;padding:10px 8px;cursor:pointer">'
+    + '<span style="font-size:11px;width:12px;flex-shrink:0;color:var(--ct2)">' + (abierto ? '▼' : '▶') + '</span>'
+    + '<div style="min-width:0;flex:1">'
+      + '<div style="font-size:11px;font-family:ui-monospace,Menlo,monospace;color:var(--ct2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + codigo + '">' + codigo + '</div>'
+      + '<div style="font-size:13px;color:var(--ct1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + cevenEsc(r.proyecto || '—') + '</div>'
+      + '<div style="font-size:11px;color:var(--ct2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + cevenEsc(r.cliente || '—') + '</div>'
+    + '</div>'
+    + pill
+    + '<strong style="font-size:13px;white-space:nowrap;flex-shrink:0">USD ' + fI(monto) + '</strong>'
+  + '</div>';
+
+  var detalle = '';
+  if(abierto){
+    detalle = linkReal
+      ? '<div style="padding:0 8px 12px 30px">'
+          + _regiStatsDesgloseHTML(_regiCevenAgg(filas), { linkQuotes: true, excluir: meta.excluir })
+        + '</div>'
+      : '<div style="padding:2px 8px 12px 30px;font-size:12px;color:var(--ct2)">'
+          + 'Sin cotización real de Ceven — se declaró perdida a mano con el switch "Perdida" de la tabla REGI.</div>';
+  }
+  return '<div style="border-bottom:0.5px solid var(--cb2)">' + head + detalle + '</div>';
+}
+
+/* Ata el click/teclado de los tres carteles clickeables del header
+   (#regi-hdr-kpis, static en el HTML) y el Esc que cierra el modal. Idempotente
+   (cevenDelegate + flag propio): _regiEnsureHeaderKpis corre en cada render. */
+function _regiBindHeaderKpiDrill(){
+  cevenDelegate('regi-hdr-kpis', 'click', _regiHdrKpiActivar);
+  cevenDelegate('regi-hdr-kpis', 'keydown', _regiHdrKpiKeydown);
+  if(!window._regiDrillEscBound){
+    window._regiDrillEscBound = true;
+    document.addEventListener('keydown', function(ev){
+      if(ev.key === 'Escape' && document.getElementById('regi-kpi-drill-modal')) _regiDrilldownCerrar();
+    });
+  }
+}
+
+function _regiHdrKpiActivar(ev){
+  var el = cevenActEl(ev, ev.currentTarget);
+  if(el && el.getAttribute('data-act') === 'regi-kpi-drill') _regiDrilldownKpiAbrir(el.getAttribute('data-kpi'));
+}
+
+function _regiHdrKpiKeydown(ev){
+  if(ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+  var el = cevenActEl(ev, ev.currentTarget);
+  if(el && el.getAttribute('data-act') === 'regi-kpi-drill'){
+    ev.preventDefault();
+    _regiDrilldownKpiAbrir(el.getAttribute('data-kpi'));
+  }
 }
 
 /* ── Render ───────────────────────────────────────────────────────────── */
@@ -819,10 +1087,12 @@ function _renderRegiPipelineFromCache(){
     // sea cual sea su estado. Es el vínculo de verdad (matching por código);
     // no confundir con `vinculada` de acá abajo, que es más ancho.
     r.linkReal = !!(filasReales && filasReales.length);
-    // Suma de TODAS las cotizaciones ACTIVAS de Ceven con este OPG (posición
-    // agregada, sin Perdido/Facturado) — antes contaba una sola, la última
-    // del array. Es lo que muestra el KPI celeste "REGI CEVEN" del header.
-    r.montoVinculado = r.linkReal ? (_regiCevenAgg(filasReales).monto || 0) : 0;
+    // Monto Ceven real de TODAS las cotizaciones de este OPG que no estén
+    // Perdidas: posición viva + facturado (ver _regiCevenMontoKpi). Es lo que
+    // muestra el KPI celeste "REGI CEVEN" del header — mismo criterio que
+    // _regiTotalesGlobales, que reusa este valor cuando la fila viene
+    // enriquecida.
+    r.montoVinculado = r.linkReal ? _regiCevenMontoKpi(_regiCevenAgg(filasReales)) : 0;
     // Perdida por el lado de Ceven: hubo vínculo real, pero TODAS las
     // cotizaciones que lo forman están en 'Perdido' — ninguna activa, ninguna
     // Facturado. El vínculo existió y no prosperó.
@@ -1274,20 +1544,36 @@ function _regiStatsPintarComparacion(opd){
 }
 
 /* Desglose del lado Ceven: una fila por cotización real vinculada a este REGI.
-   Las que no cuentan para la posición viva (Perdido/Facturado) van atenuadas,
-   mismo criterio visual que una fila ya vinculada en la tabla del pipeline
-   REGI. Solo se pinta cuando hay más de una (ver _regiStatsPintarComparacion). */
-function _regiStatsDesgloseHTML(ag){
+   Las que no cuentan van atenuadas, mismo criterio visual que una fila ya
+   vinculada en la tabla del pipeline REGI. Solo se pinta cuando hay más de una
+   (ver _regiStatsPintarComparacion).
+   `opts` (opcional, lo usa el drill-down de los KPI del header):
+     · opts.excluir   — set de estados a atenuar. Default {Perdido,Facturado}
+       (la posición viva de las Estadísticas); el KPI "REGI CEVEN" pasa
+       {Perdido} porque ahí las Facturadas SÍ suman.
+     · opts.linkQuotes — cada fila con nº de cotización se vuelve clickeable
+       (data-act="regi-drill-openq") para abrir esa cotización. */
+function _regiStatsDesgloseHTML(ag, opts){
+  opts = opts || {};
+  var excluir = opts.excluir || _REGI_ESTADOS_EXCLUIDOS;
+  var link = !!opts.linkQuotes;
   var filas = (ag.rows || []).map(function(r){
     var estado = r.estado || 'Cotizado';
-    var excl = !!_REGI_ESTADOS_EXCLUIDOS[estado];
+    var excl = !!excluir[estado];
     var lbl = (typeof cevenEstadoLabel === 'function') ? cevenEstadoLabel(estado) : estado;
-    return '<tr' + (excl ? ' style="opacity:.55"' : '') + '>'
+    var qn = (r.qNum !== undefined && r.qNum !== null && r.qNum !== '') ? String(r.qNum) : '';
+    var clickable = link && !!qn;
+    var st = [];
+    if(excl) st.push('opacity:.55');
+    if(clickable) st.push('cursor:pointer');
+    var attrs = st.length ? (' style="' + st.join(';') + '"') : '';
+    if(clickable) attrs += ' data-act="regi-drill-openq" data-qn="' + cevenEsc(qn) + '" title="Abrir la cotización #' + cevenEsc(qn) + '"';
+    return '<tr' + attrs + '>'
       + '<td>' + cevenEsc(r.cliente || '—') + '</td>'
       + '<td>' + cevenEsc(r.proyecto || '—') + '</td>'
       + '<td style="text-align:right;white-space:nowrap">USD ' + fI(Number(r.monto) || 0) + '</td>'
       + '<td style="white-space:nowrap">' + cevenEsc(r.mesCierre ? _mesLabelPoly(r.mesCierre) : '—') + '</td>'
-      + '<td>' + cevenEsc(lbl) + '</td>'
+      + '<td>' + cevenEsc(lbl) + (clickable ? ' <span style="color:var(--cblue);white-space:nowrap">#' + cevenEsc(qn) + ' ↗</span>' : '') + '</td>'
     + '</tr>';
   }).join('');
   return '<div style="margin-top:12px">'

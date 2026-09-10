@@ -230,10 +230,11 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
 }
 {
   // Un mismo REGI trabajado en VARIAS cotizaciones reales (mismo OPG): "REGI
-  // CEVEN" (celeste) suma todas las activas; una en estado Perdido/Facturado
-  // no cuenta (mismo criterio que "Total pipeline" del pipeline normal). Como
-  // hay cotizaciones activas Y una Facturada de por medio, esto NO cuenta
-  // como "perdida" — no están TODAS en Perdido.
+  // CEVEN" (celeste) suma el monto Ceven real de todas las que NO estén
+  // Perdidas — la posición viva MÁS lo ya facturado (10/09/2026: una venta
+  // cerrada sigue siendo monto Ceven de ese REGI; ver _regiCevenMontoKpi). Solo
+  // la Perdida queda afuera. Como hay actividad real, esto NO cuenta como
+  // "perdida" — no están TODAS en Perdido.
   const e = cargar();
   e._pipelineData = [
     filaReal('opg-x', {monto:9000, estado:'Cotizado'}),
@@ -244,8 +245,8 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
   e._regiPipeRows = [ filaRegi('OPD1', 'opg-x', {cliente:'Multi SA', montoArchivo:20000, monto:20000}) ];
   e._regiMostrarVinculadas = false;
   e._renderRegiPipelineFromCache();
-  ok(/USD 15\.000/.test(e._els['hdr-regi-ceven'].textContent),
-     'REGI CEVEN suma las cotizaciones activas del mismo OPG (9000 + 6000), sin Perdido (4000) ni Facturado (8000)',
+  ok(/USD 23\.000/.test(e._els['hdr-regi-ceven'].textContent),
+     'REGI CEVEN = activas (9000 + 6000) + facturada (8000), sin la Perdida (4000)',
      e._els['hdr-regi-ceven'].textContent);
   ok(/USD 20\.000/.test(e._els['hdr-regi-vinc'].textContent),
      'REGI vinculados sigue usando el Amount completo de HP (20.000), no el de Ceven',
