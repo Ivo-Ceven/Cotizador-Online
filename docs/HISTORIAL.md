@@ -192,7 +192,15 @@ bucket == su KPI). Sin fetch nuevo: `window._regiPipeRows` + `getPipeline()` ya
 están en memoria; si el Excel de REGI todavía no se pidió esta sesión, el modal
 muestra "Cargando…" y se repinta.
 
-`check-pipe-regi-stats.js` pasó de 100 a 135 chequeos.
+Dos detalles de UX (2º pasada, mismo pedido): expandir/colapsar un REGI rearma
+el `innerHTML` entero, así que `_regiDrilldownPaint(preservarScroll)` guarda y
+restaura el `scrollTop` de `#regi-drill-body` para que el listado no salte. Y el
+desglose de cada REGI usa un modo **compacto** de `_regiStatsDesgloseHTML`
+(`opts.compacto`) — lista de dos renglones en vez de tabla — que envuelve solo y
+no genera barra de scroll horizontal en el modal (620 px). El modo tabla queda
+igual para la vista Estadísticas.
+
+`check-pipe-regi-stats.js` pasó de 100 a 141 chequeos.
 
 ---
 

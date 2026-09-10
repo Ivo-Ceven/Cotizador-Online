@@ -890,20 +890,32 @@ function _regiDrilldownCerrar(){
   if(w && w.parentNode) w.parentNode.removeChild(w);
 }
 
-function _regiDrilldownPaint(){
+function _regiDrilldownPaint(preservarScroll){
   var s = _regiDrillState;
   if(!s) return;
   var wrap = document.getElementById('regi-kpi-drill-modal');
+  // Guardar el scroll del cuerpo ANTES de re-pintar: expandir/colapsar un REGI
+  // rearma el innerHTML entero, y sin esto el listado saltaría al tope y el
+  // bloque que tocaste "se movería" de lugar.
+  var prevScroll = 0;
+  if(preservarScroll){
+    var oldBody = document.getElementById('regi-drill-body');
+    if(oldBody) prevScroll = oldBody.scrollTop || 0;
+  }
   if(!wrap){
     wrap = document.createElement('div');
     wrap.id = 'regi-kpi-drill-modal';
     wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.4);'
-      + 'display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto;'
+      + 'display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow-y:auto;overflow-x:hidden;'
       + 'font-family:-apple-system,BlinkMacSystemFont,sans-serif';
     wrap.addEventListener('click', _regiDrilldownClick);
     document.body.appendChild(wrap);
   }
   wrap.innerHTML = _regiDrilldownHTML(s);
+  if(preservarScroll){
+    var newBody = document.getElementById('regi-drill-body');
+    if(newBody) newBody.scrollTop = prevScroll;
+  }
 }
 
 function _regiDrilldownClick(ev){
@@ -922,17 +934,17 @@ function _regiDrilldownClick(ev){
   } else if(act === 'regi-drill-grp' && s){
     var opd = el.getAttribute('data-opd');
     s.abiertos[opd] = !s.abiertos[opd];
-    _regiDrilldownPaint();
+    _regiDrilldownPaint(true);
   } else if(act === 'regi-drill-todas' && s && s.comp){
     var abrir = el.getAttribute('data-modo') === 'abrir';
     (s.comp[s.kpi] || []).forEach(function(it){ s.abiertos[it.hp.opd] = abrir; });
-    _regiDrilldownPaint();
+    _regiDrilldownPaint(true);
   }
 }
 
 function _regiDrilldownHTML(s){
   var meta = _REGI_DRILL_META[s.kpi];
-  var card = 'background:var(--c1);border:0.5px solid var(--cb);border-radius:16px;width:760px;max-width:100%;'
+  var card = 'background:var(--c1);border:0.5px solid var(--cb);border-radius:16px;width:620px;max-width:100%;'
     + 'box-shadow:0 12px 44px rgba(0,0,0,.22);display:flex;flex-direction:column;max-height:88vh';
 
   if(s.cargando || s.error){
@@ -969,7 +981,7 @@ function _regiDrilldownHTML(s){
 
   return '<div style="' + card + '">'
     + head
-    + '<div style="overflow:auto;padding:4px 10px;flex:1">' + body + '</div>'
+    + '<div id="regi-drill-body" style="overflow-y:auto;overflow-x:hidden;padding:4px 12px;flex:1">' + body + '</div>'
     + _regiDrilldownFooterHTML(footLeft)
   + '</div>';
 }
@@ -1014,10 +1026,10 @@ function _regiDrilldownBloqueHTML(it, s, meta){
   var detalle = '';
   if(abierto){
     detalle = linkReal
-      ? '<div style="padding:0 8px 12px 30px">'
-          + _regiStatsDesgloseHTML(_regiCevenAgg(filas), { linkQuotes: true, excluir: meta.excluir })
+      ? '<div style="padding:0 6px 12px 30px">'
+          + _regiStatsDesgloseHTML(_regiCevenAgg(filas), { linkQuotes: true, compacto: true, excluir: meta.excluir })
         + '</div>'
-      : '<div style="padding:2px 8px 12px 30px;font-size:12px;color:var(--ct2)">'
+      : '<div style="padding:2px 6px 12px 30px;font-size:12px;color:var(--ct2)">'
           + 'Sin cotización real de Ceven — se declaró perdida a mano con el switch "Perdida" de la tabla REGI.</div>';
   }
   return '<div style="border-bottom:0.5px solid var(--cb2)">' + head + detalle + '</div>';
@@ -1543,6 +1555,31 @@ function _regiStatsPintarComparacion(opd){
     + (multi ? _regiStatsDesgloseHTML(ag) : '');
 }
 
+/* Una cotización del desglose, formato "compacto" (lista, no tabla): dos
+   renglones —proyecto + monto arriba, cierre · estado · #nº abajo— que envuelven
+   solo, sin ancho mínimo ni barra de scroll horizontal. Lo usa el modal de los
+   KPI del header, que es más angosto que la tarjeta de Estadísticas. */
+function _regiDesgloseCotizItemHTML(r, opts){
+  var estado = r.estado || 'Cotizado';
+  var excl = !!(opts.excluir || _REGI_ESTADOS_EXCLUIDOS)[estado];
+  var lbl = (typeof cevenEstadoLabel === 'function') ? cevenEstadoLabel(estado) : estado;
+  var qn = (r.qNum !== undefined && r.qNum !== null && r.qNum !== '') ? String(r.qNum) : '';
+  var clickable = !!opts.linkQuotes && !!qn;
+  var meta = cevenEsc(r.mesCierre ? _mesLabelPoly(r.mesCierre) : 'sin fecha') + ' · ' + cevenEsc(lbl);
+  var st = 'display:flex;gap:10px;align-items:baseline;padding:7px 2px;border-top:0.5px solid var(--cb2)'
+    + (excl ? ';opacity:.55' : '') + (clickable ? ';cursor:pointer' : '');
+  var attrs = ' style="' + st + '"';
+  if(clickable) attrs += ' data-act="regi-drill-openq" data-qn="' + cevenEsc(qn) + '" title="Abrir la cotización #' + cevenEsc(qn) + '"';
+  return '<div' + attrs + '>'
+    + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:12px;color:var(--ct1);word-break:break-word">' + cevenEsc(r.proyecto || r.cliente || '—') + '</div>'
+      + '<div style="font-size:11px;color:var(--ct2);margin-top:1px">' + meta
+        + (clickable ? ' · <span style="color:var(--cblue);white-space:nowrap">#' + cevenEsc(qn) + ' ↗</span>' : '') + '</div>'
+    + '</div>'
+    + '<div style="font-size:12px;font-weight:600;white-space:nowrap;flex-shrink:0">USD ' + fI(Number(r.monto) || 0) + '</div>'
+  + '</div>';
+}
+
 /* Desglose del lado Ceven: una fila por cotización real vinculada a este REGI.
    Las que no cuentan van atenuadas, mismo criterio visual que una fila ya
    vinculada en la tabla del pipeline REGI. Solo se pinta cuando hay más de una
@@ -1552,11 +1589,20 @@ function _regiStatsPintarComparacion(opd){
        (la posición viva de las Estadísticas); el KPI "REGI CEVEN" pasa
        {Perdido} porque ahí las Facturadas SÍ suman.
      · opts.linkQuotes — cada fila con nº de cotización se vuelve clickeable
-       (data-act="regi-drill-openq") para abrir esa cotización. */
+       (data-act="regi-drill-openq") para abrir esa cotización.
+     · opts.compacto  — lista en vez de tabla (no genera scroll horizontal en
+       el modal angosto de los KPI). */
 function _regiStatsDesgloseHTML(ag, opts){
   opts = opts || {};
   var excluir = opts.excluir || _REGI_ESTADOS_EXCLUIDOS;
   var link = !!opts.linkQuotes;
+  if(opts.compacto){
+    return '<div style="margin-top:6px">'
+      + '<div style="font-size:10px;color:var(--ct2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">'
+        + 'Cotizaciones de Ceven para este REGI (' + (ag.rows || []).length + ')</div>'
+      + (ag.rows || []).map(function(r){ return _regiDesgloseCotizItemHTML(r, opts); }).join('')
+    + '</div>';
+  }
   var filas = (ag.rows || []).map(function(r){
     var estado = r.estado || 'Cotizado';
     var excl = !!excluir[estado];

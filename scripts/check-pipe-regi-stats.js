@@ -593,6 +593,17 @@ console.log('\n15 · _regiStatsDesgloseHTML(ag, opts): linkQuotes y excluir conf
 
   const drillDef = e._regiStatsDesgloseHTML(ag, { linkQuotes: true });
   ok(trDe(drillDef, 202).indexOf('opacity:.55') !== -1, 'sin "excluir", vuelve al default {Perdido,Facturado}: la Facturada atenuada');
+
+  // Modo compacto (modal de los KPI): lista, sin <table> ni celdas nowrap que
+  // fuercen una barra de scroll horizontal; sigue clickeable y atenuando.
+  const comp = e._regiStatsDesgloseHTML(ag, { linkQuotes: true, compacto: true, excluir: { Perdido: 1 } });
+  const itDe = (h, qn) => (h.split('<div').filter(s => s.indexOf('data-qn="' + qn + '"') !== -1)[0] || '');
+  ok(comp.indexOf('<table') === -1, 'compacto: no usa <table> (nada que desborde a lo ancho)');
+  ok(comp.indexOf('word-break:break-word') !== -1, 'los textos largos envuelven en vez de estirar');
+  ok((comp.match(/data-act="regi-drill-openq"/g) || []).length === 3, 'compacto: las 3 cotizaciones siguen clickeables');
+  ok(itDe(comp, 203).indexOf('opacity:.55') !== -1, 'compacto: la Perdida va atenuada');
+  ok(itDe(comp, 202).indexOf('opacity:.55') === -1, 'compacto: la Facturada NO (excluir:{Perdido})');
+  ok(comp.indexOf('Cotizaciones de Ceven para este REGI (3)') !== -1, 'compacto: mantiene el encabezado con el conteo');
 }
 
 /* ═══ 16 · _regiDrilldownHTML: total, conteo, vacío y bloque expandido ════ */
