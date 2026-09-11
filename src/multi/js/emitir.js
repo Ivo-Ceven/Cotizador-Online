@@ -108,6 +108,26 @@ function _emitirFilaComun(qn, ctx, now){
 /* El plan para UNA marca. `remoto` es {cqc, cquotes, pipeline} de esa marca tal
    como está en el servidor; `yaEmitido` es el número que este pedido ya usó ahí
    (o null). Devuelve qué escribir, sin escribir nada. */
+/* Identidad de una cotización emitida desde el multimarca.
+
+   DETERMINÍSTICA a propósito, y acá está la diferencia con los cotizadores: allá
+   una cotización nueva se lleva un uuid porque dos usuarios creando a la vez
+   TIENEN que quedar como dos cotizaciones distintas. Acá el caso es el opuesto —
+   dos emisiones del mismo pedido a la misma marca son LA MISMA cotización y
+   tienen que converger al mismo id, o cada re-emisión crearía una nueva con un
+   número ya ocupado y el unique (brand, qnum) la rechazaría.
+
+   `multiQNum` es el número del pedido que la originó: el mismo que ya viaja en
+   la columna `_multi` de cada fila (ver marcas.js). Pedido + marca destino
+   identifican unívocamente a la cotización emitida.
+
+   Que sea determinística es también lo que mantiene idempotente a la
+   re-emisión: sin esto el `_qid` cambiaba en cada pasada y el historial dejaba
+   de quedar byte a byte igual. */
+function cevenEmitirQid(ctx, brand){
+  return 'm' + String(ctx.multiQNum) + '-' + brand;
+}
+
 function cevenEmitirPlanMarca(brand, lineas, ctx, remoto, yaEmitido){
   var reg = cevenMultiMarca(brand);
   if(!reg) return {brand: brand, error: 'El multimarca no sabe cotizar la marca "' + brand + '".'};
@@ -135,8 +155,7 @@ function cevenEmitirPlanMarca(brand, lineas, ctx, remoto, yaEmitido){
   (remoto.cotizaciones || []).forEach(function(c){
     if(parseInt(c.qnum, 10) === qNumNum) previaCot = c;
   });
-  var qid = previaCot ? previaCot.id
-          : ((typeof cevenQNuevoId === 'function') ? cevenQNuevoId() : ('m' + qn + '-' + Date.now()));
+  var qid = previaCot ? previaCot.id : cevenEmitirQid(ctx, brand);
 
   // `_qid` sellado en cada línea, igual que hace saveDB() en los cotizadores.
   var filasNuevas = lineas.map(function(it){

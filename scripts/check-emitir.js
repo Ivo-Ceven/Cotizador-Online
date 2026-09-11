@@ -367,6 +367,19 @@ console.log('\n7 · El payload va a la clave que esa marca lee');
          're-emitir reusa el id de la cotización, no crea otra',
          plan1.qid + ' -> ' + plan2.qid);
 
+      /* Y SIN la tabla a mano el id tiene que salir igual igual, porque es
+         determinístico (pedido + marca). Cuando esto se derivaba de Date.now()
+         la re-emisión dejaba de ser idempotente de forma intermitente: el
+         historial cambiaba de bytes entre dos pasadas iguales. */
+      const ctx3 = ctxBase();
+      const sinTabla1 = E.cevenEmitirPlan(pedidoMixto(ctx3), ctx3, VACIO(), {}).find(p => p.brand === 'poly');
+      const sinTabla2 = E.cevenEmitirPlan(pedidoMixto(ctx3), ctx3, VACIO(), {}).find(p => p.brand === 'poly');
+      ok(sinTabla1.qid === sinTabla2.qid,
+         'el id es determinístico aunque la tabla no tenga todavía la cotización',
+         sinTabla1.qid + ' vs ' + sinTabla2.qid);
+      ok(!/\d{10,}/.test(String(sinTabla1.qid)),
+         'y no lleva un timestamp adentro', String(sinTabla1.qid));
+
       cerrar();
     }, cerrar);
   }, cerrar);
