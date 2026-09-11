@@ -26,10 +26,11 @@
       en el intercept (antes de cualquier request) y se apaga SOLO
       cuando el servidor confirmó el push. Mientras esté prendida, el
       poll y el bootstrap tienen PROHIBIDO pisar esa clave.
-   3) _pipeSnap = "lo que Supabase ya tiene", fila por fila. Solo se
-      puede avanzar con un push confirmado; ante cualquier fallo se
-      vuelve atrás para que el próximo intento recalcule el diff
-      completo (altas, ediciones y bajas).
+   3) El snapshot de cada colección (C.snap) = "lo que Supabase ya
+      tiene", fila por fila. Solo se puede avanzar con un push
+      confirmado; ante cualquier fallo se vuelve atrás para que el
+      próximo intento recalcule el diff completo (altas, ediciones y
+      bajas).
    ============================================================ */
 (function(){
 
@@ -150,7 +151,6 @@
   var SP = window.Storage && window.Storage.prototype;
   var _origSetItem = (SP && SP.setItem) || localStorage.setItem;
 
-  var _pipeSnap  = {};    // id -> snapKey de lo que Supabase YA tiene (invariante 3)
   var _pushing   = 0;     // pushes en vuelo (contador, no booleano: se solapan)
   var _booted    = false;
   var _paused    = false;
@@ -160,8 +160,6 @@
   var _dirtySeq  = {};    // clave -> versión del último cambio local (ver pushOk)
   var _seq       = 0;
   var _inFlight  = {};    // clave -> hay un push de esa clave viajando ahora
-  var _dirtyUp   = {};    // id de fila de pipeline pendiente de upsert
-  var _dirtyDel  = {};    // id de fila de pipeline pendiente de borrado
   var _preBoot   = {};    // claves escritas antes de que resolviera el bootstrap
   var _pollTimer = null;
   var _bootTimer = null;
@@ -191,23 +189,29 @@
   }
 
   /* ---------- Cola de pendientes PERSISTENTE ----------
-     _retry / _timers / _pipeSnap vivían solo en memoria: un F5 los borraba y
-     el bootstrap siguiente daba lo local por perdido. Ahora el estado mínimo
-     para no perder nada (qué claves están sucias y qué filas de pipeline
+     _retry / _timers / los snapshots vivían solo en memoria: un F5 los borraba
+     y el bootstrap siguiente daba lo local por perdido. Ahora el estado mínimo
+     para no perder nada (qué claves están sucias y qué filas de cada colección
      faltan subir o borrar) se espeja en DIRTY_KEY.
 
-     No se persiste _pipeSnap entero (sería una copia completa del pipeline):
-     el snapshot se reconstruye del servidor en el bootstrap, que es
-     exactamente lo que significa, y las filas sucias se dejan afuera a
-     propósito para que el primer push las suba. */
+     No se persiste el snapshot entero (sería una copia completa de la
+     colección): se reconstruye del servidor en el bootstrap, que es exactamente
+     lo que significa, y las filas sucias se dejan afuera a propósito para que
+     el primer push las suba.
+
+     `up`/`del` son {clave de colección: [ids]}. Hasta que hubo más de una
+     colección eran dos arrays planos de ids del pipeline; loadDirty() sigue
+     aceptando esa forma para no perder los pendientes de quien actualiza con la
+     cola cargada. */
 
   function saveDirty(){
-    rawSet(DIRTY_KEY, JSON.stringify({
-      k:   _dirty,
-      r:   _retry,
-      up:  Object.keys(_dirtyUp),
-      del: Object.keys(_dirtyDel)
-    }));
+    var up = {}, del = {};
+    COLECCIONES.forEach(function(C){
+      var u = Object.keys(C.dUp), d = Object.keys(C.dDel);
+      if(u.length) up[C.key]  = u;
+      if(d.length) del[C.key] = d;
+    });
+    rawSet(DIRTY_KEY, JSON.stringify({ k: _dirty, r: _retry, up: up, del: del }));
   }
   function loadDirty(){
     var d = window.cevenLsJSON(DIRTY_KEY, null);
@@ -215,14 +219,27 @@
     var k;
     if(d.k && typeof d.k === 'object'){
       for(k in d.k){
-        if(k === PIPE_KEY || SETTING_KEYS.indexOf(k) >= 0) _dirty[k] = Number(d.k[k]) || 0;
+        if(coleccionDe(k) || SETTING_KEYS.indexOf(k) >= 0) _dirty[k] = Number(d.k[k]) || 0;
       }
     }
     if(d.r && typeof d.r === 'object'){
       for(k in d.r){ if(_dirty[k] !== undefined) _retry[k] = Number(d.r[k]) || 2500; }
     }
-    for(var i = 0; i < (d.up  || []).length; i++) _dirtyUp[d.up[i]]   = 1;
-    for(var j = 0; j < (d.del || []).length; j++) _dirtyDel[d.del[j]] = 1;
+    // Forma vieja (arrays planos) = pendientes del pipeline; forma nueva, por clave.
+    function repartir(v, destino){
+      if(!v) return;
+      if(Array.isArray(v)){
+        var C0 = coleccionDe(PIPE_KEY);
+        if(C0) v.forEach(function(id){ C0[destino][id] = 1; });
+        return;
+      }
+      for(var kk in v){
+        var C = coleccionDe(kk);
+        if(C) (v[kk] || []).forEach(function(id){ C[destino][id] = 1; });
+      }
+    }
+    repartir(d.up,  'dUp');
+    repartir(d.del, 'dDel');
     for(k in _dirty) _dirtySeq[k] = ++_seq;
     var n = Object.keys(_dirty).length;
     if(n) console.warn('[sync] ' + n + ' clave(s) quedaron sin subir en una sesión anterior — mandan los datos locales');
@@ -322,25 +339,202 @@
   // : val`), Apple borra la propiedad (`delete r.ovLink`) y un import de Excel
   // deja ''. Los tres significan lo mismo y los tres tienen que terminar en un
   // NULL de SQL, nunca en un string vacío.
-  function pickPipe(row){
-    var o = {}, i, c, val;
-    for(i = 0; i < PIPE_COLS.length; i++){
-      c = PIPE_COLS[i];
-      val = row[c];
-      if(OBJ_COLS.indexOf(c) >= 0){
-        // jsonb: objeto nativo si tiene contenido, NULL si está vacío o borrado.
-        if(typeof val === 'string'){ try{ val = JSON.parse(val); }catch(e){ val = null; } }
-        o[c] = (val && typeof val === 'object' && Object.keys(val).length > 0) ? val : null;
-      } else if(NULL_COLS.indexOf(c) >= 0){
-        o[c] = (val === undefined || val === null || val === '') ? null : val;
-      } else {
-        o[c] = (val === undefined) ? null : val;
+  /* ---------- Colecciones sincronizadas FILA POR FILA ----------
+     Todo lo de abajo era una sola implementación cableada al pipeline
+     (`pickPipe`, `_pipeSnap`, `syncPipeline`, `mergePipeIntoLocal`…). Es la
+     única parte de la sync que NO sufre el last-write-wins, porque diffea por
+     id y sube/borra fila por fila.
+
+     Se generalizó a un factory para poder enchufarle una segunda colección: las
+     cotizaciones, que hoy viajan como el blob `cquotes` en app_settings y por
+     eso se pisan entre usuarios (ver docs/ARQUITECTURA.md y el banco de pruebas
+     scripts/check-sync-colecciones.js).
+
+     Cada colección es dueña de su clave de localStorage, su tabla, su snapshot
+     de "lo que el servidor ya tiene" y sus dos colas de filas pendientes. Las
+     tres invariantes de arriba valen igual para todas. */
+  var COLECCIONES = [];
+
+  function crearColeccion(cfg){
+    var KEY     = cfg.key;
+    var TABLA   = cfg.tabla;
+    var COLS    = cfg.cols          || [];
+    var NUMC    = cfg.numCols       || [];
+    var OBJC    = cfg.objCols       || [];
+    var NULLC   = cfg.nullCols      || [];
+    var LOCALC  = cfg.localOnlyCols || [];
+    var PADC    = cfg.padCols       || {};
+    // Filas que NO pueden estar en la colección aunque el servidor las mande, y
+    // cuyo borrado hay que encolar. Hoy solo lo usa el pipeline (el archivo).
+    var EXCLUIR = cfg.excluirIds    || function(){ return {}; };
+    var AL_CAMBIAR = cfg.alCambiar  || function(){};
+
+    var C = {
+      key:   KEY,
+      tabla: TABLA,
+      snap:  {},   // id -> snapKey de lo que Supabase YA tiene (invariante 3)
+      dUp:   {},   // id de fila pendiente de upsert
+      dDel:  {}    // id de fila pendiente de borrado
+    };
+
+    // Emite SIEMPRE el mismo set de columnas (COLS + brand) para todas las
+    // filas. Dos razones:
+    //  · Un escalar que se vacía tiene que viajar como null explícito. Si se
+    //    omite, PostgREST conserva el valor viejo y el poll lo vuelve a traer:
+    //    el pipeline entra en un ciclo de revert infinito cada 15s (el caso de
+    //    la Factura en Poly y de ovLink/proyecto en Apple).
+    //  · Un upsert en lote con filas de distinta forma rebota con
+    //    PGRST102 "All object keys must match".
+    // En las tablas solo id y brand son NOT NULL (son la PK), así que mandar
+    // null en cualquier otra columna es seguro.
+    //
+    // nullableCols marca además los escalares que la app VACÍA a mano, y cada
+    // pantalla lo hace a su manera: Poly guarda null (`factura = val==='' ? null
+    // : val`), Apple borra la propiedad (`delete r.ovLink`) y un import de Excel
+    // deja ''. Los tres significan lo mismo y los tres tienen que terminar en un
+    // NULL de SQL, nunca en un string vacío.
+    C.pick = function(row){
+      var o = {}, i, c, val;
+      for(i = 0; i < COLS.length; i++){
+        c = COLS[i];
+        val = row[c];
+        if(OBJC.indexOf(c) >= 0){
+          // jsonb: objeto nativo si tiene contenido, NULL si está vacío o borrado.
+          if(typeof val === 'string'){ try{ val = JSON.parse(val); }catch(e){ val = null; } }
+          o[c] = (val && typeof val === 'object' && Object.keys(val).length > 0) ? val : null;
+        } else if(NULLC.indexOf(c) >= 0){
+          o[c] = (val === undefined || val === null || val === '') ? null : val;
+        } else {
+          o[c] = (val === undefined) ? null : val;
+        }
       }
-    }
-    o.brand = BRAND;
-    return o;
+      o.brand = BRAND;
+      return o;
+    };
+    C.snapKey = function(row){ return JSON.stringify(C.pick(row)); };
+
+    // Normaliza lo que devuelve Postgres para que vuelva a ser EXACTAMENTE el
+    // objeto que la app tenía. Si no reconstruye lo mismo, el diff marca la fila
+    // como cambiada en cada poll y la tabla se re-renderiza para siempre.
+    C.coerce = function(r){
+      delete r.brand;   // dato redundante localmente (este cotizador es 100% de su marca)
+      var i, c;
+      for(i = 0; i < NUMC.length; i++){
+        c = NUMC[i];
+        if(r[c] !== null && r[c] !== undefined && r[c] !== '') r[c] = Number(r[c]);
+      }
+      // Columnas numéricas en Supabase que la app guarda como string con ceros a
+      // la izquierda (qNum en Apple: 71 -> '0071'). Sin esto el match contra
+      // cquotes falla y el diff marca la fila como cambiada para siempre.
+      for(c in PADC){
+        if(r[c] !== null && r[c] !== undefined && r[c] !== '') r[c] = padNum(r[c], PADC[c]);
+      }
+      // jsonb: Supabase devuelve objetos nativos, pero por si acaso vienen string
+      for(i = 0; i < OBJC.length; i++){
+        var oc = OBJC[i];
+        if(r[oc] && typeof r[oc] === 'string'){ try{ r[oc] = JSON.parse(r[oc]); }catch(e){ r[oc] = null; } }
+      }
+      return r;
+    };
+
+    // Copia sobre la fila del servidor los campos que solo existen en local
+    // (localOnlyCols: no hay columna en Supabase, el servidor los ignora).
+    C.keepLocalOnly = function(serverRow, localRow){
+      if(!localRow) return serverRow;
+      for(var i = 0; i < LOCALC.length; i++){
+        var c = LOCALC[i];
+        if(localRow[c] !== undefined) serverRow[c] = localRow[c];
+      }
+      return serverRow;
+    };
+
+    /* Lectura que distingue "vacío" de "ilegible". Es la diferencia entre no
+       hacer nada y borrar todo del servidor.
+
+       `leerFilas`/`escribirFilas` existen porque no toda colección guarda en
+       localStorage con la misma forma con la que viaja a la tabla: `cquotes` es
+       un array PLANO de líneas y la tabla tiene una fila por cotización. El
+       adaptador vive en shared/quotes-store.js; acá solo se lo llama. */
+    C.read = function(){
+      var raw = lsGet(KEY);
+      if(raw === null || raw === '') return {ok: true, rows: []};
+      var v;
+      try{ v = JSON.parse(raw); }catch(e){ return {ok: false, rows: []}; }
+      if(!Array.isArray(v)) return {ok: false, rows: []};
+      return {ok: true, rows: cfg.leerFilas ? cfg.leerFilas(v) : v};
+    };
+    C.write = function(rows){
+      return rawSet(KEY, JSON.stringify(cfg.escribirFilas ? cfg.escribirFilas(rows) : rows));
+    };
+    // El orden por defecto es numérico por id (el pipeline usa Date.now()).
+    // `cquotes` tiene ids de texto, así que trae el suyo.
+    C.orden = cfg.orden || byId;
+    C.norm  = function(arr){ return JSON.stringify(arr.map(C.pick).sort(C.orden)); };
+    C.excluirIds = EXCLUIR;
+    C.alCambiar  = AL_CAMBIAR;
+    /* Durante la transición, `cquotes` se sigue subiendo ADEMÁS como el blob de
+       siempre, para que un cliente sin actualizar no se quede sin historial. Se
+       ESCRIBE el blob pero no se LEE nunca: la tabla es la única fuente de
+       verdad, y así un blob viejo no puede pisar a un cliente nuevo. */
+    C.espejoBlob = !!cfg.espejoBlob;
+    // Última oportunidad de ajustar las filas locales antes de mezclarlas con
+    // las del servidor, ya con las del servidor en la mano.
+    C.preMerge = cfg.preMerge || function(locales){ return locales; };
+    // Qué hacer cuando el servidor rechaza el push por un unique que no es la PK
+    // (en cotizaciones: dos personas tomaron el mismo número).
+    C.alChocar = cfg.alChocar || null;
+
+    /* ---------- Push ----------
+       Los dos devuelven true/false ("¿quedó guardado en Supabase?") y NUNCA
+       rechazan. Es la pieza central: antes se tragaban el error de red y el
+       llamador daba el cambio por subido, así que un push perdido no se
+       reintentaba jamás y el siguiente poll lo pisaba con el estado del
+       servidor. */
+    /* Resuelve a {ok, conflicto}. `conflicto` trae el cuerpo del error cuando el
+       rechazo es por una restricción UNIQUE que NO es la PK (código 23505): el
+       upsert resuelve los choques de PK solo, así que un 23505 significa que
+       otra fila ya se quedó con un valor único —en `cotizaciones`, el número—.
+       Eso no se reintenta igual que un fallo de red: hay que cambiar el dato
+       primero, y de eso se ocupa C.alChocar. */
+    C.pushRows = function(rows){
+      if(!rows.length) return Promise.resolve({ok: true, conflicto: null});
+      return sfetch(TABLA, {method: 'POST', headers: {'Prefer': 'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify(rows)})
+        .then(function(r){
+          if(r.ok) return {ok: true, conflicto: null};
+          return r.text().then(function(t){
+            console.warn('[sync] upsert ' + TABLA + ' ' + r.status + ':', t);
+            var esUnique = (r.status === 409) || (String(t).indexOf('23505') >= 0);
+            return {ok: false, conflicto: esUnique ? String(t) : null};
+          }, function(){ return {ok: false, conflicto: null}; });
+        }, function(e){ console.warn('[sync] upsert ' + TABLA, e); return {ok: false, conflicto: null}; });
+    };
+    // Los ids van en la query string: con ~500 filas la URL pasaba los 8KB, el
+    // servidor devolvía 414 y se reintentaba la MISMA URL para siempre.
+    C.delRows = function(ids){
+      if(!ids.length) return Promise.resolve(true);
+      var chunks = [], i;
+      for(i = 0; i < ids.length; i += DEL_CHUNK) chunks.push(ids.slice(i, i + DEL_CHUNK));
+      return Promise.all(chunks.map(function(chunk){
+        var list = chunk.map(function(id){ return encodeURIComponent(String(id)); }).join(',');
+        return sfetch(TABLA + '?' + BQ + '&id=in.(' + list + ')', {method: 'DELETE'})
+          .then(function(r){
+            if(!r.ok) console.warn('[sync] delete ' + TABLA + ' ' + r.status + ' (' + chunk.length + ' ids)');
+            return r.ok;
+          }, function(e){ console.warn('[sync] delete ' + TABLA, e); return false; });
+      })).then(function(res){
+        // Todos o ninguno: si un lote falló, el diff se recalcula entero.
+        return res.every(function(ok){ return ok; });
+      });
+    };
+
+    COLECCIONES.push(C);
+    return C;
   }
-  function snapKey(row){ return JSON.stringify(pickPipe(row)); }
+
+  function coleccionDe(k){
+    for(var i = 0; i < COLECCIONES.length; i++){ if(COLECCIONES[i].key === k) return COLECCIONES[i]; }
+    return null;
+  }
 
   /* Ids que YA están en el archivo (carchive) — no pueden estar además en el
      pipeline vivo. Una fila así se resucita cuando otro equipo la re-sube a la
@@ -376,52 +570,124 @@
     while(s.length < len) s = '0' + s;
     return s;
   }
-  function coerce(r){
-    delete r.brand;   // dato redundante localmente (este cotizador es 100% de su marca)
-    var i, c;
-    for(i = 0; i < NUM_COLS.length; i++){
-      c = NUM_COLS[i];
-      if(r[c] !== null && r[c] !== undefined && r[c] !== '') r[c] = Number(r[c]);
-    }
-    // Columnas numéricas en Supabase que la app guarda como string con ceros a
-    // la izquierda (qNum en Apple: 71 -> '0071'). Sin esto el match contra
-    // cquotes falla y el diff marca la fila como cambiada para siempre.
-    for(c in PAD_COLS){
-      if(r[c] !== null && r[c] !== undefined && r[c] !== '') r[c] = padNum(r[c], PAD_COLS[c]);
-    }
-    // jsonb: Supabase devuelve objetos nativos, pero por si acaso vienen string
-    for(i = 0; i < OBJ_COLS.length; i++){
-      var oc = OBJ_COLS[i];
-      if(r[oc] && typeof r[oc] === 'string'){ try{ r[oc] = JSON.parse(r[oc]); }catch(e){ r[oc] = null; } }
-    }
-    return r;
-  }
   function byId(a, b){ return (Number(a.id) || 0) - (Number(b.id) || 0); }
-  function normPipe(arr){ return JSON.stringify(arr.map(pickPipe).sort(byId)); }
   function visible(id){ var el = document.getElementById(id); return !!(el && el.classList.contains('on')); }
 
-  // Copia sobre la fila del servidor los campos que solo existen en local
-  // (localOnlyCols: no hay columna en Supabase, el servidor los ignora).
-  function keepLocalOnly(serverRow, localRow){
-    if(!localRow) return serverRow;
-    for(var i = 0; i < LOCAL_ONLY.length; i++){
-      var c = LOCAL_ONLY[i];
-      if(localRow[c] !== undefined) serverRow[c] = localRow[c];
-    }
-    return serverRow;
-  }
+  /* ---------- La colección `pipeline` ----------
+     La primera (y por ahora única) colección fila por fila. Todo lo que la
+     distingue sale de CEVEN_BRAND, igual que antes; lo que cambió es que la
+     lógica ya no está cableada a ella.
 
-  // Lectura del pipeline que distingue "vacío" de "ilegible". Es la diferencia
-  // entre no hacer nada y borrar todo el pipeline del servidor.
-  function readPipe(){
-    var raw = lsGet(PIPE_KEY);
-    if(raw === null || raw === '') return {ok: true, rows: []};
-    var v;
-    try{ v = JSON.parse(raw); }catch(e){ return {ok: false, rows: []}; }
-    if(!Array.isArray(v)) return {ok: false, rows: []};
-    return {ok: true, rows: v};
-  }
-  function writePipe(rows){ return rawSet(PIPE_KEY, JSON.stringify(rows)); }
+     `excluirIds`: una fila que ya está en el archivo (carchive) NO puede volver
+     al pipeline vivo. */
+  var PIPE = crearColeccion({
+    key:           PIPE_KEY,
+    tabla:         'pipeline',
+    cols:          PIPE_COLS,
+    numCols:       NUM_COLS,
+    objCols:       OBJ_COLS,
+    nullCols:      NULL_COLS,
+    localOnlyCols: LOCAL_ONLY,
+    padCols:       PAD_COLS,
+    excluirIds:    pipeArchivedIds,
+    alCambiar:     function(){
+      if(visible('p-pipeline') && typeof renderPipeline === 'function') renderPipeline();
+      else if(visible('p-regi-stats') && typeof renderRegiStats === 'function') renderRegiStats();
+    }
+  });
+
+  /* ---------- La colección `cotizaciones` ----------
+     El historial dejó de viajar como el blob `cquotes` de app_settings. La
+     traducción entre el array plano del localStorage y la fila por cotización
+     de la tabla la hace shared/quotes-store.js (se carga ANTES que este
+     archivo); acá solo se la enchufa.
+
+     Mientras dure la transición se sigue subiendo el blob (`espejoBlob`) para
+     que un cliente sin actualizar no se quede sin historial, pero NUNCA se lo
+     lee: ver el corte en poll() y en mergeSettings(). */
+  var QUOTES_KEY = window.cevenK('cquotes');
+  var QUOTES = (typeof cevenQAgrupar === 'function') ? crearColeccion({
+    key:      QUOTES_KEY,
+    tabla:    'cotizaciones',
+    cols:     ['id','qnum','cliente','proyecto','ejecutivo','estado','mesCierre','lineas','cond'],
+    numCols:  ['qnum'],
+    objCols:  ['lineas','cond'],
+    nullCols: ['cliente','proyecto','ejecutivo','estado','mesCierre'],
+    padCols:  { qnum: 4 },   // la columna es bigint; la app lo maneja como '0100'
+    espejoBlob: true,
+
+    // localStorage guarda líneas sueltas; la tabla, una fila por cotización.
+    leerFilas:     function(plano){ return cevenQMarcarLegacy(cevenQAgrupar(plano), plano); },
+    escribirFilas: function(cotiz){ return cevenQAplanar(cotiz); },
+    // Los ids son texto (uuid o 'q0100'): byId los volvería NaN. Se ordena por
+    // número, que es además como el historial se lee.
+    orden: function(a, b){ return (parseInt(a.qnum, 10) || 0) - (parseInt(b.qnum, 10) || 0); },
+
+    preMerge: function(locales, serverRows){
+      var r = cevenQReconciliar(locales, serverRows);
+      if(r.renumeradas.length){
+        console.warn('[sync] ' + r.renumeradas.length + ' cotización(es) local(es) sin sincronizar chocaban con otra del equipo — se renumeraron para no perder ninguna');
+        r.renumeradas.forEach(function(x){
+          if(typeof showToast === 'function'){
+            showToast('La cotización #' + x.de + ' ya la había usado otra del equipo. La tuya quedó como #' + x.a + '.');
+          }
+        });
+      }
+      return r.cotiz;
+    },
+
+    /* Dos personas tomaron el mismo número. El unique de la tabla rebotó, así
+       que la etiqueta se cambia y se reintenta. La cotización NO se pierde: su
+       identidad es el id, no el número. */
+    alChocar: function(detalle, intentadas){
+      /* CUÁL número choca lo dice el error, no nuestro snapshot: el sentido de
+         todo esto es que este navegador NO sabe qué tomó el resto del equipo.
+         Postgres devuelve "Key (brand, qnum)=(apple, 2) already exists.". */
+      var m = /\(brand,\s*qnum\)=\(\s*[^,]*,\s*(\d+)\s*\)/.exec(String(detalle || ''));
+      if(!m) return false;               // no se pudo leer: reintento normal
+      var chocado = parseInt(m[1], 10);
+      if(isNaN(chocado)) return false;
+
+      var read = QUOTES.read();
+      if(!read.ok) return false;
+
+      // El próximo libre que conocemos. Si vuelve a chocar, rebota otra vez y
+      // sube de nuevo: converge, porque el número solo puede crecer.
+      var max = chocado;
+      read.rows.forEach(function(c){
+        var n = parseInt(c.qnum, 10);
+        if(!isNaN(n) && n > max) max = n;
+      });
+
+      // Solo se renumera la que se intentó subir Y tiene el número que rebotó.
+      var enIntento = {};
+      (intentadas || []).forEach(function(c){ enIntento[c.id] = 1; });
+      var cambio = false;
+      read.rows.forEach(function(c){
+        if(!enIntento[c.id] || parseInt(c.qnum, 10) !== chocado) return;
+        max += 1;
+        var nuevo = String(max).padStart(4, '0');
+        if(typeof showToast === 'function'){
+          showToast('El número #' + c.qnum + ' ya lo usó otra cotización del equipo. Esta quedó como #' + nuevo + '.');
+        }
+        c.qnum = nuevo;
+        cambio = true;
+      });
+      if(!cambio) return false;
+      if(!QUOTES.write(read.rows)) return false;
+      /* El contador tiene que enterarse, o la próxima cotización vuelve a nacer
+         con un número ya usado. cevenAnotarQNum solo sube, nunca baja. */
+      if(typeof cevenAnotarQNum === 'function') cevenAnotarQNum(max);
+      QUOTES.snap = {};   // forzar el re-diff completo con los números nuevos
+      if(visible('p-history') && typeof renderHistory === 'function') renderHistory();
+      return true;
+    },
+
+    alCambiar: function(){
+      if(visible('p-history') && typeof renderHistory === 'function') renderHistory();
+    }
+  }) : null;
+  if(!QUOTES) console.error('[sync] falta shared/quotes-store.js — tiene que cargarse ANTES que shared/sync.js; las cotizaciones siguen sincronizando como blob');
 
   /* ---------- GET con resultado discriminado ----------
      Antes devolvía null ante cualquier fallo (red, 500, 401, JSON inválido) y
@@ -460,32 +726,6 @@
      rechazan. Es la pieza central: antes se tragaban el error de red y el
      llamador daba el cambio por subido, así que un push perdido no se
      reintentaba jamás y el siguiente poll lo pisaba con el estado del servidor. */
-  function pushPipeRows(rows){
-    if(!rows.length) return Promise.resolve(true);
-    return sfetch('pipeline', {method: 'POST', headers: {'Prefer': 'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify(rows)})
-      .then(function(r){
-        if(!r.ok) r.text().then(function(t){ console.warn('[sync] upsert pipeline ' + r.status + ':', t); });
-        return r.ok;
-      }, function(e){ console.warn('[sync] upsert pipeline', e); return false; });
-  }
-  // Los ids van en la query string: con ~500 filas la URL pasaba los 8KB, el
-  // servidor devolvía 414 y se reintentaba la MISMA URL para siempre.
-  function delPipeRows(ids){
-    if(!ids.length) return Promise.resolve(true);
-    var chunks = [], i;
-    for(i = 0; i < ids.length; i += DEL_CHUNK) chunks.push(ids.slice(i, i + DEL_CHUNK));
-    return Promise.all(chunks.map(function(chunk){
-      var list = chunk.map(function(id){ return encodeURIComponent(String(id)); }).join(',');
-      return sfetch('pipeline?' + BQ + '&id=in.(' + list + ')', {method: 'DELETE'})
-        .then(function(r){
-          if(!r.ok) console.warn('[sync] delete pipeline ' + r.status + ' (' + chunk.length + ' ids)');
-          return r.ok;
-        }, function(e){ console.warn('[sync] delete pipeline', e); return false; });
-    })).then(function(res){
-      // Todos o ninguno: si un lote falló, el diff se recalcula entero.
-      return res.every(function(ok){ return ok; });
-    });
-  }
   function pushSettings(rows){
     if(!rows.length) return Promise.resolve(true);
     // La columna `key` guarda la clave REAL de localStorage (con prefijo de
@@ -543,7 +783,7 @@
       if(METHOD_KEYS[k]) return;              // nunca guardar claves con nombre de método
       _origSetItem.call(this, k, v);
       if(this !== window.localStorage) return;
-      if(k !== PIPE_KEY && SETTING_KEYS.indexOf(k) < 0) return;
+      if(!coleccionDe(k) && SETTING_KEYS.indexOf(k) < 0) return;
       // Sucia YA, antes de cualquier request (invariante 2): si el navegador se
       // cierra en los próximos 350ms el cambio no se pierde igual.
       markDirty(k);
@@ -578,7 +818,8 @@
       retryLater(k);
       return;
     }
-    if(k === PIPE_KEY){ syncPipeline(); return; }
+    var col = coleccionDe(k);
+    if(col){ syncColeccion(col); return; }
 
     var v = lsGet(k);
     if(v === null){
@@ -597,66 +838,84 @@
     });
   }
 
-  function syncPipeline(){
-    var read = readPipe();
+  // Diffea la colección contra su snapshot y sube altas/ediciones y bajas.
+  function syncColeccion(C){
+    var read = C.read();
     if(!read.ok){
       // JSON corrupto: no se puede calcular el diff. Antes se salía sin log y
       // sin resolver el pendiente. Se reintenta: el pendiente sigue contando
       // (es la verdad: eso no está sincronizado) y en cuanto la app reescriba
       // la clave, sube.
-      console.error('[sync] "' + PIPE_KEY + '" tiene JSON inválido — no se puede sincronizar, se reintenta');
-      retryLater(PIPE_KEY);
+      console.error('[sync] "' + C.key + '" tiene JSON inválido — no se puede sincronizar, se reintenta');
+      retryLater(C.key);
       return;
     }
     var arr = read.rows, nextSnap = {}, toUpsert = [], i, r, sk, id;
     for(i = 0; i < arr.length; i++){
       r = arr[i];
       if(!r || r.id == null) continue;
-      sk = snapKey(r);
+      sk = C.snapKey(r);
       nextSnap[r.id] = sk;
-      if(_pipeSnap[r.id] !== sk) toUpsert.push(r);
+      if(C.snap[r.id] !== sk) toUpsert.push(r);
     }
     var toDelete = [];
-    for(id in _pipeSnap){ if(!(id in nextSnap)) toDelete.push(id); }
+    for(id in C.snap){ if(!(id in nextSnap)) toDelete.push(id); }
     // Borrados de una sesión anterior que nunca se confirmaron: no están ni en
-    // el local ni en _pipeSnap, pero el servidor todavía los tiene.
-    for(id in _dirtyDel){ if(!(id in nextSnap) && toDelete.indexOf(id) < 0) toDelete.push(id); }
+    // el local ni en el snapshot, pero el servidor todavía los tiene.
+    for(id in C.dDel){ if(!(id in nextSnap) && toDelete.indexOf(id) < 0) toDelete.push(id); }
 
     if(!toUpsert.length && !toDelete.length){
-      _pipeSnap = nextSnap;
-      retryDone(PIPE_KEY);
+      C.snap = nextSnap;
+      retryDone(C.key);
       return;
     }
 
     // Anotar la intención ANTES de intentar: si el navegador se cierra en el
     // medio, la próxima sesión sabe exactamente qué filas mandan localmente.
-    for(i = 0; i < toUpsert.length; i++) _dirtyUp[toUpsert[i].id] = 1;
-    for(i = 0; i < toDelete.length; i++) _dirtyDel[toDelete[i]] = 1;
-    markDirty(PIPE_KEY);
+    for(i = 0; i < toUpsert.length; i++) C.dUp[toUpsert[i].id] = 1;
+    for(i = 0; i < toDelete.length; i++) C.dDel[toDelete[i]] = 1;
+    markDirty(C.key);
     saveDirty();
 
-    var prevSnap = _pipeSnap;
-    var seq = _dirtySeq[PIPE_KEY];
-    _pipeSnap = nextSnap;
-    _inFlight[PIPE_KEY] = true;
+    var prevSnap = C.snap;
+    var seq = _dirtySeq[C.key];
+    C.snap = nextSnap;
+    _inFlight[C.key] = true;
     pushBegin();
-    Promise.all([pushPipeRows(toUpsert.map(pickPipe)), delPipeRows(toDelete)]).then(function(res){
+    // El espejo del blob viaja en el mismo lote (ver C.espejoBlob). Que falle NO
+    // invalida el push de las filas: la tabla es la fuente de verdad y el blob
+    // es solo compatibilidad hacia atrás.
+    var espejo = C.espejoBlob
+      ? pushSettings([{key: C.key, value: lsGet(C.key) || '[]'}])
+      : Promise.resolve(true);
+    Promise.all([C.pushRows(toUpsert.map(C.pick)), C.delRows(toDelete), espejo]).then(function(res){
       pushDone();
-      delete _inFlight[PIPE_KEY];
-      if(res[0] && res[1]){
-        for(var a = 0; a < toUpsert.length; a++) delete _dirtyUp[toUpsert[a].id];
-        for(var b = 0; b < toDelete.length; b++) delete _dirtyDel[toDelete[b]];
-        pushOk(PIPE_KEY, seq);
+      delete _inFlight[C.key];
+      var up = res[0];
+      if(up.ok && res[1]){
+        for(var a = 0; a < toUpsert.length; a++) delete C.dUp[toUpsert[a].id];
+        for(var b = 0; b < toDelete.length; b++) delete C.dDel[toDelete[b]];
+        pushOk(C.key, seq);
         return;
       }
-      _pipeSnap = prevSnap;   // invariante 3: solo se avanza con push confirmado
-      retryLater(PIPE_KEY);
+      C.snap = prevSnap;   // invariante 3: solo se avanza con push confirmado
+      /* Rechazo por UNIQUE: reintentar el mismo dato daría el mismo error para
+         siempre. Hay que cambiarlo primero —renumerar la cotización— y recién
+         ahí volver a intentar. */
+      if(!up.ok && up.conflicto && C.alChocar){
+        try{
+          if(C.alChocar(up.conflicto, toUpsert)) schedule(C.key);
+          else retryLater(C.key);
+        }catch(e){ console.warn('[sync] alChocar de "' + C.key + '"', e); retryLater(C.key); }
+        return;
+      }
+      retryLater(C.key);
     }, function(e){
       pushDone();
-      delete _inFlight[PIPE_KEY];
-      console.warn('[sync] pipeline', e);
-      _pipeSnap = prevSnap;
-      retryLater(PIPE_KEY);
+      delete _inFlight[C.key];
+      console.warn('[sync] ' + C.tabla, e);
+      C.snap = prevSnap;
+      retryLater(C.key);
     });
   }
 
@@ -692,48 +951,50 @@
     notifyPending();   // el contador depende del tiempo (gracia de _dirty)
     if(!_booted || _paused || _pushing > 0 || !sessionOk()) return;
 
-    fetchRows('pipeline?' + BQ + '&select=*').then(function(res){
-      if(!res.ok) return;                  // GET fallido: NO se toca nada
-      if(keyBusy(PIPE_KEY)) return;        // cambio propio sin confirmar: primero sube lo nuestro
-      var serverRows = res.data;
-      serverRows.forEach(coerce);
-      var read = readPipe();
-      if(!read.ok) return;                 // local ilegible: que lo resuelva syncPipeline
-      // El set de filas lo manda el servidor (así se propagan los borrados del
-      // equipo), pero los campos de localOnlyCols se preservan de la fila local:
-      // reemplazar el array entero destruía skuOvLinks en cada poll.
-      var localById = {}, i;
-      for(i = 0; i < read.rows.length; i++){
-        if(read.rows[i] && read.rows[i].id != null) localById[read.rows[i].id] = read.rows[i];
-      }
-      var merged = serverRows.map(function(sr){ return keepLocalOnly(sr, localById[sr.id]); }).sort(byId);
-
-      /* Una fila que ya está en el archivo (carchive) NO puede volver al
-         pipeline vivo. Si el servidor todavía la tiene —otro equipo la re-subió
-         antes de recibir el carchive nuevo, o su DELETE no pasó por permisos y
-         el cliente lo dio por hecho— se saca de acá y se encola su borrado del
-         servidor. Sin esto la fila "reaparece" en cada poll. */
-      var _arch = pipeArchivedIds();
-      if(!isEmpty(_arch)){
-        var _resu = [];
-        merged = merged.filter(function(r){
-          if(r.id != null && _arch[r.id]){ _resu.push(String(r.id)); return false; }
-          return true;
-        });
-        if(_resu.length){
-          for(var _rd = 0; _rd < _resu.length; _rd++) _dirtyDel[_resu[_rd]] = 1;
-          markDirty(PIPE_KEY); saveDirty(); schedule(PIPE_KEY);
+    COLECCIONES.forEach(function(C){
+      fetchRows(C.tabla + '?' + BQ + '&select=*').then(function(res){
+        if(!res.ok) return;                // GET fallido: NO se toca nada
+        if(keyBusy(C.key)) return;         // cambio propio sin confirmar: primero sube lo nuestro
+        var serverRows = res.data;
+        serverRows.forEach(C.coerce);
+        var read = C.read();
+        if(!read.ok) return;               // local ilegible: que lo resuelva syncColeccion
+        // El set de filas lo manda el servidor (así se propagan los borrados del
+        // equipo), pero los campos de localOnlyCols se preservan de la fila local:
+        // reemplazar el array entero destruía skuOvLinks en cada poll.
+        var localById = {}, i;
+        for(i = 0; i < read.rows.length; i++){
+          if(read.rows[i] && read.rows[i].id != null) localById[read.rows[i].id] = read.rows[i];
         }
-      }
+        var merged = serverRows.map(function(sr){ return C.keepLocalOnly(sr, localById[sr.id]); }).sort(byId);
 
-      // normPipe compara solo las columnas sincronizadas (pickPipe ignora las
-      // localOnly), así que una diferencia únicamente local no reescribe nada.
-      if(normPipe(read.rows) === normPipe(merged)) return;
-      if(!writePipe(merged)) return;       // no se pudo guardar: el snapshot NO puede avanzar
-      _pipeSnap = {};
-      merged.forEach(function(r){ if(r.id != null) _pipeSnap[r.id] = snapKey(r); });
-      if(visible('p-pipeline') && typeof renderPipeline === 'function') renderPipeline();
-      else if(visible('p-regi-stats') && typeof renderRegiStats === 'function') renderRegiStats();
+        /* Una fila excluida NO puede volver a la colección. En el pipeline son
+           las que ya están en el archivo (carchive): si el servidor todavía las
+           tiene —otro equipo las re-subió antes de recibir el carchive nuevo, o
+           su DELETE no pasó por permisos y el cliente lo dio por hecho— se sacan
+           de acá y se encola su borrado. Sin esto la fila "reaparece" en cada
+           poll. */
+        var _exc = C.excluirIds();
+        if(!isEmpty(_exc)){
+          var _resu = [];
+          merged = merged.filter(function(r){
+            if(r.id != null && _exc[r.id]){ _resu.push(String(r.id)); return false; }
+            return true;
+          });
+          if(_resu.length){
+            for(var _rd = 0; _rd < _resu.length; _rd++) C.dDel[_resu[_rd]] = 1;
+            markDirty(C.key); saveDirty(); schedule(C.key);
+          }
+        }
+
+        // C.norm compara solo las columnas sincronizadas (C.pick ignora las
+        // localOnly), así que una diferencia únicamente local no reescribe nada.
+        if(C.norm(read.rows) === C.norm(merged)) return;
+        if(!C.write(merged)) return;       // no se pudo guardar: el snapshot NO puede avanzar
+        C.snap = {};
+        merged.forEach(function(r){ if(r.id != null) C.snap[r.id] = C.snapKey(r); });
+        try{ C.alCambiar(); }catch(e){ console.warn('[sync] render de "' + C.key + '"', e); }
+      });
     });
 
     fetchRows('app_settings?' + BQ + '&select=*').then(function(res){
@@ -742,6 +1003,11 @@
       res.data.forEach(function(row){
         var k = row.key;
         if(SETTING_KEYS.indexOf(k) < 0) return;
+        /* Una clave que además es colección (cquotes) se ESCRIBE como blob por
+           compatibilidad, pero NO se lee nunca: su verdad está en la tabla. Sin
+           este corte, el blob viejo de un cliente sin actualizar volvería a
+           pisar el historial de uno actualizado, que es el bug entero. */
+        if(coleccionDe(k)) return;
         if(keyBusy(k)) return;             // cambio propio sin confirmar: no pisarlo
         var v = String(row.value);
         if(lsGet(k) === v) return;
@@ -785,46 +1051,60 @@
 
   /* ---------- Seed: el localStorage es la fuente de verdad ---------- */
   function seedFromLocal(){
-    var read = readPipe();
-    if(!read.ok) console.error('[sync] "' + PIPE_KEY + '" ilegible — el seed sube solo los settings');
-    var rows = [], i;
-    for(i = 0; i < read.rows.length; i++){
-      if(read.rows[i] && read.rows[i].id != null) rows.push(read.rows[i]);
-    }
+    // Filas por colección, ya filtradas a las que tienen id.
+    var porCol = COLECCIONES.map(function(C){
+      var read = C.read();
+      if(!read.ok) console.error('[sync] "' + C.key + '" ilegible — el seed lo saltea');
+      var rows = [], i;
+      for(i = 0; i < read.rows.length; i++){
+        if(read.rows[i] && read.rows[i].id != null) rows.push(read.rows[i]);
+      }
+      return {C: C, rows: rows};
+    });
     var sets = [];
     SETTING_KEYS.forEach(function(k){ var v = lsGet(k); if(v !== null) sets.push({key: k, value: v}); });
-    if(!rows.length && !sets.length) return;
+    var hayFilas = porCol.some(function(p){ return p.rows.length > 0; });
+    if(!hayFilas && !sets.length) return;
 
     // pushBegin bloquea el poll mientras el seed sube (si no, el poll lee el
     // servidor vacío y pisa el localStorage recién restaurado).
     pushBegin();
-    rows.forEach(function(r){ _pipeSnap[r.id] = snapKey(r); _dirtyUp[r.id] = 1; });
-    if(rows.length) markDirty(PIPE_KEY);
+    var seqs = {};
+    porCol.forEach(function(p){
+      p.rows.forEach(function(r){ p.C.snap[r.id] = p.C.snapKey(r); p.C.dUp[r.id] = 1; });
+      if(p.rows.length) markDirty(p.C.key);
+    });
     sets.forEach(function(s){ markDirty(s.key); });
     saveDirty();
 
     // _inFlight evita que el flushDirty('arranque') de finishBoot() mande todo
     // esto una segunda vez en paralelo.
-    var seqs = {};
-    seqs[PIPE_KEY] = _dirtySeq[PIPE_KEY];
-    _inFlight[PIPE_KEY] = true;
+    porCol.forEach(function(p){ seqs[p.C.key] = _dirtySeq[p.C.key]; _inFlight[p.C.key] = true; });
     sets.forEach(function(s){ seqs[s.key] = _dirtySeq[s.key]; _inFlight[s.key] = true; });
 
-    Promise.all([pushPipeRows(rows.map(pickPipe)), pushSettings(sets)]).then(function(res){
+    Promise.all(
+      porCol.map(function(p){ return p.C.pushRows(p.rows.map(p.C.pick)); })
+        .concat([pushSettings(sets)])
+    ).then(function(res){
       pushDone();
-      delete _inFlight[PIPE_KEY];
+      var okSets = res[res.length - 1];
+      var todoOk = okSets;
+      porCol.forEach(function(p, i){
+        delete _inFlight[p.C.key];
+        // El seed es EL momento crítico (el localStorage es la única copia de
+        // los datos): si no subió, hay que reintentar, no seguir como si nada.
+        if(res[i] && res[i].ok){
+          p.rows.forEach(function(r){ delete p.C.dUp[r.id]; });
+          pushOk(p.C.key, seqs[p.C.key]);
+        } else {
+          p.C.snap = {};   // forzar el re-diff completo en el próximo intento
+          retryLater(p.C.key);
+          todoOk = false;
+        }
+      });
       sets.forEach(function(s){ delete _inFlight[s.key]; });
-      // El seed es EL momento crítico (el localStorage es la única copia de los
-      // datos): si no subió, hay que reintentar, no seguir como si nada.
-      if(res[0]){
-        rows.forEach(function(r){ delete _dirtyUp[r.id]; });
-        pushOk(PIPE_KEY, seqs[PIPE_KEY]);
-      } else {
-        _pipeSnap = {};   // forzar el re-diff completo en el próximo intento
-        retryLater(PIPE_KEY);
-      }
-      sets.forEach(function(s){ res[1] ? pushOk(s.key, seqs[s.key]) : retryLater(s.key); });
-      if(res[0] && res[1]) console.log('[sync] base sembrada');
+      sets.forEach(function(s){ okSets ? pushOk(s.key, seqs[s.key]) : retryLater(s.key); });
+      if(todoOk) console.log('[sync] base sembrada');
       else console.warn('[sync] el seed no subió completo — reintentando');
       saveDirty();
     });
@@ -841,20 +1121,25 @@
                                     que siempre leía [] y el rescate era código
                                     muerto.
        · fila solo en el servidor → entra.
-       · fila en _dirtyDel        → se borró local y el DELETE no subió: no se
+       · fila en C.dDel           → se borró local y el DELETE no subió: no se
                                     resucita, se vuelve a borrar. */
-  function mergePipeIntoLocal(serverRows){
-    var read = readPipe();
+  function mergeColeccionIntoLocal(C, serverRows){
+    var read = C.read();
     if(!read.ok){
-      console.error('[sync] "' + PIPE_KEY + '" ilegible — se reemplaza por el estado del servidor');
+      console.error('[sync] "' + C.key + '" ilegible — se reemplaza por el estado del servidor');
       var srv = serverRows.slice().sort(byId);
-      if(writePipe(srv)){
-        _pipeSnap = {};
-        srv.forEach(function(r){ if(r.id != null) _pipeSnap[r.id] = snapKey(r); });
+      if(C.write(srv)){
+        C.snap = {};
+        srv.forEach(function(r){ if(r.id != null) C.snap[r.id] = C.snapKey(r); });
       }
       return;
     }
-    var localRows = read.rows, i, r, id;
+    /* Última chance de ajustar lo local ANTES de mezclar, ya con las filas del
+       servidor a la vista. En cotizaciones es donde se reconcilian las que se
+       guardaron antes de que existiera la tabla: si una quedó sin sincronizar y
+       el servidor tiene otra distinta con el mismo id derivado del número, acá
+       se le da identidad nueva para que sobrevivan las dos. */
+    var localRows = C.preMerge(read.rows, serverRows), i, r, id;
     var localById = {};
     for(i = 0; i < localRows.length; i++){
       r = localRows[i];
@@ -863,52 +1148,52 @@
     // Si la clave quedó sucia pero no sabemos QUÉ filas (el navegador se cerró
     // dentro de los 350ms del debounce), manda todo lo local. Conservador a
     // propósito: perder un cambio del equipo se arregla, perder el nuestro no.
-    var rowLevel  = !isEmpty(_dirtyUp) || !isEmpty(_dirtyDel);
-    var allLocal  = (_dirty[PIPE_KEY] !== undefined) && !rowLevel;
+    var rowLevel  = !isEmpty(C.dUp) || !isEmpty(C.dDel);
+    var allLocal  = (_dirty[C.key] !== undefined) && !rowLevel;
 
-    /* Igual que en el poll: una fila que está en el archivo NO entra al pipeline
-       vivo, ni siquiera si el servidor o el local todavía la tienen. Se encola
-       su borrado. El archivo gana incluso sobre _dirtyUp: si se archivó, la
-       decisión fue sacarla del vivo. */
-    var _arch = pipeArchivedIds();
-    var _archDel = 0;
+    /* Igual que en el poll: una fila excluida (en el pipeline, una que ya está
+       en el archivo) NO entra a la colección, ni siquiera si el servidor o el
+       local todavía la tienen. Se encola su borrado. La exclusión gana incluso
+       sobre dUp: si se archivó, la decisión fue sacarla del vivo. */
+    var _exc = C.excluirIds();
+    var _excDel = 0;
 
     var out = [], pushIds = [], seen = {};
     for(i = 0; i < serverRows.length; i++){
       r = serverRows[i];
       if(r.id == null) continue;
       seen[r.id] = 1;
-      if(_dirtyDel[r.id]) continue;
-      if(_arch[r.id]){ _dirtyDel[r.id] = 1; _archDel++; continue; }
+      if(C.dDel[r.id]) continue;
+      if(_exc[r.id]){ C.dDel[r.id] = 1; _excDel++; continue; }
       var lr = localById[r.id];
-      if(lr && (allLocal || _dirtyUp[r.id])){ out.push(lr); pushIds.push(r.id); }
-      else out.push(keepLocalOnly(r, lr));
+      if(lr && (allLocal || C.dUp[r.id])){ out.push(lr); pushIds.push(r.id); }
+      else out.push(C.keepLocalOnly(r, lr));
     }
     for(i = 0; i < localRows.length; i++){
       r = localRows[i];
-      if(!r || r.id == null || seen[r.id] || _dirtyDel[r.id]) continue;
-      if(_arch[r.id]){ _dirtyDel[r.id] = 1; _archDel++; continue; }
+      if(!r || r.id == null || seen[r.id] || C.dDel[r.id]) continue;
+      if(_exc[r.id]){ C.dDel[r.id] = 1; _excDel++; continue; }
       out.push(r); pushIds.push(r.id);
     }
     out.sort(byId);
-    if(!writePipe(out)) return;
+    if(!C.write(out)) return;
 
-    // _pipeSnap = lo que el servidor YA tiene. Las filas que mandan localmente
-    // se dejan AFUERA a propósito, así el primer syncPipeline las detecta como
+    // C.snap = lo que el servidor YA tiene. Las filas que mandan localmente se
+    // dejan AFUERA a propósito, así el primer syncColeccion las detecta como
     // distintas y las sube.
-    _pipeSnap = {};
+    C.snap = {};
     for(i = 0; i < out.length; i++){
       id = out[i].id;
       if(pushIds.indexOf(id) >= 0) continue;
-      _pipeSnap[id] = snapKey(out[i]);
+      C.snap[id] = C.snapKey(out[i]);
     }
     if(pushIds.length){
-      console.log('[sync] arranque: ' + pushIds.length + ' fila(s) local(es) sin subir — se pushean');
-      pushIds.forEach(function(x){ _dirtyUp[x] = 1; });
+      console.log('[sync] arranque: ' + pushIds.length + ' fila(s) local(es) de ' + C.tabla + ' sin subir — se pushean');
+      pushIds.forEach(function(x){ C.dUp[x] = 1; });
     }
-    if(pushIds.length || _archDel){
-      if(_archDel) console.log('[sync] arranque: ' + _archDel + ' fila(s) ya archivada(s) seguían en la tabla pipeline — se borran');
-      markDirty(PIPE_KEY);
+    if(pushIds.length || _excDel){
+      if(_excDel) console.log('[sync] arranque: ' + _excDel + ' fila(s) ya archivada(s) seguían en la tabla ' + C.tabla + ' — se borran');
+      markDirty(C.key);
       saveDirty();
     }
   }
@@ -931,6 +1216,9 @@
 
   function mergeSettings(serverSets){
     SETTING_KEYS.forEach(function(k){
+      // Las que son colección se resuelven contra su TABLA, no contra el blob
+      // (ver C.espejoBlob). Leerlas acá sería volver al last-write-wins.
+      if(coleccionDe(k)) return;
       var local = lsGet(k);
       /* Las monótonas se resuelven ANTES del corte por "sucia": el contador de
          cotizaciones queda sucio en cuanto alguien guarda, y con la regla de
@@ -1013,23 +1301,24 @@
     // se persiste, sobrevive aunque no haya conexión en este arranque.
     if(readImportFlag()){
       console.log('[sync] post-import — manda el localStorage');
-      _pipeSnap = {};
-      markDirty(PIPE_KEY);
+      COLECCIONES.forEach(function(C){ C.snap = {}; markDirty(C.key); });
       SETTING_KEYS.forEach(function(k){ if(lsGet(k) !== null) markDirty(k); });
       saveDirty();
     }
 
-    Promise.all([
-      fetchRows('pipeline?' + BQ + '&select=*'),
-      fetchRows('app_settings?' + BQ + '&select=*')
-    ]).then(function(res){
-      var pipeRes = res[0], setsRes = res[1];
+    Promise.all(
+      COLECCIONES.map(function(C){ return fetchRows(C.tabla + '?' + BQ + '&select=*'); })
+        .concat([fetchRows('app_settings?' + BQ + '&select=*')])
+    ).then(function(res){
+      var setsRes  = res[res.length - 1];
+      var colRes   = COLECCIONES.map(function(C, i){ return {C: C, res: res[i]}; });
+      var algunaOk = colRes.some(function(x){ return x.res.ok; });
 
-      if(!pipeRes.ok && !setsRes.ok){
-        console.warn('[sync] sin conexión con Supabase (pipeline ' + pipeRes.status + ', settings ' +
-                     setsRes.status + ') — la app corre con datos locales');
-        // No se toca NADA: el localStorage es la única copia buena. _pipeSnap
-        // queda vacío, así que el primer push manda todo el pipeline (upsert
+      if(!algunaOk && !setsRes.ok){
+        console.warn('[sync] sin conexión con Supabase (settings ' + setsRes.status +
+                     ') — la app corre con datos locales');
+        // No se toca NADA: el localStorage es la única copia buena. Los
+        // snapshots quedan vacíos, así que el primer push manda todo (upsert
         // idempotente, no rompe nada).
         finishBoot();
         return;
@@ -1037,19 +1326,21 @@
 
       var serverSets = {};
       if(setsRes.ok) setsRes.data.forEach(function(r){ serverSets[r.key] = r.value; });
-      if(pipeRes.ok) pipeRes.data.forEach(coerce);
+      colRes.forEach(function(x){ if(x.res.ok) x.res.data.forEach(x.C.coerce); });
 
-      // "Vacío" solo se puede afirmar si las DOS lecturas funcionaron. Si una
+      // "Vacío" solo se puede afirmar si TODAS las lecturas funcionaron. Si una
       // falló, "no vi nada" no significa "no hay nada".
-      var serverEmpty = pipeRes.ok && setsRes.ok &&
-                        pipeRes.data.length === 0 && Object.keys(serverSets).length === 0;
+      var serverEmpty = setsRes.ok && Object.keys(serverSets).length === 0 &&
+                        colRes.every(function(x){ return x.res.ok && x.res.data.length === 0; });
 
       if(serverEmpty){
         console.log('[sync] base vacía — sembrando Supabase desde el localStorage');
         seedFromLocal();
       } else {
-        if(pipeRes.ok) mergePipeIntoLocal(pipeRes.data);
-        else console.warn('[sync] no se pudo leer el pipeline (' + pipeRes.status + ') — se conserva el local intacto');
+        colRes.forEach(function(x){
+          if(x.res.ok) mergeColeccionIntoLocal(x.C, x.res.data);
+          else console.warn('[sync] no se pudo leer ' + x.C.tabla + ' (' + x.res.status + ') — se conserva el local intacto');
+        });
         if(setsRes.ok) mergeSettings(serverSets);
         else console.warn('[sync] no se pudieron leer los settings (' + setsRes.status + ') — se conservan los locales');
       }

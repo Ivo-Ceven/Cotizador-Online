@@ -276,8 +276,41 @@ Deno.serve(async (req) => {
     return base;
   });
 
+  /* ── La cotización REAL, en su tabla ─────────────────────────────────────
+     Esto es lo que leen los cotizadores desde que el historial dejó de ser el
+     blob `cquotes` (ver src/shared/quotes-store.js y la migración
+     20260911100000_cotizaciones_tabla.sql). Si esta función solo escribiera el
+     blob, un pedido del portal aparecería en el pipeline pero NO en el
+     historial de nadie.
+
+     `_qid` va sellado en cada línea igual que lo hace saveDB() en el cliente, y
+     el id es un uuid —no 'q'+número— porque es una cotización nueva: dos
+     emisiones simultáneas tienen que entrar como dos filas distintas y dejar
+     que el unique (brand, qnum) arbitre la etiqueta. */
+  const qid = crypto.randomUUID();
+  const filasSelladas = filasNuevas.map((f) => ({ ...f, _qid: qid }));
+  const { error: cotizErr } = await admin.from("cotizaciones").insert({
+    brand, id: qid, qnum: qNumNum,
+    cliente: cliente.nombre,
+    proyecto: nombreProyecto,
+    ejecutivo: ejecutivoNombre || "—",
+    estado: "Cotizado",
+    mesCierre: null,
+    lineas: filasSelladas,
+    cond: null,
+  });
+  if (cotizErr) {
+    /* El 23505 acá es el unique del número: alguien tomó el mismo qNum entre
+       que lo reservamos y ahora. No se reintenta en silencio con otro número
+       porque la fila de pipeline ya salió con ESTE, y quedarían desalineadas.
+       Se avisa: reemitir es idempotente y es la forma de recuperarse. */
+    console.warn("[portal-emitir] fallo insertando la cotización (la fila de pipeline ya quedó creada):", cotizErr);
+  }
+
   const { error: settingsErr } = await admin.from("app_settings").upsert([
-    { brand, key: cquotesKey, value: JSON.stringify(cquotes.concat(filasNuevas)) },
+    // El blob se sigue escribiendo SOLO por compatibilidad con los clientes que
+    // todavía no actualizaron. Nadie actualizado lo lee.
+    { brand, key: cquotesKey, value: JSON.stringify(cquotes.concat(filasSelladas)) },
     { brand, key: cqcKey, value: String(qNumNum) },
   ], { onConflict: "brand,key" });
   if (settingsErr) {

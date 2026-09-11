@@ -124,7 +124,26 @@ function cevenEmitirPlanMarca(brand, lineas, ctx, remoto, yaEmitido){
      igual, no duplicado. Al ser un número que este pedido ya usó, borrar es
      seguro; si es nuevo, el filtro no saca nada. */
   var base = (remoto.cquotes || []).filter(function(r){ return r['N° Cotización'] !== qn; });
-  var filasNuevas = lineas.map(function(it){ return reg.filaCquotes(it, ctxMarca); });
+
+  /* Identidad de la cotización en la tabla de la marca destino. Si ese número
+     ya existe allá es una RE-EMISIÓN: hay que reusar su `id` o entraría como
+     una cotización distinta con un número ocupado, y el unique (brand, qnum) la
+     rechazaría. Si es nueva, un uuid — nunca 'q'+número: dos emisiones
+     simultáneas tienen que poder entrar como dos filas y dejar que el unique
+     arbitre la etiqueta. */
+  var previaCot = null;
+  (remoto.cotizaciones || []).forEach(function(c){
+    if(parseInt(c.qnum, 10) === qNumNum) previaCot = c;
+  });
+  var qid = previaCot ? previaCot.id
+          : ((typeof cevenQNuevoId === 'function') ? cevenQNuevoId() : ('m' + qn + '-' + Date.now()));
+
+  // `_qid` sellado en cada línea, igual que hace saveDB() en los cotizadores.
+  var filasNuevas = lineas.map(function(it){
+    var f = reg.filaCquotes(it, ctxMarca);
+    f._qid = qid;
+    return f;
+  });
 
   /* pipeline: la fila se busca por número. Si ya existe se le actualizan los
      datos de la COTIZACIÓN y se le conservan los de SEGUIMIENTO — estado, mes
@@ -162,6 +181,19 @@ function cevenEmitirPlanMarca(brand, lineas, ctx, remoto, yaEmitido){
     reemision: !!yaEmitido,
     cquotes:  base.concat(filasNuevas),
     lineas:   filasNuevas.length,
+    // Lo que va a la tabla `cotizaciones` de la marca destino, ya sellado.
+    qid:         qid,
+    filasNuevas: filasNuevas,
+    cotizRow: {
+      brand: brand, id: qid, qnum: qNumNum,
+      cliente:   ctx.cliente   || null,
+      proyecto:  ctx.proyecto  || null,
+      ejecutivo: ctx.ejecutivo || null,
+      estado:    fila.estado   || 'Cotizado',
+      mesCierre: fila.mesCierre || null,
+      lineas:    filasNuevas,
+      cond:      null
+    },
     pipeRow:  fila,
     /* El contador solo puede SUBIR. editQuoteFromHistory() enseñó por qué:
        bajarlo hace que las próximas cotizaciones reusen números. */
@@ -229,9 +261,18 @@ function cevenEmitirLeerRemoto(brands){
       {headers: _emHeaders()})
     .then(function(r){ if(!r.ok) throw new Error('pipeline: HTTP ' + r.status); return r.json(); });
 
-  return Promise.all([pSettings, pPipe]).then(function(res){
+  /* Las cotizaciones REALES de la marca destino. Desde que el historial dejó de
+     ser el blob `cquotes` (ver shared/quotes-store.js), esta tabla es la que su
+     cotizador lee: sin esto, re-emitir no sabría qué `id` reusar y crearía una
+     cotización nueva con un número ya ocupado. Solo hacen falta id y qnum. */
+  var pCotiz = fetch(_emRest() + 'cotizaciones?select=brand,id,qnum'
+      + '&brand=in.(' + encodeURIComponent(lista) + ')',
+      {headers: _emHeaders()})
+    .then(function(r){ if(!r.ok) throw new Error('cotizaciones: HTTP ' + r.status); return r.json(); });
+
+  return Promise.all([pSettings, pPipe, pCotiz]).then(function(res){
     var out = {};
-    brands.forEach(function(b){ out[b] = {cqc: 0, cquotes: [], pipeline: []}; });
+    brands.forEach(function(b){ out[b] = {cqc: 0, cquotes: [], pipeline: [], cotizaciones: []}; });
     (res[0] || []).forEach(function(f){
       if(!out[f.brand]) return;
       // Igual que arriba: la clave se compara con el prefijo de ESA marca.
@@ -246,6 +287,9 @@ function cevenEmitirLeerRemoto(brands){
     });
     (res[1] || []).forEach(function(r){
       if(out[r.brand]) out[r.brand].pipeline.push(r);
+    });
+    (res[2] || []).forEach(function(r){
+      if(out[r.brand]) out[r.brand].cotizaciones.push(r);
     });
     return out;
   });
@@ -264,10 +308,22 @@ function cevenEmitirEscribirMarca(plan){
     {brand: plan.brand, key: cevenMultiClave(plan.brand, 'cquotes'), value: JSON.stringify(plan.cquotes)},
     {brand: plan.brand, key: cevenMultiClave(plan.brand, 'cqc'),     value: String(plan.cqcNuevo)}
   ];
-  return fetch(_emRest() + 'app_settings', {
+  /* La cotización REAL va a la tabla; el blob se sigue escribiendo SOLO por
+     compatibilidad con los clientes que no actualizaron. Primero la tabla: si
+     se cortara en el medio, es preferible una cotización sin blob (que nadie
+     actualizado nota) a un blob sin cotización (que nadie actualizado ve). */
+  return fetch(_emRest() + 'cotizaciones', {
       method: 'POST',
       headers: _emHeaders({'Prefer': 'resolution=merge-duplicates,return=minimal'}),
-      body: JSON.stringify(settings)
+      body: JSON.stringify([plan.cotizRow])
+    })
+    .then(function(r){
+      if(!r.ok) return r.text().then(function(t){ throw new Error('cotización de ' + plan.brand + ': ' + r.status + ' ' + t); });
+      return fetch(_emRest() + 'app_settings', {
+        method: 'POST',
+        headers: _emHeaders({'Prefer': 'resolution=merge-duplicates,return=minimal'}),
+        body: JSON.stringify(settings)
+      });
     })
     .then(function(r){
       if(!r.ok) return r.text().then(function(t){ throw new Error('historial de ' + plan.brand + ': ' + r.status + ' ' + t); });

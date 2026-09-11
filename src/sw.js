@@ -64,6 +64,7 @@ var ASSETS = [
   './shared/todos.js',
   './shared/pwa.js',
   './shared/init.js',
+  './shared/quotes-store.js',
   './shared/sync.js',
   './shared/ui-core.js',
   './shared/undo.js',

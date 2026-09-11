@@ -23,6 +23,10 @@ function saveDB(db){
     if(isQuoteMetaRow(r)) return true;
     return r['SKU'] && r['SKU'] !== 'undefined' && r['Descripción'] && r['Descripción'] !== 'undefined';
   });
+  /* Identidad por cotizacion (shared/quotes-store.js). Sin `_qid` la sync no
+     puede distinguir "re-guardaron la mia" de "otro uso mi numero", que es
+     justamente lo que hacia que una cotizacion pisara a la otra. */
+  if(typeof cevenQSellar === 'function') db = cevenQSellar(db, getDB());
   var ok = cevenLsSet('cquotes',JSON.stringify(db));
   autoSnapshot();
   return ok;
