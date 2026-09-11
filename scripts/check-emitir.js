@@ -55,6 +55,12 @@ function entorno(){
   const ctx = { console, Date, Math, JSON, Object, parseInt, String, encodeURIComponent };
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
+  /* safe.js va PRIMERO, igual que en la pagina real: marcas.js llama a
+     cevenFormatoIVA() al armar la fila de cquotes. Sin esto el test reventaba
+     con "cevenFormatoIVA is not defined" — no estaba fallando la emision, le
+     faltaba el modulo al banco de pruebas. Solo define funciones al cargar
+     (localStorage se toca recien adentro de cada una), asi que es seguro. */
+  vm.runInContext(lee('src/shared/safe.js'), ctx, {filename:'shared/safe.js'});
   vm.runInContext(lee('src/apple/js/pricing-core.js'), ctx, {filename:'apple/pricing-core.js'});
   vm.runInContext(lee('src/poly/js/pricing-core.js'),  ctx, {filename:'poly/pricing-core.js'});
   vm.runInContext(lee('src/multi/js/marcas.js'), ctx, {filename:'marcas.js'});
@@ -315,6 +321,22 @@ console.log('\n7 · El payload va a la clave que esa marca lee');
          'NUNCA en `cquotes` a secas, que sería una fila fantasma que Poly no lee');
       ok(settings.body.every(r => r.brand === 'poly'), 'todas las filas con brand=poly');
     }
+    /* La cotización REAL va a la tabla `cotizaciones`, que es lo que el
+       cotizador de la marca lee desde que el historial dejó de ser el blob. Si
+       la emisión escribiera solo `app_settings`, el pedido aparecería en el
+       pipeline de Poly pero NO en su historial — el mismo tipo de bug invisible
+       que esta sección existe para atajar. */
+    const cot = enviados.find(e => e.url.indexOf('cotizaciones') >= 0);
+    ok(!!cot, 'la cotización va a la tabla `cotizaciones`');
+    if(cot){
+      const fila = cot.body[0];
+      ok(fila.brand === 'poly', 'con la marca destino', JSON.stringify(fila.brand));
+      ok(fila.qnum === planPoly.qNumNum, 'y el número que le asignó el plan');
+      ok(Array.isArray(fila.lineas) && fila.lineas.length === 2, 'con sus dos líneas adentro');
+      ok(Array.isArray(fila.lineas) && fila.lineas.every(l => l._qid === fila.id),
+         'y cada línea sellada con el _qid de esa cotización');
+    }
+
     const pipe = enviados.find(e => e.url.indexOf('pipeline') >= 0);
     ok(!!pipe && pipe.body[0].brand === 'poly', 'y la fila de pipeline va con su marca');
 
@@ -327,6 +349,24 @@ console.log('\n7 · El payload va a la clave que esa marca lee');
          'la lectura pide `poly_cquotes`, no `cquotes`', get && get.url);
       ok(!!get && /poly_cqc/.test(decodeURIComponent(get.url)),
          'y `poly_cqc`');
+      /* Sin leer `cotizaciones` no se sabe qué `id` tiene ya ese número allá, y
+         re-emitir crearía una cotización NUEVA con un número ocupado: el unique
+         (brand,qnum) la rechazaría y la re-emisión dejaría de funcionar. */
+      const getCot = enviados.find(e => e.url.indexOf('cotizaciones') >= 0);
+      ok(!!getCot, 'y la lectura pide las cotizaciones, para reusar el id al re-emitir');
+
+      /* Re-emitir tiene que reusar el id, no inventar otro. */
+      const ctx2 = ctxBase();
+      const remoto2 = VACIO();
+      const plan1 = E.cevenEmitirPlan(pedidoMixto(ctx2), ctx2, remoto2, {})
+        .find(p => p.brand === 'poly');
+      remoto2.poly.cotizaciones = [{brand: 'poly', id: plan1.qid, qnum: plan1.qNumNum}];
+      const plan2 = E.cevenEmitirPlan(pedidoMixto(ctx2), ctx2, remoto2, {poly: plan1.qn})
+        .find(p => p.brand === 'poly');
+      ok(plan2.qid === plan1.qid,
+         're-emitir reusa el id de la cotización, no crea otra',
+         plan1.qid + ' -> ' + plan2.qid);
+
       cerrar();
     }, cerrar);
   }, cerrar);
