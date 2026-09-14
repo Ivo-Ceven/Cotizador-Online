@@ -6,6 +6,11 @@ Thumbs.db
 .env*
 !.env.example
 
+# Cache local del CLI de Supabase: se regenera solo con `supabase link`/`start`.
+# Se colo al repo (linked-project.json/pooler-url) y filtraba el email y el
+# organization_id del dueño del proyecto; purgado del historial el 14/09/2026.
+supabase/.temp/
+
 # Datos de trabajo: price lists, cotizaciones de clientes, planillas sueltas.
 # El 24/07/2026 se colaron tres al repo y siguen en el historial de git
 # (ver docs/HISTORIAL.md). Si hace falta versionar un ejemplo, que sea con datos
