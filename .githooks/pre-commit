@@ -1,0 +1,21 @@
+#!/bin/sh
+# Bloquea el commit de archivos de datos de trabajo (price lists, cotizaciones,
+# planillas sueltas) fuera de docs/. El .gitignore ya excluye *.xlsx/*.xls/
+# *.csv/*.pdf, pero un `git add -f` (o un IDE que agrega todo) lo salta igual.
+# El 24/07/2026 se colaron tres así al repo y quedaron en el historial de git
+# hasta que se purgaron el 14/09/2026 (ver docs/HISTORIAL.md) — este hook es
+# para que no se repita.
+
+blocked=$(git diff --cached --name-only --diff-filter=ACM | grep -Ei '\.(xlsx|xls|csv|pdf)$' | grep -v '^docs/')
+
+if [ -n "$blocked" ]; then
+  echo "Commit bloqueado: estos archivos parecen datos de trabajo, no codigo:" >&2
+  echo "$blocked" | sed 's/^/  - /' >&2
+  echo "" >&2
+  echo "Si de verdad hace falta versionar un ejemplo, que sea con datos" >&2
+  echo "ficticios dentro de docs/. Para forzar este commit igual:" >&2
+  echo "  git commit --no-verify" >&2
+  exit 1
+fi
+
+exit 0

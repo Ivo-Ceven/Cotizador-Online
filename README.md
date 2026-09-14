@@ -40,6 +40,15 @@ python -m http.server 8000
 
 También funciona por `file://` (doble click en `src/index.html`), aunque el flujo recomendado es servirla por HTTP. No requiere internet para las libs (viven en `src/vendor/`); sí para login y sincronización.
 
+## Contribuir
+
+Después de clonar, activar el hook de pre-commit que bloquea subir archivos de
+datos de trabajo (price lists, cotizaciones) por error:
+
+```
+git config core.hooksPath .githooks
+```
+
 ## Deploy (Vercel)
 
 `vercel.json` sirve `src/` como sitio estático con headers de seguridad. Deploy: `npx vercel deploy` (preview) o `npx vercel deploy --prod`, o vía integración GitHub → Vercel.
