@@ -65,19 +65,141 @@ function recalcPipelineUnits(){
 var PIPE_STALE_AVISO  = 30;
 var PIPE_STALE_ALERTA = 60;
 
+/* Un estado cerrado no se estanca: no hay ninguna accion pendiente sobre algo
+   ya Facturado o Perdido. */
+var PIPE_ESTADOS_CERRADOS = ['Facturado', 'Perdido'];
+
+/* Dias sin movimiento, o null si la fila no se puede estancar (cerrada, sin
+   fechaMod, o con una fecha que no parsea). Es LA definicion: la usan el chip
+   de la columna "Modificado", la pastilla del dashboard y el filtro. Cuando
+   estaban separadas, el chip marcaba una fila que el filtro no mostraba. */
+function diasSinMover(r){
+  if(!r || !r.fechaMod) return null;
+  if(PIPE_ESTADOS_CERRADOS.indexOf(r.estado || 'Cotizado') >= 0) return null;
+  var t = new Date(r.fechaMod).getTime();
+  if(isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+}
+
+// null = al dia · 'aviso' · 'alerta'
+function nivelEstancamiento(r){
+  var d = diasSinMover(r);
+  if(d === null) return null;
+  if(d >= PIPE_STALE_ALERTA) return 'alerta';
+  if(d >= PIPE_STALE_AVISO)  return 'aviso';
+  return null;
+}
+
 function _pipeModificadoChip(r){
   if(!r.fechaMod) return '<span style="color:#aeaeb2;font-size:11px">—</span>';
   var dias = Math.floor((Date.now() - new Date(r.fechaMod).getTime()) / 86400000);
   var label = dias<=0 ? 'hoy' : (dias===1 ? '1 día' : dias+' días');
-  var estado = r.estado || 'Cotizado';
-  var cerrada = (estado==='Facturado' || estado==='Perdido');
-  if(cerrada || dias < PIPE_STALE_AVISO){
+  var niv = nivelEstancamiento(r);
+  if(!niv){
     return '<span style="font-size:11px;color:#6e6e73;white-space:nowrap">'+label+'</span>';
   }
-  var alerta = dias >= PIPE_STALE_ALERTA;
+  var alerta = niv === 'alerta';
   var bg = alerta ? '#fde8e8' : '#fff4e5', fg = alerta ? '#d70015' : '#c86400';
   var tip = (alerta?'Estancada · ':'Sin movimiento hace ')+dias+' días';
   return '<span title="'+cevenEsc(tip)+'" style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:8px;white-space:nowrap;background:'+bg+';color:'+fg+'">'+label+'</span>';
+}
+
+/* ── PASTILLA DE ESTANCADAS ────────────────────────────────────────────────
+   Se cuenta sobre TODO el pipeline, no sobre lo ya filtrado, para que el numero
+   no baile segun los otros filtros activos: es un indicador de cuanto trabajo
+   quedo parado, no del resultado de la busqueda en curso.
+
+   Si no hay ninguna devuelve '' y ademas APAGA el filtro: dejarlo prendido sin
+   pastilla en pantalla vaciaba la tabla sin nada visible que explicara por que. */
+function pastillaEstancadasHTML(pipe){
+  var nAviso = 0, nAlerta = 0;
+  (pipe||[]).forEach(function(r){
+    var niv = nivelEstancamiento(r);
+    if(niv === 'alerta') nAlerta++; else if(niv === 'aviso') nAviso++;
+  });
+  var nTot = nAviso + nAlerta;
+  if(!nTot){ window._pipeStaleFilter = false; return ''; }
+  var on = !!window._pipeStaleFilter;
+  var tip = 'Sin movimiento hace '+PIPE_STALE_AVISO+' días o más'
+          + (nAlerta ? ' · '+nAlerta+' con más de '+PIPE_STALE_ALERTA+' días' : '')
+          + '. Los estados Facturado y Perdido no se cuentan.';
+  return '<button class="bs" onclick="togglePipeStaleFilter()" title="'+cevenEsc(tip)+'"'
+    + ' style="font-size:11px;padding:3px 10px;border-color:'+(on?'#c84e00':'#f0c9a8')
+      + ';background:'+(on?'#c84e00':'transparent')+';color:'+(on?'#fff':'#c84e00')+';font-weight:600">'
+    + '⚠ Estancadas · ' + nTot
+    + (nAlerta ? ' <span style="opacity:.75;font-weight:500">('+nAlerta+' +'+PIPE_STALE_ALERTA+'d)</span>' : '')
+    + '</button>';
+}
+
+window._pipeStaleFilter = window._pipeStaleFilter || false;
+function togglePipeStaleFilter(){
+  window._pipeStaleFilter = !window._pipeStaleFilter;
+  renderPipeline();
+}
+
+/* ── LAS TARJETAS DEL DASHBOARD COMO FILTROS ───────────────────────────────
+   Cada tarjeta del bento filtra la tabla de abajo. No tienen estado propio:
+   escriben en los MISMOS filtros que los <select> y las pastillas
+   (`pipe-family`, `window._pipeStatusFilters`), asi que tocar una tarjeta y
+   despues el select no deja dos filtros peleandose. */
+
+/* El mismo set de estados que usa la tarjeta "Forecast del mes" para su total.
+   Compartir la constante es el punto: si el filtro y la tarjeta divergieran,
+   tocar la tarjeta mostraria filas que no son las que sumo. */
+var PIPE_PROYECTADO_STATUSES = ['Facturado', 'Autorizando', 'Con OC', 'Commit'];
+
+function _pipeStatusSetEquals(arr){
+  var cur = window._pipeStatusFilters || [];
+  if(cur.length !== arr.length) return false;
+  return arr.every(function(s){ return cur.indexOf(s) !== -1; });
+}
+
+// Macs / iPhone / iPad / Servicios / Accesorios → alternan el filtro de Familia
+function toggleKpiFamilyFilter(fam){
+  var sel = document.getElementById('pipe-family');
+  if(!sel) return;
+  sel.value = (sel.value === fam) ? '' : fam;
+  renderPipeline();
+}
+
+// Facturado → alterna el filtro de Estado a ['Facturado']
+function toggleKpiFacturadoFilter(){
+  window._pipeStatusFilters = _pipeStatusSetEquals(['Facturado']) ? [] : ['Facturado'];
+  cevenPipeSyncStatusSelect();
+  renderPipeline();
+}
+
+// Forecast del mes → alterna el filtro de Estado al mismo set que suma la tarjeta
+function toggleKpiProyectadoFilter(){
+  window._pipeStatusFilters = _pipeStatusSetEquals(PIPE_PROYECTADO_STATUSES)
+    ? [] : PIPE_PROYECTADO_STATUSES.slice();
+  cevenPipeSyncStatusSelect();
+  renderPipeline();
+}
+
+// Cotizaciones / Total pipeline → limpian familia y estado (mostrar todo)
+function clearKpiFilters(){
+  var sel = document.getElementById('pipe-family');
+  if(sel) sel.value = '';
+  window._pipeStatusFilters = [];
+  cevenPipeSyncStatusSelect();
+  renderPipeline();
+}
+
+/* Resalta las tarjetas que estan filtrando. Sin esto el usuario ve la tabla
+   recortada y no tiene como saber que fue por haber tocado una tarjeta. */
+function _pipePintarKpiActivas(){
+  var fam = (document.getElementById('pipe-family')||{}).value || '';
+  var porFam = {mac:'dash-mac-card', iphone:'dash-iph-card', ipad:'dash-ipad-card',
+                serv:'dash-serv-card', acc:'dash-acc-card'};
+  Object.keys(porFam).forEach(function(k){
+    var el = document.getElementById(porFam[k]);
+    if(el) el.classList.toggle('kpi-active', fam === k);
+  });
+  var fact = document.getElementById('dash-facturado-card');
+  if(fact) fact.classList.toggle('kpi-active-accent', _pipeStatusSetEquals(['Facturado']));
+  var proy = document.getElementById('dash-proy-card');
+  if(proy) proy.classList.toggle('kpi-active-accent', _pipeStatusSetEquals(PIPE_PROYECTADO_STATUSES));
 }
 
 function renderPipeline(){
@@ -179,6 +301,13 @@ function renderPipeline(){
   });
   monthFilter = cevenPintarPillsMes(Object.keys(mesesPresentes).sort(), haySinFecha, pipe);
 
+  /* Pastilla "⚠ Estancadas", en la misma fila. Se cuenta sobre `pipe` (todo el
+     pipeline del mes en pantalla) y NO sobre lo ya filtrado — ver
+     pastillaEstancadasHTML(). Se pinta antes de filtrar porque el propio
+     filtro de estancadas se aplica mas abajo. */
+  var _stale = document.getElementById('pipe-stale-pill');
+  if(_stale) _stale.innerHTML = pastillaEstancadasHTML(pipe);
+
   /* El filtro se aplica en DOS pasos, y el intermedio no es cosmético: las
      pastillas de "Top clientes" salen de `sinBuscar` —todo menos el texto del
      buscador— porque tocar una pastilla ESCRIBE el nombre del cliente en ese
@@ -186,6 +315,9 @@ function renderPipeline(){
      sola pastilla en pantalla y no habría forma de saltar a otro cliente. */
   var sinBuscar = pipe.filter(function(r){
     if(ex && r.ejecutivo !== ex) return false;
+    // Pastilla "⚠ Estancadas": deja solo las que llevan PIPE_STALE_AVISO dias
+    // o mas sin movimiento (nivelEstancamiento() ya descarta las cerradas).
+    if(window._pipeStaleFilter && !nivelEstancamiento(r)) return false;
     if(fam === 'mac'    && !(r.qMac>0))  return false;
     if(fam === 'iphone' && !(r.qIph>0))  return false;
     if(fam === 'ipad'   && !(r.qIpad>0)) return false;
@@ -480,9 +612,12 @@ function renderPipeline(){
     document.getElementById('dash-acc-amt').textContent  = amtAcc  ? 'USD ' + fI(amtAcc)  : '';
     document.getElementById('dash-total').textContent    = 'USD ' + fI(sumPipeline);
     document.getElementById('dash-margen').textContent   = sumMontoMargenG > 0 ? ('MgPd ' + margenPipelineGlobal.toFixed(2) + '%') : 'MgPd —';
+    _pipePintarKpiActivas();
     // ── Card Proyectado = Facturado + Autorizando + Con OC + Commit ──
     (function(){
-      var proySt = ['Facturado','Autorizando','Con OC','Commit'];
+      // Compartida con toggleKpiProyectadoFilter(): la tarjeta y el filtro que
+      // dispara tienen que mirar exactamente los mismos estados.
+      var proySt = PIPE_PROYECTADO_STATUSES;
       var pMonto=0,pMarW=0,pMarM=0,pMac=0,pIph=0,pIpad=0,pAcc=0,pServ=0;
       proySt.forEach(function(ps){ var d=byStatus[ps]; if(!d) return;
         pMonto+=d.monto||0; pMarW+=d.marW||0; pMarM+=d.marM||0;

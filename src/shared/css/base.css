@@ -325,6 +325,16 @@ code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .gf{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .kpi{box-shadow:var(--sh1)}
+/* Tarjetas del dashboard que ademas filtran la tabla de abajo. El cursor y el
+   leve levante avisan que se pueden tocar; .kpi-active marca la que esta
+   filtrando, porque si no el usuario ve la tabla recortada y no sabe por que.
+   Dos variantes: las neutras (fondo blanco) se resaltan con el acento de marca
+   y las que ya tienen color propio (Facturado / Forecast) necesitan un filete
+   blanco en el medio para que el anillo se vea contra su propio fondo. */
+.kpi-click{cursor:pointer;transition:transform .12s,box-shadow .12s}
+.kpi-click:hover{transform:translateY(-2px)}
+.kpi-active{box-shadow:0 0 0 2px var(--acc),var(--sh1)}
+.kpi-active-accent{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--acc),var(--sh1)}
 
 /* ═══════════════════ TABLAS ═══════════════════ */
 table{width:100%;border-collapse:collapse}

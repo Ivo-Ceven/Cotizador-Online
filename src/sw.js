@@ -116,9 +116,11 @@ var ASSETS = [
   './apple/js/pipeline-detail.js',
   './apple/js/history.js',
   './apple/js/pdf.js',
+  './apple/js/pdf-pro.js',
   './apple/js/warranties.js',
   './apple/js/target.js',
   './apple/js/picker.js',
+  './apple/js/cevencare-datos.js',
   './apple/js/cevencare.js',
 
   './poly/brand.js',

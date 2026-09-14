@@ -57,15 +57,23 @@ function setPipeClientFilter(cli){
   renderPipeline();
 }
 
+/* Sincroniza el <select> de estado con `_pipeStatusFilters`, para el codigo que
+   todavia lee `pipe-status`. Con 0 o 2+ estados elegidos no hay un valor unico
+   que los represente: queda vacio.
+
+   Esta aparte porque no lo llaman solo las pills: tambien las tarjetas del
+   dashboard de Apple, que filtran por estado sin pasar por togglePillFilter(). */
+function cevenPipeSyncStatusSelect(){
+  var sel = document.getElementById('pipe-status');
+  if(sel) sel.value = window._pipeStatusFilters.length === 1 ? window._pipeStatusFilters[0] : '';
+}
+
 // Las pills de estado son multi-seleccion (se pueden ver Cotizado + Ganado a la vez).
 function togglePillFilter(status){
   var idx = window._pipeStatusFilters.indexOf(status);
   if(idx !== -1) window._pipeStatusFilters.splice(idx, 1);
   else window._pipeStatusFilters.push(status);
-  // Sincronizar el <select> para el codigo que todavia lee pipe-status.
-  // Con 0 o 2+ estados elegidos no hay un valor unico que representarlo: queda vacio.
-  var sel = document.getElementById('pipe-status');
-  if(sel) sel.value = window._pipeStatusFilters.length === 1 ? window._pipeStatusFilters[0] : '';
+  cevenPipeSyncStatusSelect();
   renderPipeline();
 }
 

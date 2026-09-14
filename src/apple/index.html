@@ -64,6 +64,7 @@
         <button class="act act-pri" onclick="saveQuote()" title="Guardar la cotización en el historial"><span class="act-i">💾</span>Guardar</button>
         <button id="btn-add-pipeline" class="act act-go" onclick="addToPipeline()" title="Sumar esta cotización al pipeline de ventas"><span class="act-i">📊</span>Agregar al pipeline</button>
         <button class="act" onclick="buildPDF()" title="Exportar la cotización a PDF"><span class="act-i">📄</span>PDF</button>
+        <button class="act" onclick="buildPDFPro()" title="Documento A4 vertical: una tarjeta por familia, garantías aparte"><span class="act-i">📑</span>PDF Pro</button>
       </div>
     </div>
     <div class="qbar-sub">
@@ -478,41 +479,41 @@
   <!-- DASHBOARD -->
   <div id="pipe-dashboard" style="display:none;margin-bottom:14px">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
-      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+      <div id="dash-count-card" class="kpi kpi-click" onclick="clearKpiFilters()" title="Quitar los filtros de familia y estado" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
         <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Cotizaciones</div>
         <div id="dash-count" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
       </div>
-      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+      <div id="dash-mac-card" class="kpi kpi-click" onclick="toggleKpiFamilyFilter('mac')" title="Filtrar por Mac" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
         <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Macs</div>
         <div id="dash-mac" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
         <div id="dash-mac-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
       </div>
-      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+      <div id="dash-iph-card" class="kpi kpi-click" onclick="toggleKpiFamilyFilter('iphone')" title="Filtrar por iPhone" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
         <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">iPhone</div>
         <div id="dash-iph" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
         <div id="dash-iph-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
       </div>
-      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+      <div id="dash-ipad-card" class="kpi kpi-click" onclick="toggleKpiFamilyFilter('ipad')" title="Filtrar por iPad" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
         <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">iPad</div>
         <div id="dash-ipad" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
         <div id="dash-ipad-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
       </div>
-      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+      <div id="dash-serv-card" class="kpi kpi-click" onclick="toggleKpiFamilyFilter('serv')" title="Filtrar por Servicios" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
         <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Servicios</div>
         <div id="dash-serv" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
         <div id="dash-serv-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
       </div>
-      <div class="kpi" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
+      <div id="dash-acc-card" class="kpi kpi-click" onclick="toggleKpiFamilyFilter('acc')" title="Filtrar por Accesorios" style="background:#fff;border:0.5px solid #d2d2d7;border-radius:12px;padding:12px 14px">
         <div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Accesorios</div>
         <div id="dash-acc" style="font-size:22px;font-weight:600;color:#1d1d1f">0</div>
         <div id="dash-acc-amt" style="font-size:13px;color:#6e6e73;margin-top:2px">USD 0</div>
       </div>
-      <div id="dash-facturado-card" class="kpi" style="background:#17a589;color:#fff;border-radius:12px;padding:12px 14px">
+      <div id="dash-facturado-card" class="kpi kpi-click" onclick="toggleKpiFacturadoFilter()" title="Ver solo lo Facturado" style="background:#17a589;color:#fff;border-radius:12px;padding:12px 14px">
         <div id="dash-facturado-lbl" style="font-size:11px;color:#a5d6a7;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Facturado</div>
         <div id="dash-facturado" style="font-size:22px;font-weight:600">USD 0</div>
         <div id="dash-facturado-mgpd" style="font-size:11px;color:#a5d6a7;margin-top:2px">MgPd —</div>
       </div>
-      <div id="dash-proy-card" class="kpi" style="background:#0a7d52;color:#fff;border-radius:12px;padding:12px 14px">
+      <div id="dash-proy-card" class="kpi kpi-click" onclick="toggleKpiProyectadoFilter()" title="Ver Facturado + Autorizando + Con OC + Commit" style="background:#0a7d52;color:#fff;border-radius:12px;padding:12px 14px">
         <!-- "Proyectado" incluía lo ya facturado, así que sumarlo con la tarjeta
              de al lado contaba la misma plata dos veces. La fórmula no cambió
              (Commit + Con OC + Autorizando + Facturado); el rótulo sí. -->
@@ -520,7 +521,7 @@
         <div id="dash-proy" style="font-size:22px;font-weight:600">USD 0</div>
         <div id="dash-proy-mgpd" style="font-size:11px;color:#9ad9bc;margin-top:2px">MgPd —</div>
       </div>
-      <div id="dash-total-card" class="kpi" style="background:#1d1d1f;color:#fff;border-radius:12px;padding:12px 14px">
+      <div id="dash-total-card" class="kpi kpi-click" onclick="clearKpiFilters()" title="Quitar los filtros de familia y estado" style="background:#1d1d1f;color:#fff;border-radius:12px;padding:12px 14px">
         <div id="dash-total-lbl" style="font-size:11px;color:#aeaeb2;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Total pipeline</div>
         <div id="dash-total" style="font-size:22px;font-weight:600">USD 0</div>
         <div id="dash-margen" style="font-size:11px;color:#aeaeb2;margin-top:2px">Margen pond. 0%</div>
@@ -536,6 +537,9 @@
         <span style="font-size:10px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Top canales</span>
         <div id="pipe-topclients-pills" style="display:flex;flex-wrap:nowrap;gap:6px"></div>
       </div>
+      <!-- La pastilla de estancadas la pinta renderPipeline(); si no hay ninguna
+           queda vacía y no ocupa lugar. -->
+      <span id="pipe-stale-pill" style="flex-shrink:0"></span>
     </div>
     <!-- Por estado -->
     <div id="dash-by-status" style="display:flex;flex-wrap:wrap;gap:6px"></div>
@@ -682,6 +686,13 @@
 <script src="../shared/comprobante.js"></script>
 <script src="../shared/pdf-core.js"></script>
 <script src="js/pdf.js"></script>
+<!-- pdf-pro.js va DESPUES de pdf.js: es el otro documento (A4 vertical,
+     rasterizado) y comparte FAMILY_ORDER/getProductFamily con el. -->
+<script src="js/pdf-pro.js"></script>
+<!-- Las tablas de precios de CevenCare van ANTES que warranties.js: de ahi
+     deriva MAC_WARRANTIES_3Y (el auto-sugerido de garantias para Macs) al
+     cargar, en vez de tener los precios escritos a mano por segunda vez. -->
+<script src="js/cevencare-datos.js"></script>
 <script src="js/warranties.js"></script>
 <script src="../shared/undo.js"></script>
 <script src="js/target.js"></script>
