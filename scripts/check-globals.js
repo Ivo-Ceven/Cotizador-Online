@@ -48,6 +48,7 @@ const MARCAS = [
   { nombre: 'apple',      html: 'src/apple/index.html'      },
   { nombre: 'poly',       html: 'src/poly/index.html'       },
   { nombre: 'legamaster', html: 'src/legamaster/index.html' },
+  { nombre: 'huawei',     html: 'src/huawei/index.html'     },
   /* El multimarca es el caso de mayor riesgo de colision: carga los
      `pricing-core.js` de DOS marcas en el mismo bundle. Si alguna vez las dos
      definieran una funcion con el mismo nombre, una pisaria a la otra en

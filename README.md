@@ -1,6 +1,8 @@
 # Cotizadores Ceven
 
-Plataforma de cotizadores multi-marca de Ceven. Hoy incluye el cotizador **Apple** (Mac, iPhone, iPad, accesorios y servicios) con pipeline de ventas, historial, garantías extendidas **CevenCare**, exportación a PDF/Excel y target anual; los cotizadores **Poly** y **HP** están planificados y aparecen como "Próximamente" en el panel.
+Plataforma de cotizadores multi-marca de Ceven. Hoy tiene cuatro cotizadores completos — **Apple** (Mac, iPhone, iPad, accesorios y servicios, con garantías extendidas **CevenCare**, nacionalización y target anual), **Poly**, **Legamaster** y **Huawei** —, todos con pipeline de ventas, historial y exportación a PDF/Excel. **HP** todavía aparece como “Próximamente” en el panel.
+
+Del mismo panel salen dos páginas que **cruzan** las marcas en vez de ser una de ellas: el **cotizador multimarca** (`src/multi/`), que arma un pedido con SKUs de varias marcas y lo emite como una cotización real de cada una, y el **tablero de tareas** del equipo (`src/tareas/`). Aparte, `src/portal/` es un autoservicio para clientes-canal, con cuentas separadas de las del staff.
 
 Es una app **100% estática** (HTML + CSS + JavaScript vanilla, sin build ni framework). Los datos viven en `localStorage` del navegador y se sincronizan entre usuarios a través de **Supabase** (auth + 2 tablas + 1 Edge Function). El acceso a los datos requiere usuario logueado: las policies RLS de la base rechazan cualquier request sin el JWT de un usuario autenticado.
 
@@ -19,14 +21,22 @@ Cotizador Online/
     │   ├── config.js          ← ⚠️ ÚNICO lugar con URL/key de Supabase (compartido por todas las marcas)
     │   └── auth.js            ← login, sesión, roles, gestión de usuarios (compartido)
     ├── vendor/                ← libs auto-hospedadas: xlsx, html2canvas, jsPDF (+autotable)
-    └── apple/                 ← cotizador Apple completo
-        ├── index.html         ← SPA de 7 "páginas" (exige sesión; sin sesión vuelve al shell)
-        ├── cevencare.html     ← cotizador de garantías CevenCare (iframe/popup)
-        ├── css/               ← base.css, dark.css, cevencare.css
-        └── js/                ← 22 módulos (ver docs/ARQUITECTURA.md; el orden de carga importa)
+    ├── apple/                 ← cotizador Apple completo
+    │   ├── index.html         ← SPA de 7 "páginas" (exige sesión; sin sesión vuelve al shell)
+    │   ├── brand.js           ← ⚠️ el contrato de marca: TODO lo que distingue a este cotizador
+    │   ├── cevencare.html     ← cotizador de garantías CevenCare (iframe/popup)
+    │   ├── css/               ← cevencare.css (base.css y dark.css son compartidos)
+    │   └── js/                ← 22 módulos (ver docs/ARQUITECTURA.md; el orden de carga importa)
+    ├── poly/                  ← cotizador Poly (+ REGI: el Deal Registration de HP)
+    ├── legamaster/            ← cotizador Legamaster
+    ├── huawei/                ← cotizador Huawei
+    ├── multi/                 ← cotizador multimarca (emite a cada marca)
+    ├── portal/                ← autoservicio para clientes-canal
+    ├── tareas/                ← tablero de tareas del equipo
+    └── icons/brands/          ← el logo de cada marca (shell + chip de la barra)
 ```
 
-Para agregar una marca nueva (cuando esté su catálogo): copiar `src/apple/` como plantilla, cambiar `BRAND` en su `sync.js`, prefijar sus claves de localStorage (`poly_*`) y activar la tarjeta en el shell. Receta completa en docs/ARQUITECTURA.md.
+Para agregar una marca nueva, la receta completa está en [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) — sección “Multi-marca: cómo enchufar una marca nueva”. En resumen: se copia la marca **cuyo modelo de negocio se parezca más** (Apple si tiene margen y nacionalización; Poly si cotiza por nivel de catálogo) y lo que la distingue se declara en su `brand.js`. Los módulos de `src/shared/` **no** se copian ni se tocan: leen ese contrato.
 
 ## Cómo correr la app
 
@@ -70,4 +80,4 @@ Todo el estado local vive en `localStorage` (claves `c*`: `cquotes`, `cpipeline`
 
 ## Versión
 
-`APP_VERSION` se define en `src/shared/config.js` (actualmente `4.0`) y se muestra en el zócalo inferior.
+`APP_VERSION` se define en `src/shared/config.js` y se muestra en el zócalo inferior. **Hay que subirla en cada deploy**: le da el nombre al caché del service worker, así que sin tocarla la versión nueva no le llega a quien ya tiene la app abierta.

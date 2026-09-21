@@ -49,6 +49,8 @@ var ASSETS = [
   // Logos de marca: los usa el panel del shell y el chip de la navbar.
   './icons/brands/apple.png',
   './icons/brands/poly.png',
+  './icons/brands/legamaster.png',
+  './icons/brands/huawei.png',
   './icons/brands/hp.png',
 
   './shared/safe.js',
@@ -160,6 +162,24 @@ var ASSETS = [
   './legamaster/js/pdf.js',
   './legamaster/js/boot.js',
 
+  './huawei/brand.js',
+  './huawei/js/state.js',
+  './huawei/js/catalog.js',
+  './huawei/js/quote.js',
+  './huawei/js/picker.js',
+  './huawei/js/pricing-core.js',
+  './huawei/js/tiers.js',
+  './huawei/js/products.js',
+  './huawei/js/quotes-db.js',
+  './huawei/js/pipeline-data.js',
+  './huawei/js/pipeline-core.js',
+  './huawei/js/archive-view.js',
+  './huawei/js/pipeline-view.js',
+  './huawei/js/pipeline-detail.js',
+  './huawei/js/history.js',
+  './huawei/js/pdf.js',
+  './huawei/js/boot.js',
+
   /* Cotizador multimarca. Carga ADEMÁS los `pricing-core.js` de Apple, Poly y
      Legamaster (ya listados arriba): son las cuentas de precio de cada marca, y
      usarlas —en vez de copiarlas— es lo que garantiza que el mismo SKU salga al
@@ -193,6 +213,8 @@ var DOCS = [
   './poly/index.html',
   './legamaster/',
   './legamaster/index.html',
+  './huawei/',
+  './huawei/index.html',
   './multi/',
   './multi/index.html',
   './tareas/',
@@ -304,6 +326,7 @@ async function respond(e){
     var brandFallback = url.pathname.indexOf('/apple/') === 0 ? './apple/'
                        : url.pathname.indexOf('/poly/') === 0  ? './poly/'
                        : url.pathname.indexOf('/legamaster/') === 0 ? './legamaster/'
+                       : url.pathname.indexOf('/huawei/') === 0 ? './huawei/'
                        : './';
     var fb = await cache.match(brandFallback);
     if(fb) return fb;

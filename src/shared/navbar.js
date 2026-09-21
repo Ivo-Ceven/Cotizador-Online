@@ -50,6 +50,7 @@
     apple:      { img: 'apple.png', mono: true },
     poly:       { img: 'poly.png' },
     legamaster: { img: 'legamaster.png' },
+    huawei:     { img: 'huawei.png' },
     hp:         { img: 'hp.png' }
   };
 

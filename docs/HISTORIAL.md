@@ -150,6 +150,169 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 21/09/2026 · Cotizador de Huawei: Poly menos lo que era de HP
+
+Pedido de Ivo: "hacer cotizador de huawei, igual al de poly".
+
+`src/huawei/` salió de copiar `src/poly/` —mismo modelo de negocio: fila de
+pipeline = un proyecto, precio por nivel de catálogo, sin margen, sin
+nacionalización, sin garantías— y sacarle **las dos cosas que en Poly son de HP
+y no de la marca**. Esa fue la única decisión de fondo, y se consultó antes de
+escribir nada:
+
+### Qué NO se copió, y por qué
+
+- **El REGI entero** (`js/pipeline-regi.js`, 1.939 líneas; la vista
+  📊 Estadísticas; los 4 KPI globales del header del pipeline con su
+  drilldown; el botón de importar el Excel de REGIs). El REGI es el *Deal
+  Registration de HP*: lee el Excel del partner portal de HP y se cruza con el
+  `opg` de cada fila. Huawei tiene su propio programa, con otro formato —
+  clonarlo ahora habría dejado 1.939 líneas cableadas a las columnas de HP para
+  tirarlas el día que aparezca el archivo de verdad. Mismo criterio que
+  Legamaster.
+- **El nivel de precio `DEAL`** y su importador (hoja `Promos` del BOM
+  Calculator de HP: `processDeals`, `_leerFilasDeals`, los vencimientos, el
+  pintado aparte en el catálogo, el badge). Huawei no publica ese archivo.
+  Queda declarado en `huawei/brand.js` qué habría que hacer si algún día lo
+  publica: un nivel más en `priceTiers` con `deal: true`, que es lo que hace
+  que lo coticen sin cambios el selector global, el de línea y `repricearLinea()`.
+
+Resultado: 16 archivos en `js/` contra los 17 de Poly, y ~1.900 líneas menos.
+
+### Qué sí se conservó con el nombre de Poly
+
+`opg` (la "Oportunidad") y `factura` (que guarda el **link a Netsuite**, no un
+número de factura — ver la nota de `poly/brand.js`). Las dos son columnas de la
+tabla `pipeline`, que **comparten todas las marcas**: agregar una columna nueva
+para decir lo mismo con otro nombre sale más caro que renombrar la etiqueta en
+pantalla. En Supabase **no se tocó nada**: las PK ya son compuestas por `brand`.
+
+### Los 4 niveles de precio son los mismos que los de Poly
+
+No por copiar: salen del mismo lugar. Los archivos "LP y Stock" del ERP traen
+**una hoja por marca** (`POLY` / `HP` / `HUAWEI`) con la misma columna "Nivel de
+precio". De ahí que `handlePL()` prefiera la hoja llamada `HUAWEI` y caiga a la
+primera solo si no hay ninguna — quedarse con la primera llenaba el catálogo de
+Huawei con SKUs de Poly **sin dar ningún error**, que es el modo de falla más
+caro que tiene esa pantalla. Si el archivo real termina trayendo otros nombres
+de nivel, se cambian en `priceTiers` de `brand.js` y en ningún otro lado.
+
+### El bug que apareció en el camino: el multimarca no sabía de más de una marca por nivel
+
+`src/multi/js/quote.js` tenía **`'poly'` escrito a mano** en el selector global
+de nivel, en el repricing y en la celda de control de cada línea. O sea que una
+marca nueva que cotizara por nivel entraba al registro de `marcas.js`, aparecía
+en el catálogo, dejaba agregar líneas al pedido… y esas líneas **quedaban sin
+precio**, sin ningún error a la vista. **Legamaster ya estaba así desde 08/2026**
+— probablemente no se notó porque casi no se mezcla en pedidos multimarca.
+
+Se generalizó contra el registro, que es donde el doc dice que tiene que vivir
+todo lo que dependa de la marca:
+
+- **`cevenMultiUsaTier(brand)`** y **`cevenMultiMarcasConTier(items)`** en
+  `marcas.js`, leídos de `controles` de cada entrada.
+- `_repricearTiers()` repricea las líneas de **todas** las marcas por nivel.
+- El selector global es **uno solo** y su rótulo nombra las marcas presentes
+  ("Nivel de precio Poly / Huawei"). Uno por marca habría sido más prolijo en
+  teoría y peor en la práctica: los niveles salen de la misma columna del mismo
+  export, así que el vendedor elige "Tier 2" una vez para el pedido entero. Una
+  marca cuyos niveles se llamen distinto no matchea, su `repricear()` devuelve
+  `false` y no se mueve — para esa está el selector por línea.
+- El selector por línea ahora lee el catálogo de **la marca de la línea**
+  (antes, el de Poly siempre).
+- Un precio escrito a mano marca `MANUAL` en cualquier marca por nivel, no solo
+  en Poly — si no, el siguiente cambio de nivel le pisaba el precio recién
+  tipeado.
+
+**No se tocó la forma de nada guardado**: `_tierGlobalValor` sigue siendo un solo
+string, `emitir.js` sigue armando un solo `ctx.tierGlobal` y el borrador del
+multimarca se lee igual que antes. Legamaster mejora de rebote.
+
+### Verificación
+
+- `scripts/check-huawei-catalogo.js` (nuevo, 30 chequeos). No necesita el Excel
+  real — Huawei todavía no tiene lista de precios — : arma un export de NetSuite
+  sintético y corre el importador de verdad. Cubre la elección de la hoja
+  `HUAWEI`, el plegado de los 4 niveles, **que el stock no se cuadruplique** (el
+  archivo repite el `LocAvailable` en las 4 filas de niveles de cada depósito),
+  el IVA, que el artículo manual sobreviva al reimport, que no haya quedado nada
+  de deals, y el `pricing-core.js` — que es el que comparte con `src/multi/` y la
+  única garantía de que un SKU no salga a dos precios según por dónde se cotizó.
+  Se verificó con dos mutantes (romper la deduplicación de stock, pisar el precio
+  del nivel) que el test efectivamente falla cuando tiene que fallar.
+- `check-globals.js` con la página de Huawei agregada a `MARCAS`: 54 scripts,
+  436 definiciones globales, sin colisiones y sin llamadas a funciones que el
+  bundle no defina.
+- El resto de la batería sigue como estaba. **Las 4 fallas que quedan
+  (`check-entrega`, `check-poly-deals`, `check-portal-pricing-parity`,
+  `check-precache`) ya fallaban en `HEAD`** — se comprobó corriéndolas en un
+  worktree limpio, no son de este cambio. `check-poly-deals` y `check-entrega`
+  revientan con `cevenFormatoIVA is not defined`: a esos harness les falta
+  cargar `shared/safe.js` (el de Huawei sí lo carga, por eso pasa).
+- Smoke test con `scripts/dev-server.js`: `/huawei/` devuelve 200 y **los 54
+  scripts del bundle también**. Se chequeo además que el JS no le pegue a ningún
+  `id` que se haya ido con el markup borrado.
+
+### El logo
+
+Ivo lo dejó en `src/icons/brands/Huawei.svg`, pero **el archivo no era un SVG**:
+adentro tenía bytes WebP (`RIFF…WEBPVP8L`, 1280×1302), igual que
+`HP_logo_2012.svg.webp` y `Poly_Inc._Logo.svg.webp` de la raíz — los tres salieron
+de Wikipedia, donde el archivo se descarga como `.svg.webp`. Servido como `.svg`
+el navegador recibe `Content-Type: image/svg+xml` con bytes WebP y no dibuja
+nada.
+
+Se convirtió a **`src/icons/brands/huawei.png`** (128×96, 11 KB) y el original
+quedó en la raíz como `Huawei_logo.svg.webp`, junto a los de HP y Poly — la raíz
+no se deploya (`outputDirectory: src` en `vercel.json`), así que no viaja al
+build. El `.svg` mal nombrado ya no está en `src/`: dejarlo ahí era una trampa,
+porque se servía roto y alguien lo iba a referenciar.
+
+**Se le sacó el wordmark "HUAWEI"**, que el archivo trae debajo de la flor. Tres
+razones, todas de la misma familia:
+
+- los otros cuatro íconos de marca son **solo el símbolo** (manzana, la "p" de
+  Poly, el ojo de Legamaster, el monograma de HP): un lockup con texto rompía la
+  fila del panel;
+- se dibuja a **34 px** en la tarjeta del shell y a **18 px** en el chip de la
+  barra: a ese tamaño el texto es una mancha, no una palabra;
+- y sobre todo: el wordmark es **casi negro** (`#232527`) y **desaparecería sobre
+  la barra en modo oscuro**. El flag `mono: true` del mapa `MARKS` no servía para
+  arreglarlo — invierte el ícono entero, así que habría vuelto **cian** la flor
+  roja. Sin el wordmark el problema no existe: la flor es `#cf0a2c` saturado y se
+  lee en los dos modos, así que Huawei **no** lleva `mono: true` (el único que lo
+  lleva es Apple, que es negro puro).
+
+El corte se hizo programáticamente y no a ojo: se buscó fila por fila dónde
+termina el rojo (y=963) y dónde empieza el oscuro (y=1086), se cortó en la franja
+vacía de 122 px que hay entre los dos y se ajustó al contenido real.
+
+De paso, dos huecos viejos que aparecieron al tocar esas listas:
+
+- **`legamaster.png` nunca se había agregado al precache de `src/sw.js`** (desde
+  08/2026). `check-precache.js` solo valida `.js`/`.css`, así que una imagen
+  faltante no la ve nadie hasta que el panel se abre sin conexión y la tarjeta
+  sale rota. Se agregaron `legamaster.png` y `huawei.png`.
+- **El registro `paginas` de `check-precache.js` solo listaba el shell, Apple,
+  Poly y tareas.** O sea que los `.js` de Legamaster, Huawei y el multimarca
+  podían faltar en `ASSETS` y el chequeo pasaba igual — la marca abría online y
+  no offline. Se agregaron las tres; **no apareció ningún problema nuevo** (sigue
+  en los mismos 17 preexistentes, todos del portal, que a propósito no es PWA),
+  así que lo único que cambia es que ahora esas páginas sí se verifican.
+
+El color de marca es `#a32638`, un rojo vino. El rojo puro del logo (`#cf0a2c`)
+da 5,63:1 sobre blanco y se habría leído bien — el motivo de oscurecerlo no fue
+el contraste sino el otro criterio, el que manda: **distinguirse de las demás
+marcas**. El puro está en matiz 350° y el terracota de Poly en 15°, 25° de
+diferencia que de reojo en el filete de la barra superior no se ven — y
+confundir el cotizador de Poly con el de Huawei significa cargarle la cotización
+a la marca equivocada. En `#a32638` (7,26:1) es un vino inconfundible al lado de
+un naranja. Va escrito en **dos** lugares, como todas: `theme` en
+`huawei/brand.js` y `.mcard[data-brand="huawei"]` en `src/index.html`, porque el
+shell no carga ningún `brand.js`.
+
+---
+
 ## 10/09/2026 · KPIs REGI del header: "REGI CEVEN" incluye lo facturado + los tres carteles abren un desglose
 
 Pedido de Ivo, sobre los cuatro montos globales de REGI de la barra de arriba de

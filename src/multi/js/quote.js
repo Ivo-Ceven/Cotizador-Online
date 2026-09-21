@@ -97,15 +97,31 @@ function onMargenGlobalChange(){
     + ' al ' + getMargenGlobal() + '% de margen.');
 }
 
+/* Repricea las lineas de TODAS las marcas que se cotizan por nivel, no solo las
+   de Poly. Quien usa nivel lo dice su registro (cevenMultiUsaTier), asi que una
+   marca nueva entra sola.
+
+   El nivel global es UNO SOLO y se le pasa a todas: los niveles salen de la
+   misma columna "Nivel de precio" del export de NetSuite, asi que Poly y Huawei
+   comparten vocabulario y el mismo valor les sirve a las dos. Una marca cuyos
+   niveles se llamen distinto simplemente no matchea y su repricear() devuelve
+   false —no se rompe, no se mueve—; para esas lineas esta el selector propio de
+   cada una. */
+function _repricearTiers(){
+  var marcas = cevenMultiMarcasConTier(items), n = 0;
+  for(var i=0;i<marcas.length;i++) n += _repricearMarca(marcas[i]);
+  return n;
+}
+
 function onTierGlobalMultiChange(){
   _sincronizarControles();
-  var n = _repricearMarca('poly');
+  var n = _repricearTiers();
   renderQ();
   var t = tierGlobalMulti();
   // Se recuerda el nivel con el que se le cotiza a este cliente, igual que Poly.
   var cli = (document.getElementById('client').value || '').trim();
   if(cli && t && typeof cevenClienteSet === 'function') cevenClienteSet(cli, {tier: t});
-  if(n) showToast('✓ ' + n + (n===1?' línea de Poly actualizada a ' : ' líneas de Poly actualizadas a ')
+  if(n) showToast('✓ ' + n + (n===1?' línea actualizada a ' : ' líneas actualizadas a ')
     + cevenTierLabelMulti(t));
 }
 
@@ -121,14 +137,14 @@ function aplicarTierDelCliente(){
   _tierGlobalValor = t;
   var el = document.getElementById('tier-global');
   if(el) el.value = t;
-  var n = _repricearMarca('poly');
+  var n = _repricearTiers();
   renderQ();
   showToast('Nivel ' + cevenTierLabelMulti(t) + ' — el último que usaste con ' + cli
     + (n ? (' · ' + n + (n===1?' línea actualizada':' líneas actualizadas')) : ''));
 }
 
-/* Los niveles salen del brand.js de POLY, no de una lista escrita aca: son de
-   esa marca. Como el multimarca no carga ese archivo, se leen del catalogo —
+/* Los niveles de una marca salen de su brand.js, no de una lista escrita aca.
+   Como el multimarca no carga esos archivos, se leen del catalogo de esa marca:
    las claves de `precios` de cualquier producto son exactamente los niveles.
 
    Se recorre TODO el catalogo y se unen las claves, en vez de quedarse con las
@@ -137,8 +153,22 @@ function aplicarTierDelCliente(){
    nivel DEAL (poly/js/catalog.js) hay niveles que solo tienen ALGUNOS
    productos: si el primero de la lista no estaba en un deal, "Deal" no
    aparecia en el selector aunque el catalogo tuviera 600 SKU con deal. */
-function nivelesPoly(){
-  var lista = catalogos.poly || [], vistos = {}, out = [];
+// La union de los niveles de varias marcas, en orden, sin repetir. Es lo que
+// ofrece el selector global cuando el pedido mezcla marcas por nivel.
+function _nivelesDeMarcas(brands){
+  var vistos = {}, out = [];
+  (brands || []).forEach(function(b){
+    nivelesDeMarca(b).forEach(function(v){
+      if(vistos[v]) return;
+      vistos[v] = 1;
+      out.push(v);
+    });
+  });
+  return out;
+}
+
+function nivelesDeMarca(brand){
+  var lista = catalogos[brand] || [], vistos = {}, out = [];
   for(var i=0;i<lista.length;i++){
     var p = lista[i].precios;
     if(!p) continue;
@@ -183,10 +213,16 @@ function pintarControles(){
       +   '<span style="font-size:13px;color:var(--ct2)">%</span>'
       + '</div></div>';
   }
-  if(marcas.indexOf('poly') >= 0){
-    var niveles = nivelesPoly(), actual = tierGlobalMulti();
+  /* UN solo selector de nivel para todas las marcas que se cotizan asi, no uno
+     por marca: los niveles salen de la misma columna del export de NetSuite, de
+     modo que el vendedor elige "Tier 2" una vez y vale para el pedido entero.
+     El rotulo nombra las marcas presentes para que se vea a que alcanza. */
+  var conTier = cevenMultiMarcasConTier(items);
+  if(conTier.length){
+    var niveles = _nivelesDeMarcas(conTier), actual = tierGlobalMulti();
     h += '<div class="ctrl">'
-      + '<label class="lbl" for="tier-global">Nivel de precio Poly</label>'
+      + '<label class="lbl" for="tier-global">Nivel de precio '
+      +   cevenEsc(conTier.map(cevenMultiMarcaLabel).join(' / ')) + '</label>'
       + '<select id="tier-global" onchange="onTierGlobalMultiChange()" style="min-width:170px">'
       + '<option value=""' + (actual ? '' : ' selected') + '>— Elegir nivel —</option>';
     for(var i=0;i<niveles.length;i++){
@@ -210,12 +246,23 @@ function totalDeOpcion(n){
   return t;
 }
 
-// El <select> de nivel de UNA linea de Poly, con el precio de cada nivel al
-// lado: el orden de los niveles NO implica cual es mas caro.
+/* El <select> de nivel de UNA linea, con el precio de cada nivel al lado: el
+   orden de los niveles NO implica cual es mas caro.
+
+   Los niveles y los precios salen del catalogo de LA MARCA DE LA LINEA, no del
+   de Poly: si se leyeran del de Poly, una linea de otra marca mostraria los
+   niveles de Poly y un precio vacio al lado de cada uno.
+
+   Que igual se llame a cevenPolyProducto()/cevenPolyTierEfectivo() NO es un
+   descuido: son busqueda por SKU y resolucion de nivel propio-vs-global, dos
+   cosas que no dependen de la marca. Las tres marcas por nivel tienen su copia
+   byte a byte en su pricing-core.js; despachar cual usar segun it.brand seria
+   mas codigo para el mismo resultado. Lo que SI depende de la marca es el
+   CATALOGO, y ese entra por parametro. */
 function tierSelectMultiHTML(it){
-  var niveles = nivelesPoly();
+  var niveles = nivelesDeMarca(it.brand);
   if(!niveles.length) return '<span class="sub">—</span>';
-  var prod = cevenPolyProducto(catalogos.poly || [], it.sku);
+  var prod = cevenPolyProducto(catalogos[it.brand] || [], it.sku);
   var precios = (prod && prod.precios) || {};
   var actual = cevenPolyTierEfectivo(it, tierGlobalMulti());
   var propio = !!it.tier && it.tier !== CEVEN_TIER_MANUAL;
@@ -232,11 +279,14 @@ function tierSelectMultiHTML(it){
   return h;
 }
 
-/* La celda de control de una linea, segun su marca. Poly elige nivel; Apple
-   muestra el margen con el que quedo (se edita con el margen global o
-   escribiendo el precio a mano, que es como funciona en su cotizador). */
+/* La celda de control de una linea, segun su marca. Las marcas por nivel eligen
+   nivel; Apple muestra el margen con el que quedo (se edita con el margen global
+   o escribiendo el precio a mano, que es como funciona en su cotizador).
+
+   Que marca usa nivel lo dice el registro (cevenMultiUsaTier), no un `if` por
+   marca: sumar una marca por nivel es agregarla a marcas.js y nada mas. */
 function _celdaControl(it){
-  if(it.brand === 'poly') return tierSelectMultiHTML(it);
+  if(cevenMultiUsaTier(it.brand)) return tierSelectMultiHTML(it);
   if(it.brand === 'apple'){
     var mg = (typeof it.itemMargin === 'number') ? it.itemMargin : 0;
     return '<span style="font-size:12px;color:var(--ct2)'
@@ -426,7 +476,7 @@ function upUnitPrice(id, v){
   }
   it.salePrice = Math.round(priceUSD * 100) / 100;
 
-  if(it.brand === 'poly') it.tier = CEVEN_TIER_MANUAL;
+  if(cevenMultiUsaTier(it.brand)) it.tier = CEVEN_TIER_MANUAL;
   if(it.brand === 'apple'){
     it.manualMargin = true;
     // El margen que quedo implicito en ese precio, con la misma inversa que usa

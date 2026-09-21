@@ -40,7 +40,25 @@ for (const u of ASSETS) {
 }
 
 // 2. Todo js/css que cargan los HTML está precacheado
-const paginas = { 'index.html': '', 'apple/index.html': 'apple/', 'apple/cevencare.html': 'apple/', 'poly/index.html': 'poly/', 'tareas/index.html': 'tareas/' };
+/* Las paginas cuyos <script>/<link> se validan contra ASSETS, y el prefijo
+   con el que sus rutas relativas caen dentro de src/.
+
+   AGREGAR LA PAGINA NUEVA ACA al sumar una marca: hasta 09/2026 faltaban
+   legamaster, huawei y multi, asi que sus .js podian no estar en el precache
+   y este chequeo pasaba igual — la marca abria online y no offline.
+
+   El portal queda afuera a proposito: no es PWA (no carga shared/pwa.js ni
+   esta en el service worker). Ver docs/HISTORIAL.md, Fase 1. */
+const paginas = {
+  'index.html':             '',
+  'apple/index.html':       'apple/',
+  'apple/cevencare.html':   'apple/',
+  'poly/index.html':        'poly/',
+  'legamaster/index.html':  'legamaster/',
+  'huawei/index.html':      'huawei/',
+  'multi/index.html':       'multi/',
+  'tareas/index.html':      'tareas/'
+};
 for (const [pagina, base] of Object.entries(paginas)) {
   const html = fs.readFileSync(path.join(SRC, pagina), 'utf8');
   const refs = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map(x => x[1]);

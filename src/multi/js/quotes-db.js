@@ -103,7 +103,8 @@ function doSave(overwrite){
       'SKU': it.sku, 'Descripción': it.description, 'Cantidad': it.qty,
       'Nota': it.stock || '—', 'IVA': cevenFormatoIVA(it.iva || it.taxes),
       // Cada marca llena la suya; la otra queda '—'. Ver COLS en state.js.
-      'Nivel de precio': (it.brand === 'poly') ? cevenPolyTierEfectivo(it, tierGlobalMulti()) : '—',
+      // Quien se cotiza por nivel lo dice el registro, no un `if` por marca.
+      'Nivel de precio': cevenMultiUsaTier(it.brand) ? cevenPolyTierEfectivo(it, tierGlobalMulti()) : '—',
       'Margen %': (it.brand === 'apple') ? it.itemMargin : '—',
       'P. Venta Unitario': it.salePrice, 'Total': sp * it.qty,
       'Tipo': 'producto', '_estado': estadoQ,
@@ -269,11 +270,14 @@ function _restaurarControlesDesdeLineas(){
       break;
     }
   }
-  var poly = cevenMultiLineasDe(items, 'poly');
-  for(var j=0;j<poly.length;j++){
-    if(!poly[j].tier) continue;               // sigue al global: no dice cual es
-    if(poly[j].tier === CEVEN_TIER_MANUAL) continue;
-    _tierGlobalValor = poly[j].tier;
+  /* El nivel global no se guarda: se deduce de la primera linea que tenga uno
+     propio. Se miran las lineas de TODAS las marcas por nivel, no solo las de
+     Poly — un pedido puede no tener ninguna linea de Poly y si de otra marca. */
+  var porNivel = items.filter(function(it){ return it && cevenMultiUsaTier(it.brand); });
+  for(var j=0;j<porNivel.length;j++){
+    if(!porNivel[j].tier) continue;           // sigue al global: no dice cual es
+    if(porNivel[j].tier === CEVEN_TIER_MANUAL) continue;
+    _tierGlobalValor = porNivel[j].tier;
     break;
   }
   // Si ninguna linea tiene nivel propio, el del cliente es la mejor pista.

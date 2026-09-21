@@ -2,7 +2,7 @@
 
 ## Visión general
 
-La plataforma es multi-marca: un **shell** (`src/index.html`) con el login y el panel selector, más un cotizador independiente por marca (`src/apple/` y `src/poly/` completos; HP se agregará igual). Del panel también se entra al **cotizador multimarca** (`src/multi/`), que arma un pedido con SKUs de cualquier marca y lo emite como una cotización real de cada una, y al **tablero de tareas del equipo** (`src/tareas/`). Esos dos no son marcas: son páginas que las cruzan. `src/shared/` tiene lo común a todas las páginas; `src/vendor/` las librerías auto-hospedadas (xlsx, html2canvas, jsPDF + autotable).
+La plataforma es multi-marca: un **shell** (`src/index.html`) con el login y el panel selector, más un cotizador independiente por marca (`src/apple/`, `src/poly/`, `src/legamaster/` y `src/huawei/` completos; HP se agregará igual). Del panel también se entra al **cotizador multimarca** (`src/multi/`), que arma un pedido con SKUs de cualquier marca y lo emite como una cotización real de cada una, y al **tablero de tareas del equipo** (`src/tareas/`). Esos dos no son marcas: son páginas que las cruzan. `src/shared/` tiene lo común a todas las páginas; `src/vendor/` las librerías auto-hospedadas (xlsx, html2canvas, jsPDF + autotable).
 
 Está desplegada como **PWA instalable y offline-first** en https://cotizadores-ceven.vercel.app (`src/sw.js` en la raíz, scope `/`).
 
@@ -114,6 +114,31 @@ Módulos propios de Apple (`src/apple/js/`):
 | `target.js` | Modal Target Anual (objetivo de facturación, valores manuales por mes) y dashboard por SKU |
 
 Poly tiene los mismos nombres donde el concepto es el mismo, pero su `pipeline-core.js`, `pipeline-detail.js`, `archive-view.js` y `quotes-db.js` implementan otro modelo de negocio: una fila por **OPG** con proyectos anidados, sin margen, nacionalización, IVA ni garantías. Esa divergencia es deliberada.
+
+**Legamaster** y **Huawei** siguen el modelo de Poly, no el de Apple. Huawei
+(09/2026) salió de copiar `src/poly/` y sacarle las dos cosas que en Poly son
+de **HP** y no de la marca:
+
+| | Poly | Huawei |
+|---|---|---|
+| Niveles de precio | 4 del ERP **+ `DEAL`** | los mismos 4, sin `DEAL` |
+| Archivos de catálogo | 2 (NetSuite + hoja `Promos` del BOM Calculator de HP) | 1 (NetSuite) |
+| REGI (Deal Registration de HP) | `js/pipeline-regi.js`, vista 📊 Estadísticas, 4 KPI en el header, integración con el portal | no tiene |
+| Archivos en `js/` | 17 | 16 |
+
+Lo demás es igual, incluidas las columnas `opg` y `factura` (el link a
+Netsuite). `opg` se reusó con ese nombre a propósito: es una columna de la
+tabla `pipeline`, que comparten todas las marcas, y agregar una columna nueva
+para decir lo mismo sale más caro que renombrar la etiqueta en pantalla.
+
+El catálogo de Huawei sale de la **hoja `HUAWEI`** de los archivos “LP y
+Stock”, que traen una hoja por marca. `handlePL()` la elige por nombre y cae a
+la primera solo si no hay ninguna: quedarse con la primera llenaba el catálogo
+de Huawei con SKUs de otra marca **sin dar ningún error**. Lo fija
+`scripts/check-huawei-catalogo.js`, que corre el importador real contra un
+export sintético —no necesita el Excel de verdad, que todavía no existe— y
+verifica además el plegado de los 4 niveles, que el stock no se cuadruplique
+y que no haya vuelto a entrar nada de deals.
 
 > **Ojo con "sala" en el código de Poly.** Lo que la UI llama **Proyecto (cliente final)** se guarda con las claves viejas: el input es `#sala`, el array de la fila es `salas[]`, cada elemento tiene `.sala`, la columna en Supabase es `salas` (jsonb, declarada en `objCols`) y la clave dentro de `cquotes` es `'Sala'` (en `COLS`). Se renombró **solo lo que se lee en pantalla** (31/07/2026); tocar las claves obligaría a migrar `cquotes`, los backups JSON y la columna de la base. La traducción del encabezado de Excel se hace en `exportDB()` con un mapa `XLS_HD`.
 
@@ -294,7 +319,11 @@ La integración con el historial del navegador pasa por `shared/nav.js`:
 
 **Al agregar un modal nuevo**: enganchar `openOverlay`/`notifyClosed` y —si es un archivo nuevo— **agregarlo a `ASSETS` en `src/sw.js`** y correr `node scripts/check-precache.js`.
 
-## Multi-marca: cómo enchufar HP
+## Multi-marca: cómo enchufar una marca nueva
+
+> Escrita para HP, que es la que falta. La siguieron **Legamaster** (08/2026)
+> y **Huawei** (09/2026); los pasos que se descubrieron haciéndolo —el 3b, el
+> 3c y el 6— están abajo.
 
 > **La receta vieja era "copiar `src/apple/` → `src/<marca>/`". Ya no.** Así se
 > hizo Poly en 07/2026 y el resultado fue ~2.100 líneas duplicadas y bugs
@@ -309,8 +338,21 @@ La integración con el historial del navegador pasa por `shared/nav.js`:
    `src/multi/js/marcas.js` (precio, repricing, fila de `cquotes`, fila de
    pipeline) y su `pricing-core.js` en el `index.html` del multimarca. El
    catálogo se junta solo: `catalogo-multi.js` recorre las marcas del registro.
+   Si la marca lleva color propio en esa pantalla, van sus dos líneas de CSS
+   (`.mk-<marca>` y `.pk-rub.mkf-<marca>`) en el `<style>` de `multi/index.html`.
+3c. **Ojo con los controles de precio del multimarca.** Hasta 09/2026
+   `multi/js/quote.js` tenía `'poly'` escrito a mano en el selector de nivel, en
+   el repricing y en la celda de control de cada línea. Una marca nueva que
+   cotizara por nivel entraba al registro, mostraba su catálogo, dejaba agregar
+   líneas… y esas líneas **quedaban sin precio**, sin ningún error. Ya se
+   generalizó: quién se cotiza por nivel lo dice `controles` de su entrada del
+   registro, leído con `cevenMultiUsaTier()` / `cevenMultiMarcasConTier()`.
+   **No volver a escribir el id de una marca ahí**: si el multimarca necesita
+   saber algo de una marca, el dato va en `marcas.js` — igual que en `shared/`
+   va en `brand.js`.
 4. Activar la tarjeta en el shell (`src/index.html`): convertir el `<div class="mcard soon" data-brand="hp">` en `<a class="mcard" data-brand="hp" href="hp/">` y sacarle el `<span class="badge">Próximamente</span>`. El `data-brand` ya trae el acento; si se cambia el color hay que tocarlo en los dos lados (el shell no carga `brand.js`). El logo va en `src/icons/brands/<marca>.png` (recortado, ~128 px de lado mayor) y se declara además en el mapa `MARKS` de `shared/navbar.js`, que es de donde sale el chip de la barra superior; si el logo es de un solo color oscuro se marca `mono:true` para que `dark.css` lo invierta en modo oscuro.
-5. **Registrar los archivos nuevos en `ASSETS` de `src/sw.js`** (y el `index.html` en `DOCS`), subir `APP_VERSION` en `shared/config.js` y verificar con `node scripts/check-precache.js`. Si falta uno, el precache queda incompleto y la marca no abre sin conexión.
+5. **Registrar los archivos nuevos en `ASSETS` de `src/sw.js`** (y el `index.html` en `DOCS`), agregar la marca al `brandFallback` del `fetch` de `sw.js`, subir `APP_VERSION` en `shared/config.js` y verificar con `node scripts/check-precache.js`. Si falta uno, el precache queda incompleto y la marca no abre sin conexión.
+6. **Agregar la página a `MARCAS` en `scripts/check-globals.js`.** Es el único chequeo que lee el bundle real de una página y avisa si dos archivos definen la misma función global, o si el bundle llama a una `ceven*()` que nadie cargó. Sin modules ni build, eso no se nota hasta que alguien toca el botón que la usa.
 
 En Supabase no hay que tocar nada: las tablas ya separan por `brand` (PK compuestas `(brand,id)` / `(brand,key)`). Si la marca necesita campos propios, se agregan a `pipeline` como columnas aditivas que quedan NULL para las demás (así se hizo con `opg`/`salas`/`factura` de Poly) y se declaran en `pipeCols`.
 

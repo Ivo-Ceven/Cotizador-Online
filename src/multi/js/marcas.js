@@ -34,7 +34,8 @@
    cuando alguien la abre desde el historial de esa marca.
 
    Depende de: apple/js/pricing-core.js, poly/js/pricing-core.js,
-   legamaster/js/pricing-core.js, shared/quote-num.js (cevenQNumFmt).
+   legamaster/js/pricing-core.js, huawei/js/pricing-core.js,
+   shared/quote-num.js (cevenQNumFmt).
    ============================================================ */
 
 /* El contexto que reciben todas estas funciones lo arma emitir.js/quote.js:
@@ -251,6 +252,67 @@ var CEVEN_MULTI_MARCAS = {
     pipelineExtra: function(ctx){
       return {};
     }
+  },
+
+  /* ── HUAWEI ─────────────────────────────────────────────────────────
+     Precio = el del nivel (Tier 1/2/3 o Negocios Especiales) en el catálogo.
+     Mismo modelo que Poly, incluido el OPG, y sin su nivel DEAL: el importador
+     de deals es de HP y huawei/js/catalog.js no lo trae. */
+  huawei: {
+    label: 'Huawei',
+    prefix: 'huawei_',
+    controles: ['tier'],
+
+    nuevaLinea: function(p, ctx){
+      var it = {
+        brand: 'huawei',
+        sku: p.sku, description: p.description,
+        iva: p.iva || '', qty: 1, salePrice: '', stock: '',
+        tier: ''            // '' = sigue al nivel global
+      };
+      cevenHuaweiRepricear(it, ctx.catalogos.huawei, ctx.tierGlobal);
+      return it;
+    },
+
+    // Cambió el nivel global: mueve solo las que lo siguen (las de nivel propio
+    // y las MANUAL quedan intactas, igual que en el cotizador de Huawei).
+    repricear: function(it, ctx){
+      if(it.tier) return false;
+      return cevenHuaweiRepricear(it, ctx.catalogos.huawei, ctx.tierGlobal);
+    },
+
+    // Claves de doSave() en huawei/js/quotes-db.js. Con OPG, como Poly.
+    filaCquotes: function(it, ctx){
+      var sp = (it.salePrice === '' || it.salePrice == null) ? 0 : it.salePrice;
+      return {
+        'N° Cotización': ctx.qn, 'Fecha': ctx.fecha, 'Hora': ctx.hora,
+        'Cliente': ctx.cliente, 'OPG': ctx.opg || '—', 'Proyecto': ctx.proyecto,
+        'Ejecutivo': ctx.ejecutivo, 'Observaciones': ctx.obs,
+        'Mes Cierre': ctx.mesCierre,
+        'Condición de pago': ctx.payMode, 'Propuesta efectiva hasta': ctx.effDate,
+        'Entrega': ctx.delivery,
+        'Opción': 1, '_opcEf': 1,
+        'Nivel de precio': cevenHuaweiTierEfectivo(it, ctx.tierGlobal),
+        'SKU': it.sku, 'Descripción': it.description, 'Cantidad': it.qty,
+        'Nota': it.stock || '—', 'IVA': cevenFormatoIVA(it.iva),
+        'P. Venta Unitario': it.salePrice, 'Total': sp * it.qty,
+        'Tipo': 'producto', '_estado': ctx.estado,
+        '_multi': ctx.multiQNum
+      };
+    },
+
+    // Huawei no tiene familias ni margen: la fila lleva un monto y nada más.
+    filaPipeline: function(its, ctx){
+      return { monto: cevenHuaweiMonto(its) };
+    },
+
+    /* Igual que Poly: `opg` es el número de precio especial que asigna la marca
+       y `factura` guarda el link a Netsuite (se llama así por historia, ver
+       huawei/brand.js). Los dos son NULL al emitir — son seguimiento posterior,
+       y una re-emisión NO los pisa. */
+    pipelineExtra: function(ctx){
+      return { opg: ctx.opg || null, factura: null };
+    }
   }
 };
 
@@ -307,6 +369,22 @@ function cevenMultiMarcasDe(items){
   // tampoco se esconde: se devuelve para que el llamador pueda avisar.
   Object.keys(hay).forEach(function(id){ if(out.indexOf(id) < 0) out.push(id); });
   return out;
+}
+
+/* ¿Esta marca se cotiza eligiendo un NIVEL de precio? Lo dice su propio
+   registro (`controles`), no una lista de marcas escrita en otro archivo: es
+   exactamente el dato que src/multi/js/quote.js necesita para decidir si le
+   pinta un selector de nivel a una línea, y si estuviera escrito allá habría
+   que acordarse de tocarlo cada vez que entra una marca nueva. */
+function cevenMultiUsaTier(brand){
+  var m = cevenMultiMarca(brand);
+  return !!(m && m.controles && m.controles.indexOf('tier') >= 0);
+}
+
+// Las marcas CON nivel de precio presentes en un juego de líneas, en el orden
+// del registro.
+function cevenMultiMarcasConTier(items){
+  return cevenMultiMarcasDe(items).filter(cevenMultiUsaTier);
 }
 
 // Las líneas de UNA marca. Es el reparto que hace la emisión.
