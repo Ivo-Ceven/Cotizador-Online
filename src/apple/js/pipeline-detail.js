@@ -559,7 +559,7 @@ function renderPipelineDetailRow(r, db, pipe){
    Los agregados se recalculan con _pipeAgregados(), la misma función que usa
    "Agregar al pipeline" — si fueran dos cuentas distintas, la fila diría un
    total y la cotización otro. */
-var _SKU_MAPS = ['skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',
+var _SKU_MAPS = ['skuStatus','skuMesFact','skuMesCierre','skuPartialQty','skuPartialRemSt',
                  'skuPartialRemMes','skuArchivedQty','skuOvLinks'];
 
 function quitarLineaDeCotizacion(pipeId, lineKey){

@@ -84,6 +84,7 @@ var ASSETS = [
   './shared/pipeline-store.js',
   './shared/pipeline-status.js',
   './shared/pipeline-sku.js',
+  './shared/pipeline-facturacion.js',
   './shared/pipeline-group.js',
   './shared/pipeline-ui.js',
   './shared/pipeline-perdido.js',

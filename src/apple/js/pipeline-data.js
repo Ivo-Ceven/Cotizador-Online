@@ -187,6 +187,22 @@ function archiveOldEntries(){
 
     if(entryChanged){
       pipeChanged = true;
+      /* Lo facturado ya quedó en el archivo de su mes (entradas de arriba, con el
+         nombre original). Si en la fila viva todavía quedan unidades sin
+         archivar, lo que sigue en el pipeline ES la parte pendiente: se marca en
+         el nombre, igual que las otras marcas (shared/pipeline-facturacion.js).
+         Acá NO se crea una cotización nueva: skuArchivedQty descuenta unidades
+         sobre las líneas de esta misma cotización y partirla rompería ese
+         conteo (DOCUMENTACION.md: borrarlo provoca doble conteo). */
+      var quedaPendiente = lines.some(function(ln, idx){
+        var k = (ln['SKU']||'')+'|'+idx;
+        var ya = (r.skuArchivedQty && parseInt(r.skuArchivedQty[k])) || 0;
+        return (parseInt(ln['Cantidad'])||0) - ya > 0;
+      });
+      var huboFacturado = Object.keys(archByMonth).length > 0;
+      if(quedaPendiente && huboFacturado && typeof _factNombreHija === 'function'){
+        r.proyecto = _factNombreHija(r.proyecto);
+      }
       // Limpiar objetos de override vacíos
       if(r.skuStatus      &&!Object.keys(r.skuStatus).length)      delete r.skuStatus;
       if(r.skuMesCierre   &&!Object.keys(r.skuMesCierre).length)   delete r.skuMesCierre;

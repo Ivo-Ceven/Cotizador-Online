@@ -150,6 +150,52 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 06/10/2026 · Las facturadas quedan en el mes en que se facturaron + split de pendientes
+
+**Problema.** Una cotización Facturada contaba en el mes de su `mesCierre` (cierre
+*estimado*): una con cierre en diciembre que se facturó en octubre seguía en
+diciembre. Y no existía en ningún lado la fecha en que se marcó Facturado
+(`fechaMod` cambia con cualquier edición).
+
+**Qué hace ahora** (`src/shared/pipeline-facturacion.js`, todas las marcas):
+- **Sellado** (`cevenFactSellar`, llamada desde `savePipeline()`): al pasar a
+  Facturado, `mesCierre` pasa al mes actual y se guardan `mesFact`, `fechaFact` y
+  `mesCierreAntes`. Si se cambia el estado (era un error) se restaura el cierre
+  estimado y se borran los tres. Una línea con estado propio Facturado lleva su
+  mes en `skuMesFact`. Como lo que agrupa por mes (selector, forecast, archivo)
+  solo lee `mesCierre`, no hubo que tocar ningún dashboard.
+- **Backfill** (`cevenFactBackfill`): lo que ya estaba Facturado sin `mesFact` toma
+  el mes de su `fechaMod`. Idempotente sin bandera; no mueve `fechaMod`. Es una
+  aproximación: el aviso lista las que movió para corregirlas a mano.
+- **Split al pasar de mes** (`cevenFactSplit`, Poly/Huawei/Legamaster): una
+  cotización con líneas Facturadas de un mes pasado y otras pendientes se parte. El
+  padre conserva lo facturado/perdido y queda en su mes (lo archiva el flujo
+  normal); la hija lleva lo pendiente, con número nuevo y proyecto
+  "… (artículos pendientes)". Corre desde `_navApply` ANTES del auto-roll.
+
+**Decisiones.**
+- La hija tiene `id` = id del padre + 3e15 y `_qid` = `<qid padre>-pend`
+  (determinísticos: dos personas que parten la misma fila a la vez convergen en
+  la misma fila/cotización, mismo criterio que `cevenEmitirQid`). `id` es bigint,
+  por eso no puede ser un texto.
+- El número de la hija es nuevo (el `qNum` es bigint con unique por marca: no
+  admite "0071-B").
+- Una línea facturada **este** mes no se parte hasta que cambie el mes.
+- Mientras la fila sigue mezclada dentro del mes, su monto cuenta entero en el
+  `mesCierre` de la fila; el split lo corrige al pasar de mes.
+
+**Pendiente: Apple.** Apple ya archiva por línea y por unidades; el sellado le
+aplica (fila y `skuMesCierre` de la línea), pero falta derivar el remanente de
+las líneas con facturación parcial (`skuPartialQty`) y las pendientes a la
+cotización "(artículos pendientes)". Cuidado con `skuArchivedQty` (ver regla de
+DOCUMENTACION.md: borrarlo provoca doble conteo).
+
+**Deploy.** Aplicar `20261006120000_pipeline_mes_facturacion.sql` ANTES que el código
+(si no, PGRST204 rebota el lote entero de `pipeline`). Test:
+`node scripts/check-pipe-facturacion.js`.
+
+---
+
 ## 21/09/2026 · Cotizador de Huawei: Poly menos lo que era de HP
 
 Pedido de Ivo: "hacer cotizador de huawei, igual al de poly".

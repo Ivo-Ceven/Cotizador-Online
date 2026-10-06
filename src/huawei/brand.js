@@ -64,15 +64,18 @@ window.CEVEN_BRAND = {
   // 20260818130000 y 20260908120000, hechas para Apple y Poly). Declararlas aca
   // no pide ninguna migracion nueva: la tabla es compartida y separa por la
   // columna `brand`, asi que Huawei no toca el esquema.
+  // `mesFact`,`fechaFact`,`skuMesFact`,`mesCierreAntes` (06/10/2026): mes en que se
+  //   FACTURO la fila (shared/pipeline-facturacion.js). Columnas nuevas: migracion
+  //   20261006120000, aplicar ANTES de deployar esto.
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','opg',
     'ejecutivo','mesCierre','estado','monto','moneda','factura','perdidoMotivo','skuStatus',
-    'fechaMod','mesAutoRoll'],
+    'fechaMod','mesAutoRoll','mesFact','fechaFact','skuMesFact','mesCierreAntes'],
 
   numCols: ['id','qNum','clienteId','monto'],
 
   // skuStatus va aca ADEMAS de en pipeCols: sin esto pickPipe() lo emite como
   // string y el jsonb entra roto (ver shared/sync.js).
-  objCols: ['perdidoMotivo','skuStatus'],
+  objCols: ['perdidoMotivo','skuStatus','skuMesFact'],
 
   /* Columnas numericas en Supabase que la app guarda como string con ceros a la
      izquierda (col -> ancho). `qNum` se guarda '0071' y la columna es bigint:
@@ -93,7 +96,8 @@ window.CEVEN_BRAND = {
   // `mesAutoRoll` se limpia (delete) cuando el vendedor edita el mes a mano o
   // restaura de la cajita: hay que emitirlo como null explicito o el poll lo
   // revierte. `fechaMod` NO va aca: nunca se vacia, siempre es un ISO.
-  nullableCols: ['opg','factura','mesCierre','proyecto','clienteId','mesAutoRoll'],
+  nullableCols: ['opg','factura','mesCierre','proyecto','clienteId','mesAutoRoll',
+    'mesFact','fechaFact','mesCierreAntes'],
 
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   localOnlyCols: [],

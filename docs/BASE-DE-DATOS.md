@@ -42,6 +42,12 @@ create table public.pipeline (
                               -- Ver src/shared/pipeline-sku.js. Migración: NINGUNA,
                               -- la columna ya existía; solo se agregó a pipeCols/objCols
                               -- de poly/brand.js y legamaster/brand.js.
+  "mesFact"          text,    -- 06/10/2026: mes (YYYY-MM) en que la fila quedó Facturada.
+                              -- Al facturar, "mesCierre" pasa a ser ese mes. Las 4 marcas.
+                              -- Ver src/shared/pipeline-facturacion.js. Migración 20261006120000.
+  "fechaFact"        text,    -- ISO de ese momento
+  "skuMesFact"       jsonb,   -- mes de facturación por línea con estado propio Facturado
+  "mesCierreAntes"   text,    -- cierre estimado previo, se restaura si el Facturado era un error
   "skuMesCierre"     jsonb,   -- overrides de mes de cierre por línea
   "skuPartialQty"    jsonb,   -- entregas parciales: qty facturada por línea
   "skuPartialRemSt"  jsonb,   -- estado del remanente parcial

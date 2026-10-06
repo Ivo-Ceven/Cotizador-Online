@@ -104,6 +104,10 @@ function _navApply(n) {
   // vencido) y recién después el archivado (se lleva las CERRADAS de meses
   // pasados). Abierta/cerrada particionan: una fila nunca la tocan las dos.
   if(n === 'pipeline'){
+    // Primero el mes de facturación (backfill + split de cotizaciones con
+    // líneas facturadas y pendientes): el roll mueve filas ABIERTAS y el split
+    // puede dejar una fila cerrada que el archivado tiene que ver ya partida.
+    if(typeof cevenFactAlEntrarAlPipeline === 'function') cevenFactAlEntrarAlPipeline();
     if(typeof rollOverdueEntries === 'function') rollOverdueEntries();
     archiveOldEntries();
     renderPipeline();

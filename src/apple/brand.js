@@ -37,17 +37,21 @@ window.CEVEN_BRAND = {
   // `mesAutoRoll` (08/09/2026): mes de cierre ORIGINAL de una fila que el sistema
   //   movio al mes actual por estar vencida y abierta. Columna nueva: migracion
   //   20260908120000, aplicar ANTES de deployar esto.
+  // `mesFact`,`fechaFact`,`skuMesFact`,`mesCierreAntes` (06/10/2026): mes en que se
+  //   FACTURO la fila (shared/pipeline-facturacion.js). Columnas nuevas: migracion
+  //   20261006120000, aplicar ANTES de deployar esto.
   pipeCols: ['id','fecha','fechaISO','qNum','cliente','clienteId','proyecto','ejecutivo','mesCierre','estado',
     'qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad','montoAcc','montoServ',
     'monto','margenPond','moneda','skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt',
-    'skuPartialRemMes','skuArchivedQty','ovLink','esFOB','perdidoMotivo','fechaMod','mesAutoRoll'],
+    'skuPartialRemMes','skuArchivedQty','ovLink','esFOB','perdidoMotivo','fechaMod','mesAutoRoll',
+    'mesFact','fechaFact','skuMesFact','mesCierreAntes'],
 
   numCols: ['id','qNum','clienteId','qMac','qIph','qIpad','qServ','qAcc','montoMac','montoIph','montoIpad',
     'montoAcc','montoServ','monto','margenPond'],
 
   // Columnas jsonb: viajan como objeto nativo, no como string.
   objCols: ['skuStatus','skuMesCierre','skuPartialQty','skuPartialRemSt','skuPartialRemMes',
-    'skuArchivedQty','perdidoMotivo'],
+    'skuArchivedQty','perdidoMotivo','skuMesFact'],
 
   // Columnas numericas en Supabase que la app guarda como string con ceros a la
   // izquierda. col -> ancho. qNum vuelve de la base como 71 (bigint) pero
@@ -59,7 +63,8 @@ window.CEVEN_BRAND = {
   // Si se omiten del payload, PostgREST conserva el valor viejo y el poll lo
   // vuelve a traer, dejando el pipeline en un ciclo de revert infinito.
   // `mesAutoRoll` se limpia al editar el mes a mano / restaurar de la cajita.
-  nullableCols: ['ovLink','proyecto','mesCierre','clienteId','mesAutoRoll'],
+  nullableCols: ['ovLink','proyecto','mesCierre','clienteId','mesAutoRoll',
+    'mesFact','fechaFact','mesCierreAntes'],
 
   // Campos que existen SOLO en localStorage (no hay columna en Supabase).
   // El poll tiene que preservarlos al mergear las filas del servidor.

@@ -76,8 +76,17 @@ function savePipeline(p, opts){
   if(!prev || typeof prev.length !== 'number') prev = [];
   for(var i=0;i<prev.length;i++) prevById[prev[i].id] = prev[i];
   var now = new Date().toISOString();
+  /* Mes de facturación (shared/pipeline-facturacion.js): se sella ANTES de
+     comparar firmas, así lo que el sellado agrega ya cuenta como parte del
+     mismo cambio. Los cambios del sistema (roll, backfill, split) fijan sus
+     propios campos y no pasan por acá. */
+  var sellar = !systemChange && typeof cevenFactSellar === 'function';
+  var pc = (window.CEVEN_BRAND && window.CEVEN_BRAND.pipeCols) || [];
+  var conMesCierreSku = pc.indexOf('skuMesCierre') !== -1;
+  var mesActual = currentMonthKey();
   for(var j=0;j<p.length;j++){
     var e = p[j], old = prevById[e.id];
+    if(sellar) cevenFactSellar(e, old || null, mesActual, now, conMesCierreSku);
     if(!old){ if(!e.fechaMod) e.fechaMod = e.fecha || now; continue; }
     var changed = pipeRowSignature(e) !== pipeRowSignature(old);
     e.fechaMod = (changed && !systemChange) ? now : old.fechaMod;

@@ -364,7 +364,7 @@ function quitarLineaDeCotizacion(id, lineKey){
 
   // Corre los índices de los estados por línea ANTES de recalcular el monto:
   // sin esto, los overrides de las líneas de abajo apuntan a la equivocada.
-  cevenSkuReindex(row, ['skuStatus'], lines, idx);
+  cevenSkuReindex(row, ['skuStatus','skuMesFact'], lines, idx);
   row.monto = _pipeMontoDeItems(lines.filter(function(x){ return x !== target; }).map(function(l){
     return {qty: parseInt(l['Cantidad'], 10) || 1, salePrice: parseFloat(l['P. Venta Unitario']) || 0};
   }));
