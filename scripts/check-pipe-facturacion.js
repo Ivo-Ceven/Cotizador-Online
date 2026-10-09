@@ -246,5 +246,80 @@ console.log('\n7 · Editar a mano el mes de facturación de un artículo');
   ok(/Fact./.test(c.cevenFactMesSelectHTML({estado: 'Facturado', mesFact: hace(1)}, 'A|0', '')), 'el selector se arma');
 }
 
+/* ═══ 8 · Fila Facturada con un artículo pendiente: el mes es por artículo ══ */
+console.log('\n8 · Los artículos facturados que heredan el estado llevan cada uno su mes');
+{
+  const db = [linea('0160', 'A', 1, 100), linea('0160', 'B', 1, 50), linea('0160', 'C', 1, 30)];
+  const c = nuevoCtx([fila(160, 'Facturado', CUR, {monto: 180, mesFact: CUR, skuStatus: {'C|2': 'Negociacion'}})], db);
+  c.cevenCanEditPipelineRow = () => true;
+  c._pipeFilaPorId = (id) => { const pipe = c.getPipeline(); const row = pipe.find(r => r.id === id); return row ? {pipe, row} : null; };
+  c.cevenFactEditarMesLinea(160, 'A|0', hace(1));
+  const pipe = c.pipe();
+  const padre = pipe.find(r => r.id === 160), hija = pipe.find(r => r.id !== 160);
+  ok(pipe.length === 2, 'se parte', 'filas=' + pipe.length);
+  ok(padre && padre.monto === 100, 'al padre se va SOLO el artículo corregido (A)', padre && ('monto=' + padre.monto));
+  ok(hija && hija.monto === 80, 'B (facturado este mes) y C (pendiente) quedan en la cotización nueva', hija && ('monto=' + hija.monto));
+  ok(hija && hija.skuStatus && hija.skuStatus['B|0'] === 'Facturado', 'B sigue Facturado en la nueva');
+}
+{
+  // Sin pendientes ni overrides la fila es una sola unidad: el mes cambia para toda la fila.
+  const c = nuevoCtx([fila(1, 'Facturado', CUR, {mesFact: CUR})], []);
+  const row = c.pipe()[0];
+  ok(c.cevenFactSetMesLinea(row, 'A|0', hace(1)) && row.mesCierre === hace(1) && row.mesFact === hace(1), 'fila entera facturada: el mes es de toda la fila');
+}
+
+/* ═══ 9 · Lo facturado del mismo mes vuelve a su cotización de origen ═══════ */
+console.log('\n9 · B queda en el mes de A: vuelve a la cotización de A, no se crea otra');
+function escenario9(enArchivo){
+  const db = [linea('0160', 'A', 1, 100), linea('0160', 'B', 1, 50), linea('0160', 'C', 1, 30)];
+  const c = nuevoCtx([fila(160, 'Facturado', CUR, {monto: 180, mesFact: CUR, skuStatus: {'C|2': 'Negociacion'}})], db);
+  c.cevenCanEditPipelineRow = () => true;
+  c._pipeFilaPorId = (id) => { const pipe = c.getPipeline(); const row = pipe.find(r => r.id === id); return row ? {pipe, row} : null; };
+  c.cevenFactEditarMesLinea(160, 'A|0', hace(1));          // A → mes pasado: se parte
+  if(enArchivo){                                               // el origen se va a la cajita
+    const pipe = c.pipe(); const o = pipe.find(r => r.id === 160);
+    c._store.cpipeline = JSON.stringify(pipe.filter(r => r.id !== 160));
+    c._store.carchive = JSON.stringify({[hace(1)]: [o]});
+  }
+  const hijaId = 160 + 3e15;
+  c.cevenFactEditarMesLinea(hijaId, 'B|0', hace(1));       // B → mismo mes que A
+  return c;
+}
+for(const enArchivo of [false, true]){
+  const donde = enArchivo ? 'origen en la cajita' : 'origen en el pipeline';
+  const c = escenario9(enArchivo);
+  const pipe = c.pipe();
+  const origen = enArchivo ? JSON.parse(c._store.carchive)[hace(1)][0] : pipe.find(r => r.id === 160);
+  const hija = pipe.find(r => r.id === 160 + 3e15);
+  ok(pipe.filter(r => r.id !== 160).length === 1 && !pipe.some(r => r.id === 160 + 6e15), '(' + donde + ') no se crea otra cotización nueva', pipe.map(r => r.id).join());
+  ok(origen.monto === 150, '(' + donde + ') el origen suma A + B', 'monto=' + origen.monto);
+  ok(hija && hija.monto === 30 && !hija.skuStatus, '(' + donde + ') la pendiente queda solo con C', JSON.stringify(hija));
+  const q160 = c.getDB().filter(r => r['N° Cotización'] === '0160').map(r => r['SKU']).join();
+  ok(q160 === 'A,B', '(' + donde + ') en cquotes la #0160 tiene A y B', q160);
+  const qh = c.getDB().filter(r => r['N° Cotización'] === hija.qNum).map(r => r['SKU']).join();
+  ok(qh === 'C', '(' + donde + ') la cotización pendiente tiene solo C', qh);
+}
+{
+  // Si C también se factura en ese mes, la cotización pendiente desaparece.
+  const c = escenario9(false);
+  const sk = {'C|0': 'Facturado'};
+  let p = c.pipe(); const h = p.find(r => r.id === 160 + 3e15);
+  h.estado = 'Negociacion'; h.skuStatus = sk; h.skuMesFact = {'C|0': hace(1)}; c._store.cpipeline = JSON.stringify(p);
+  c.cevenFactSplit();
+  p = c.pipe();
+  ok(p.length === 1 && p[0].id === 160 && p[0].monto === 180, 'sin artículos pendientes, la cotización pendiente se elimina', JSON.stringify(p.map(r => [r.id, r.monto])));
+}
+{
+  // Otro mes: no se mezcla con el origen.
+  const db = [linea('0160', 'A', 1, 100), linea('0160', 'B', 1, 50), linea('0160', 'C', 1, 30)];
+  const c = nuevoCtx([fila(160, 'Facturado', CUR, {monto: 180, mesFact: CUR, skuStatus: {'C|2': 'Negociacion'}})], db);
+  c.cevenCanEditPipelineRow = () => true;
+  c._pipeFilaPorId = (id) => { const pipe = c.getPipeline(); const row = pipe.find(r => r.id === id); return row ? {pipe, row} : null; };
+  c.cevenFactEditarMesLinea(160, 'A|0', hace(1));
+  c.cevenFactEditarMesLinea(160 + 3e15, 'B|0', hace(2));
+  const p = c.pipe();
+  ok(p.find(r => r.id === 160).monto === 100, 'un mes distinto al del origen no se mezcla con él');
+}
+
 console.log(fallos ? ('\n✗ ' + fallos + ' fallo(s)') : '\n✓ todo en orden');
 process.exit(fallos ? 1 : 0);

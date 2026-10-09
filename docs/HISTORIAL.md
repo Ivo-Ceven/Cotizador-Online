@@ -186,6 +186,8 @@ diciembre. Y no existía en ningún lado la fecha en que se marcó Facturado
 
 **Corregir el mes a mano.** El mes que infiere el backfill (el de `fechaMod`) sale corrido si alguien tocó la cotización después de facturar (caso #0160 de NewTech). En el detalle de la fila, cada artículo Facturado tiene un selector "Fact. <mes>" (`cevenFactEditarMesLinea`): al elegir un mes pasado y quedar pendientes, la cotización se parte en el acto. Poly/Huawei/Legamaster.
 
+**Vuelta al origen** (`cevenFactMergeOrigen`). Una cotización "(artículos pendientes)" conoce a su origen (id = id del origen + 3e15). Cuando un artículo suyo queda Facturado en el mismo mes (ya cerrado) que el origen, vuelve a la cotización de origen —esté en el pipeline o ya en la cajita— en vez de generar otra cotización nueva; si se queda sin artículos, desaparece. Con otro mes no se mezcla. Los meses por artículo que heredan Facturado de la fila se guardan en `skuMesFact` aunque no tengan estado propio.
+
 **Apple (resuelto parcialmente).** En `archiveOldEntries` de Apple, cuando se archiva lo facturado y quedan unidades sin archivar, la fila viva pasa a llamarse "(artículos pendientes)" SIN crear cotización nueva (skuArchivedQty descuenta sobre las mismas líneas).
 
 **Pendiente: Apple (selector de mes por artículo).** Apple ya archiva por línea y por unidades; el sellado le

@@ -56,10 +56,13 @@ function cevenFactMesDeISO(iso){
    el estado del proyecto lleva el del proyecto. */
 function cevenFactMesDeLinea(row, lk){
   if(!row) return '';
+  var propio = row.skuMesFact && row.skuMesFact[lk];
   if(row.skuStatus && row.skuStatus[lk] !== undefined){
-    return (row.skuStatus[lk] === 'Facturado' && row.skuMesFact && row.skuMesFact[lk]) || '';
+    return (row.skuStatus[lk] === 'Facturado' && propio) || '';
   }
-  return row.estado === 'Facturado' ? (row.mesFact || '') : '';
+  // Hereda el estado de la fila: su mes es el suyo si se lo corrigió a mano
+  // (cevenFactSetMesLinea), y si no el de la fila entera.
+  return row.estado === 'Facturado' ? (propio || row.mesFact || '') : '';
 }
 
 /* ── 1. SELLADO ──────────────────────────────────────────────────────────────
@@ -99,6 +102,12 @@ function cevenFactSellar(row, old, mes, ahora, conMesCierreSku){
   var nSt = row.skuStatus || {};
   var prev = row.skuMesFact || (old && old.skuMesFact) || {};
   var mapa = {};
+  // Un sello de una línea que HEREDA Facturado de la fila (corregida a mano) se
+  // conserva mientras siga Facturada: antes se perdía en el siguiente guardado.
+  Object.keys(prev).forEach(function(k){
+    var efectivo = (nSt[k] !== undefined) ? nSt[k] : row.estado;
+    if(nSt[k] === undefined && efectivo === 'Facturado' && prev[k]) mapa[k] = prev[k];
+  });
   Object.keys(nSt).forEach(function(k){
     if(nSt[k] !== 'Facturado') return;
     var antes = (oSt[k] !== undefined) ? oSt[k] : (old && old.estado);
@@ -198,10 +207,111 @@ function _factNombreHija(p){
   return (p || '—') + CEVEN_SUFIJO_PENDIENTES;
 }
 
+/* ── VOLVER A LA COTIZACIÓN DE ORIGEN ────────────────────────────────────────
+   Una cotización "(artículos pendientes)" conoce a su origen: su id es el del
+   origen + CEVEN_ID_DERIVADA. Cuando un artículo suyo queda Facturado en el MISMO
+   mes (ya cerrado) en que quedó la cotización de origen, ese artículo VUELVE a
+   la de origen: no se crea otra cotización nueva por cada artículo.
+
+   El origen puede estar en el pipeline vivo o ya en la cajita (archivo del mes).
+   Si el mes del artículo es otro, no se mezcla: sigue el camino normal del
+   split (una fila vive en un solo mes).
+
+   Si la cotización pendiente se queda sin artículos, desaparece. */
+function cevenFactMergeOrigen(){
+  if(typeof _pipeMontoDeItems !== 'function') return 0;
+  var B = window.CEVEN_BRAND || {};
+  if((B.pipeCols || []).indexOf('skuPartialQty') !== -1) return 0;   // Apple: otro camino
+
+  var cur = currentMonthKey();
+  var pipe = getPipeline();
+  var archive = null, db = null;
+  var quitarIds = {}, archivoTocado = false, cambios = 0, aMover = [], aSacar = [];
+
+  pipe.forEach(function(r){
+    if(!(Number(r.id) >= CEVEN_ID_DERIVADA) || !cevenSkuTieneOverrides(r)) return;
+    var origId = Number(r.id) - CEVEN_ID_DERIVADA;
+
+    var origen = null;
+    for(var p = 0; p < pipe.length; p++){ if(Number(pipe[p].id) === origId){ origen = pipe[p]; break; } }
+    var enArchivo = false;
+    if(!origen){
+      if(archive === null) archive = getArchive();
+      Object.keys(archive).some(function(mk){
+        var e = (archive[mk] || []).filter(function(x){ return Number(x.id) === origId && !x._fromPartial; })[0];
+        if(e){ origen = e; enArchivo = true; return true; }
+        return false;
+      });
+    }
+    if(!origen) return;
+    var om = origen.mesCierre || '';
+    if(!om || om >= cur) return;
+
+    if(db === null) db = getDB();
+    var lines = cevenOpcFilasDeCotiz(db, r.qNum);
+    var ol = cevenOpcFilasDeCotiz(db, origen.qNum);
+    if(!lines.length || !ol.length) return;
+
+    var mover = [];
+    lines.forEach(function(l, i){
+      var lk = cevenSkuLineKey(l, i);
+      if(cevenSkuEstado(r, lk) !== 'Facturado') return;
+      var m = cevenFactMesDeLinea(r, lk);
+      if(m && m < cur && m === om) mover.push(i);
+    });
+    if(!mover.length) return;
+
+    // Cabecera de la cotización de origen, para que las filas movidas queden
+    // como si siempre hubieran sido suyas.
+    var cab = ol[0];
+    var base = ol.length;
+    if(!origen.skuMesFact) origen.skuMesFact = {};
+    mover.forEach(function(i, k){
+      var c = Object.assign({}, lines[i]);
+      ['N° Cotización', '_qid', 'Proyecto', 'Fecha', 'Hora', 'Mes Cierre'].forEach(function(campo){
+        if(cab[campo] !== undefined) c[campo] = cab[campo];
+      });
+      c['_qid'] = cab['_qid'] || cevenQIdLegacy(origen.qNum);
+      c['Opción'] = 1; c['_opcEf'] = 1;
+      origen.skuMesFact[cevenSkuLineKey(c, base + k)] = om;
+      aMover.push(c);
+      aSacar.push(lines[i]);
+    });
+    origen.monto = (Number(origen.monto) || 0) + _factMontoDe(lines, mover);
+    if(enArchivo) archivoTocado = true;
+
+    if(mover.length === lines.length){
+      quitarIds[r.id] = 1;            // se quedó sin artículos
+    } else {
+      var restantes = lines.slice();
+      mover.slice().sort(function(a, b){ return b - a; }).forEach(function(i){
+        cevenSkuReindex(r, ['skuStatus', 'skuMesFact'], restantes, i);
+        restantes.splice(i, 1);
+      });
+      r.monto = _pipeMontoDeItems(restantes.map(function(l){
+        return {qty: parseInt(l['Cantidad'], 10) || 1, salePrice: parseFloat(l['P. Venta Unitario']) || 0};
+      }));
+    }
+    cambios++;
+  });
+
+  if(!cambios) return 0;
+  var nuevaDB = db.filter(function(x){ return aSacar.indexOf(x) === -1; }).concat(aMover);
+  if(!saveDB(nuevaDB)) return 0;                 // sin lugar: no se toca nada más
+  if(archivoTocado) saveArchive(archive);
+  savePipeline(pipe.filter(function(x){ return !quitarIds[x.id]; }), {systemChange: true});
+  if(typeof showToast === 'function'){
+    showToast('↩ ' + aMover.length + (aMover.length === 1 ? ' artículo facturado volvió' : ' artículos facturados volvieron')
+      + ' a su cotización original (mes ya cerrado).');
+  }
+  return cambios;
+}
+
 function cevenFactSplit(){
   if(typeof _pipeMontoDeItems !== 'function') return 0;
   var B = window.CEVEN_BRAND || {};
   if((B.pipeCols || []).indexOf('skuPartialQty') !== -1) return 0;   // Apple: otro camino
+  var vueltas = cevenFactMergeOrigen();   // primero lo que vuelve al origen
 
   var cur = currentMonthKey();
   var pipe = getPipeline();
@@ -282,10 +392,10 @@ function cevenFactSplit(){
     partidas++;
   });
 
-  if(!partidas) return 0;
+  if(!partidas) return vueltas;
 
   var nuevaDB = db.filter(function(x){ return quitar.indexOf(x) === -1; }).concat(agregar);
-  if(!saveDB(nuevaDB)) return 0;                 // sin lugar: no se toca el pipeline
+  if(!saveDB(nuevaDB)) return vueltas;           // sin lugar: no se toca el pipeline
   hijas.forEach(function(h){ pipe.push(h); });
   savePipeline(pipe, {systemChange: true});
 
@@ -297,7 +407,7 @@ function cevenFactSplit(){
       onAction: function(){ window._pipeMonthFilter = cur; if(typeof renderPipeline === 'function') renderPipeline(); }
     });
   }
-  return partidas;
+  return partidas + vueltas;
 }
 
 /* Lo único que llama _navApply() al entrar al Pipeline, ANTES del auto-roll y del
@@ -329,7 +439,18 @@ function cevenFactSetMesLinea(row, lk, mes){
     row.skuMesFact[lk] = mes;
     return true;
   }
-  if(row.estado !== 'Facturado' || row.mesCierre === mes) return false;
+  if(row.estado !== 'Facturado') return false;
+  /* La línea hereda Facturado de la fila. Si la fila tiene otras líneas con
+     estado propio (pendientes), este artículo lleva SU mes: cambiar el de la
+     fila movería también a los otros facturados que heredan. Si no hay
+     overrides, la fila es una sola unidad y el mes es el de toda la fila. */
+  if(cevenSkuTieneOverrides(row)){
+    if(!row.skuMesFact) row.skuMesFact = {};
+    if(cevenFactMesDeLinea(row, lk) === mes) return false;
+    row.skuMesFact[lk] = mes;
+    return true;
+  }
+  if(row.mesCierre === mes) return false;
   row.mesFact = mes;
   row.mesCierre = mes;
   return true;
