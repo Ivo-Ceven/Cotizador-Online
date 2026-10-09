@@ -311,3 +311,66 @@ function cevenFactAlEntrarAlPipeline(){
     if(window.console) console.error('[pipeline-facturacion]', e);
   }
 }
+
+/* ── EDITAR A MANO EL MES DE FACTURACIÓN DE UN ARTÍCULO ──────────────────────
+   Lo que se infiere al migrar los datos viejos (mes de `fechaMod`) es una
+   aproximación: si alguien tocó la cotización después de facturar, el mes sale
+   corrido. Este es el arreglo manual, desde el detalle de la fila.
+
+   Con estado propio en la línea → `skuMesFact[lk]`. Si la línea hereda
+   Facturado del proyecto (todos facturados) → el mes de la fila entera:
+   `mesFact` y `mesCierre`, que es lo que agrupa el pipeline. */
+function cevenFactSetMesLinea(row, lk, mes){
+  if(!row || !lk || !/^\d{4}-\d{2}$/.test(mes || '')) return false;
+  if(row.skuStatus && row.skuStatus[lk] !== undefined){
+    if(row.skuStatus[lk] !== 'Facturado') return false;
+    if(!row.skuMesFact) row.skuMesFact = {};
+    if(row.skuMesFact[lk] === mes) return false;
+    row.skuMesFact[lk] = mes;
+    return true;
+  }
+  if(row.estado !== 'Facturado' || row.mesCierre === mes) return false;
+  row.mesFact = mes;
+  row.mesCierre = mes;
+  return true;
+}
+
+/* <select> de meses: del año pasado hasta el mes actual (facturar a futuro no
+   existe). Si el mes guardado queda afuera de la ventana, se agrega igual. */
+function cevenFactMesSelectHTML(row, lk, attrs){
+  var cur = currentMonthKey(), sel = cevenFactMesDeLinea(row, lk);
+  var meses = [];
+  for(var i = 0; i < 13; i++) meses.push(cevenMonthAdd(cur, -i));
+  if(sel && meses.indexOf(sel) === -1) meses.push(sel);
+  var lab = function(k){ return (typeof cevenMesLabel === 'function') ? cevenMesLabel(k) : k; };
+  var h = '<select data-dact="sku-mes-fact"' + attrs + ' title="Mes en que se facturó este artículo"'
+        + ' style="margin-top:3px;padding:1px 4px;border:0.5px solid #d2d2d7;border-radius:5px;font-size:10px;font-family:inherit">';
+  if(!sel) h += '<option value="" selected>¿Mes facturado?</option>';
+  meses.forEach(function(k){
+    h += '<option value="' + k + '"' + (k === sel ? ' selected' : '') + '>Fact. ' + lab(k) + '</option>';
+  });
+  return h + '</select>';
+}
+
+function cevenFactEditarMesLinea(id, lk, mes){
+  var f = (typeof _pipeFilaPorId === 'function') ? _pipeFilaPorId(id) : null;
+  if(!f){ showToast('Ese proyecto ya no está en el pipeline actual.'); return; }
+  if(!cevenCanEditPipelineRow(f.row.ejecutivo)){
+    showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.');
+    renderPipeline(); return;
+  }
+  if(typeof pushPipeUndo === 'function') pushPipeUndo(id);
+  if(!cevenFactSetMesLinea(f.row, lk, mes)){ renderPipeline(); return; }
+  savePipeline(f.pipe);
+  // Si el mes ya pasó y quedan pendientes, se parte en el acto (no hace falta
+  // salir y volver a entrar al pipeline).
+  try{
+    var partidas = cevenFactSplit();
+    /* Lo facturado de un mes ya cerrado va a la cajita (archivo) ahora, no al
+       próximo ingreso al pipeline: si no, quedaba un rato en el pipeline vivo
+       bajo un mes pasado. Solo si algo cambió de mes: archiveOldEntries() guarda
+       y avisa, y no hace falta correrlo en cada cambio de selector. */
+    if((partidas || f.row.mesCierre < currentMonthKey()) && typeof archiveOldEntries === 'function') archiveOldEntries();
+  }catch(e){ if(window.console) console.error('[pipeline-facturacion]', e); }
+  renderPipeline();
+}

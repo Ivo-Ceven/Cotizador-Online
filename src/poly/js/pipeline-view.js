@@ -561,6 +561,8 @@ function pipeBindDelegation(){
     if(dEl){
       if(dEl.getAttribute('data-dact') === 'sku-est'){
         updateSkuEstadoPipe(Number(dEl.getAttribute('data-did')), dEl.getAttribute('data-lk'), dEl.value);
+      } else if(dEl.getAttribute('data-dact') === 'sku-mes-fact'){
+        cevenFactEditarMesLinea(Number(dEl.getAttribute('data-did')), dEl.getAttribute('data-lk'), dEl.value);
       }
       return;
     }

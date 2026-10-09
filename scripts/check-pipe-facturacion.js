@@ -228,5 +228,23 @@ console.log('\n6 · Apple: porción facturada archivada, el resto queda "(artíc
   ok(_pipe[0].proyecto === 'Proy (artículos pendientes)' && _archive[MP].length === 1, 'idempotente: no repite sufijo ni duplica el archivo');
 }
 
+/* ═══ 7 · Corregir a mano el mes de un artículo (caso #0160) ════════════════ */
+console.log('\n7 · Editar a mano el mes de facturación de un artículo');
+{
+  // Backfill lo dejó en el mes actual (alguien tocó la cotización este mes).
+  const db = [linea('0160', 'A', 1, 100), linea('0160', 'B', 1, 50)];
+  const c = nuevoCtx([fila(160, 'Negociacion', fut(1), {skuStatus: {'A|0': 'Facturado'}, skuMesFact: {'A|0': CUR}})], db);
+  c.cevenCanEditPipelineRow = () => true;
+  c._pipeFilaPorId = (id) => { const pipe = c.getPipeline(); const row = pipe.find(r => r.id === id); return row ? {pipe, row} : null; };
+  ok(c.cevenFactSplit() === 0, 'con el mes actual todavía no se parte');
+  c.cevenFactEditarMesLinea(160, 'A|0', hace(1));
+  const pipe = c.pipe();
+  ok(pipe.length === 2, 'al corregirlo al mes pasado se parte en el acto', 'filas=' + pipe.length);
+  const padre = pipe.find(r => r.id === 160);
+  ok(padre.estado === 'Facturado' && padre.mesCierre === hace(1), 'el padre queda Facturado en el mes corregido', JSON.stringify(padre));
+  ok(c.cevenFactSetMesLinea({estado: 'Facturado', mesCierre: CUR}, 'A|0', 'basura') === false, 'un mes mal formado se rechaza');
+  ok(/Fact./.test(c.cevenFactMesSelectHTML({estado: 'Facturado', mesFact: hace(1)}, 'A|0', '')), 'el selector se arma');
+}
+
 console.log(fallos ? ('\n✗ ' + fallos + ' fallo(s)') : '\n✓ todo en orden');
 process.exit(fallos ? 1 : 0);

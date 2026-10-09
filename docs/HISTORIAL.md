@@ -184,7 +184,11 @@ diciembre. Y no existía en ningún lado la fecha en que se marcó Facturado
 - Mientras la fila sigue mezclada dentro del mes, su monto cuenta entero en el
   `mesCierre` de la fila; el split lo corrige al pasar de mes.
 
-**Pendiente: Apple.** Apple ya archiva por línea y por unidades; el sellado le
+**Corregir el mes a mano.** El mes que infiere el backfill (el de `fechaMod`) sale corrido si alguien tocó la cotización después de facturar (caso #0160 de NewTech). En el detalle de la fila, cada artículo Facturado tiene un selector "Fact. <mes>" (`cevenFactEditarMesLinea`): al elegir un mes pasado y quedar pendientes, la cotización se parte en el acto. Poly/Huawei/Legamaster.
+
+**Apple (resuelto parcialmente).** En `archiveOldEntries` de Apple, cuando se archiva lo facturado y quedan unidades sin archivar, la fila viva pasa a llamarse "(artículos pendientes)" SIN crear cotización nueva (skuArchivedQty descuenta sobre las mismas líneas).
+
+**Pendiente: Apple (selector de mes por artículo).** Apple ya archiva por línea y por unidades; el sellado le
 aplica (fila y `skuMesCierre` de la línea), pero falta derivar el remanente de
 las líneas con facturación parcial (`skuPartialQty`) y las pendientes a la
 cotización "(artículos pendientes)". Cuidado con `skuArchivedQty` (ver regla de

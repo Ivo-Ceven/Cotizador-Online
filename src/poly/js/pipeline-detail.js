@@ -225,6 +225,10 @@ function renderPipelineDetailRow(r, esArchivo, db){
       : '<span class="'+cevenEsc(cevenSpillClass(lnSt))+'" style="border-radius:980px;padding:2px 8px;font-size:10px;font-weight:700;'
           + 'color:'+cSt.fg+';background:'+cSt.bg+'">'+cevenEsc(cevenEstadoLabel(lnSt))+'</span>';
 
+    // Mes en que se facturó este artículo (editable: el que se infiere al migrar
+    // los datos viejos es aproximado). shared/pipeline-facturacion.js.
+    if(editable && lnSt === 'Facturado') celdaSt += '<br>' + cevenFactMesSelectHTML(r, lk, lineA);
+
     /* Dos acciones por línea, las dos solo con permiso de edición:
          ×  vuelve a heredar el estado del proyecto (solo si tiene uno propio)
          ✂️ saca el artículo de la cotización */
