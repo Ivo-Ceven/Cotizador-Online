@@ -9,6 +9,13 @@
    hay estado editable, link de Netsuite ni botón de quitar. Para
    actualizarla se vuelve a importar el Excel.
 
+   09/10/2026 · LAS VINCULADAS NO SE BORRAN. Una oportunidad que ya no figura en
+   el Excel nuevo pero está vinculada a un proyecto real (o declarada perdida a
+   mano) se CONSERVA, con lo último que dijo HP: sirve para validar después
+   cuánto se equivocaron sus estimaciones. Se la marca "fuera del Excel de HP"
+   (su `imported_at` es anterior al de la última importación). Solo se borran
+   las que ni figuran en el archivo ni tienen nada de nuestro lado.
+
    El dato vive en Supabase (`poly_regi_pipeline`, RLS
    ceven_is_staff()/ceven_is_writer() — mismo criterio que
    regi_codigos), no en localStorage: lo importa una persona y lo ve
@@ -70,6 +77,7 @@
 window._regiPipeRows = null;         // null = todavía no se pidió a Supabase
 window._regiForecastFilter = '';
 window._regiSoloPerdidas = false;    // toggle "Solo perdidas" (excluye a "Mostrar vinculadas")
+window._regiSoloVinculadas = false;  // toggle "Solo vinculadas" (excluye a los otros dos)
 window._regiVistaWasActive = false;
 // OPD marcados "Perdida" que siguen 3 s en la tabla antes de que el filtro
 // "ya vinculadas" los saque (ver _regiMarcarPerdida). `...T` guarda el timer
@@ -546,6 +554,8 @@ function cevenRegiToggleVista(vista){
   if(vincWrap) vincWrap.style.display = esRegi ? '' : 'none';
   var perdWrap = document.getElementById('regi-perd-wrap');
   if(perdWrap) perdWrap.style.display = esRegi ? '' : 'none';
+  var soloVincWrap = document.getElementById('regi-solovinc-wrap');
+  if(soloVincWrap) soloVincWrap.style.display = esRegi ? '' : 'none';
 
   // Facturado y Forecast del mes no tienen equivalente en REGI: no hay
   // "facturado" en una oportunidad que todavía es de un partner, y el monto
@@ -631,23 +641,69 @@ function _procesarRegiPipelineExcel(filas){
     return;
   }
 
-  cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline'), {
-    method: 'POST',
-    headers: {Prefer: 'resolution=merge-duplicates,return=minimal'},
-    body: JSON.stringify(rows)
+  var opdsEnExcel = {};
+  rows.forEach(function(r){ opdsEnExcel[r.opd] = true; });
+  var plan = null;
+
+  // 1) Lo que hay HOY en la tabla, ANTES de pisarla: hace falta para saber qué
+  //    oportunidades se fueron del Excel y si alguna está vinculada.
+  cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?select=opd,regi,forecast_override', {method: 'GET'}).then(function(existentes){
+    plan = _regiPlanBorrado(Array.isArray(existentes) ? existentes : [], opdsEnExcel, _regiOpgVinculadosSet());
+    // 2) Alta / actualización por OPD.
+    return cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline'), {
+      method: 'POST',
+      headers: {Prefer: 'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify(rows)
+    });
   }).then(function(){
-    // Reemplazo: todo lo que no se tocó en ESTA importación (imported_at
-    // más viejo que `ts`) es una oportunidad que ya no está en el Excel.
-    return cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?imported_at=lt.' + encodeURIComponent(ts), {method: 'DELETE'});
+    // 3) Se borra SOLO lo que salió del Excel y no tiene nada de nuestro lado.
+    //    Las vinculadas / perdidas a mano se conservan (ver cabecera).
+    return _regiBorrarOpds(plan.borrar);
   }).then(function(){
     window._regiPipeRows = null;
     var sel = document.getElementById('archive-month-sel');
     if(sel) sel.value = '__regi';
     if(typeof renderPipeline === 'function') renderPipeline();
-    showToast('✓ Pipeline REGI actualizado: ' + rows.length + ' oportunidad' + (rows.length === 1 ? '' : 'es') + '.');
+    showToast('✓ Pipeline REGI actualizado: ' + rows.length + ' oportunidad' + (rows.length === 1 ? '' : 'es') + '.'
+      + (plan.conservar.length ? (' Se conservaron ' + plan.conservar.length + ' vinculada' + (plan.conservar.length === 1 ? '' : 's')
+        + ' que ya no figuran en el Excel de HP.') : '')
+      + (plan.borrar.length ? (' Se quitaron ' + plan.borrar.length + ' que salieron del Excel y no tenían vínculo.') : ''));
   }).catch(function(e){
     showErr('No se pudo importar el pipeline REGI: ' + ((e && e.message) || 'error desconocido'));
   });
+}
+
+/* Qué hacer con lo que ya estaba en la tabla y NO viene en el Excel nuevo:
+   borrarlo, salvo que tenga algo de nuestro lado.
+     · vinculada: su código (REGI, o el OPD si no tiene) es el OPG de algún
+       proyecto real del pipeline — el mismo criterio de _regiEsVinculada;
+     · perdida a mano: `forecast_override = 'Perdido'`.
+   Devuelve {borrar:[opd], conservar:[opd]}. Es pura: no toca la red. */
+function _regiPlanBorrado(existentes, opdsEnExcel, vinculados){
+  var borrar = [], conservar = [];
+  (existentes || []).forEach(function(e){
+    if(!e || !e.opd || opdsEnExcel[e.opd]) return;
+    var codigo = _regiCodigoVinculo(e);
+    var link = !!(codigo && vinculados[codigo] && vinculados[codigo].length);
+    var perdida = e.forecast_override === 'Perdido';
+    (link || perdida ? conservar : borrar).push(e.opd);
+  });
+  return {borrar: borrar, conservar: conservar};
+}
+
+// DELETE por OPD, de a 40 para no pasarse del largo de la URL. Los valores van
+// entre comillas dobles por si algún OPD trae una coma o un paréntesis.
+function _regiBorrarOpds(opds){
+  var lotes = [];
+  for(var i = 0; i < opds.length; i += 40) lotes.push(opds.slice(i, i + 40));
+  return lotes.reduce(function(p, lote){
+    return p.then(function(){
+      var lista = lote.map(function(o){
+        return '"' + String(o).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+      }).join(',');
+      return cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?opd=in.(' + encodeURIComponent(lista) + ')', {method: 'DELETE'});
+    });
+  }, Promise.resolve());
 }
 
 /* ── Traer los datos ──────────────────────────────────────────────────── */
@@ -675,8 +731,19 @@ function _regiRowToPipeRow(r){
     // Checkbox "Perdida" de la tabla (04/09/2026) — ver _regiMarcarPerdida.
     // Único uso que le queda a forecast_override: NO revive el <select> de
     // Commit/Pipeline/Upside que se fue el 03/09/2026, solo este booleano.
-    perdidaManual: r.forecast_override === 'Perdido'
+    perdidaManual: r.forecast_override === 'Perdido',
+    // Cuándo se vio por última vez en un Excel de HP (ver _regiMarcarFueraDelExcel).
+    importadoAt: r.imported_at ? (Date.parse(r.imported_at) || 0) : 0
   };
+}
+
+/* `fueraExcel`: la oportunidad se conservó porque está vinculada, pero ya no
+   figura en el ÚLTIMO Excel importado (su `imported_at` es anterior al más
+   nuevo de la tabla: toda fila del último Excel lo lleva igual). */
+function _regiMarcarFueraDelExcel(filas){
+  var ultimo = 0;
+  filas.forEach(function(r){ if(r.importadoAt > ultimo) ultimo = r.importadoAt; });
+  filas.forEach(function(r){ r.fueraExcel = !!(ultimo && r.importadoAt && r.importadoAt < ultimo); });
 }
 
 function _cevenRegiPipeFetch(){
@@ -695,11 +762,12 @@ function _cevenRegiPipeFetch(){
      nunca 'Commit'/'Pipeline'/'Upside' — el Forecast sigue siendo 100% del
      Excel, sin pastilla editable. */
   var url = _cevenRegiPipeRest('poly_regi_pipeline')
-    + '?select=opd,regi,dr_expiration,opportunity,forecast,account,primary_partner,amount,close_date,forecast_override'
+    + '?select=opd,regi,dr_expiration,opportunity,forecast,account,primary_partner,amount,close_date,forecast_override,imported_at'
     + '&order=amount.desc';
   window._regiPipeFetchPromise = cevenAuthedFetch(url, {method: 'GET'}).then(function(res){
     window._regiPipeFetchPromise = null;
     window._regiPipeRows = (Array.isArray(res) ? res : []).map(_regiRowToPipeRow);
+    _regiMarcarFueraDelExcel(window._regiPipeRows);
     return window._regiPipeRows;
   }, function(err){
     window._regiPipeFetchPromise = null;
@@ -1120,6 +1188,7 @@ function _renderRegiPipelineFromCache(){
   var nVinculadas = rowsTotal.filter(function(r){ return r.vinculada; }).length;
   var nPerdidas = rowsTotal.filter(_regiEsPerdida).length;
   _regiPintarToggleVinculadas(nVinculadas);
+  _regiPintarToggleSoloVinculadas(nVinculadas);
   _regiPintarToggleSoloPerdidas(nPerdidas);
 
   // Las que acaban de marcarse "Perdida" siguen 3 s en la tabla aunque ya
@@ -1127,7 +1196,11 @@ function _renderRegiPipelineFromCache(){
   // y las saca al vencer la ventana (efecto regi-row-saliendo, poly/index.html).
   var _gracia = window._regiPerdidaGracia || {};
   var rows;
-  if(window._regiSoloPerdidas){
+  if(window._regiSoloVinculadas){
+    // Solo las vinculadas (link real o perdida a mano): el universo con el que
+    // se valida cuánto acertó HP. Incluye las que ya no están en el Excel.
+    rows = rowsTotal.filter(function(r){ return r.vinculada; });
+  } else if(window._regiSoloPerdidas){
     // "Solo perdidas" gana sobre "Mostrar vinculadas": las perdidas SON
     // vinculadas, así que sin esto quedarían ocultas igual. Deja pasar también
     // las que están en su ventana de gracia de 3 s (recién marcadas).
@@ -1178,6 +1251,8 @@ function _renderRegiPipelineFromCache(){
   var _vacio;
   if(rowsTotal.length === 0){
     _vacio = 'Todavía no se importó ningún Excel de REGI. Tocá "⬇ Importar Excel REGI".';
+  } else if(window._regiSoloVinculadas && nVinculadas === 0){
+    _vacio = 'Todavía no hay ninguna oportunidad de REGI vinculada. Se vinculan cargando el mismo código en el OPG de un proyecto real.';
   } else if(window._regiSoloPerdidas && nPerdidas === 0){
     _vacio = 'Ninguna oportunidad de REGI está marcada como perdida. Se marcan con el switch "Perdida" de cada fila.';
   } else if(rows.length === 0 && !window._regiMostrarVinculadas && nVinculadas > 0){
@@ -1201,6 +1276,11 @@ function _regiPintarToggleVinculadas(n){
   if(el) el.textContent = '(' + n + ')';
 }
 
+function _regiPintarToggleSoloVinculadas(n){
+  var el = document.getElementById('regi-solovinc-count');
+  if(el) el.textContent = '(' + n + ')';
+}
+
 // Contador del toggle "Solo perdidas (N)", mismo criterio que el de arriba.
 function _regiPintarToggleSoloPerdidas(n){
   var el = document.getElementById('regi-perd-count');
@@ -1219,22 +1299,30 @@ function _regiEsPerdida(r){
 /* Los dos toggles de la vista REGI ("Mostrar vinculadas" y "Solo perdidas")
    son modos de vista que compiten: prender uno apaga el otro. La exclusión
    vive acá y no en el onchange para no repetir el cruce de ids en el HTML. */
+function _regiApagarToggles(excepto){
+  var ids = {vinc: 'regi-mostrar-vinc', perd: 'regi-solo-perd', solovinc: 'regi-solo-vinc'};
+  if(excepto !== 'vinc')     window._regiMostrarVinculadas = false;
+  if(excepto !== 'perd')     window._regiSoloPerdidas = false;
+  if(excepto !== 'solovinc') window._regiSoloVinculadas = false;
+  Object.keys(ids).forEach(function(k){
+    if(k === excepto) return;
+    var el = document.getElementById(ids[k]);
+    if(el) el.checked = false;
+  });
+}
 function _regiToggleMostrarVinculadas(on){
+  if(on) _regiApagarToggles('vinc');
   window._regiMostrarVinculadas = !!on;
-  if(on){
-    window._regiSoloPerdidas = false;
-    var p = document.getElementById('regi-solo-perd');
-    if(p) p.checked = false;
-  }
   renderPipeline();
 }
 function _regiToggleSoloPerdidas(on){
+  if(on) _regiApagarToggles('perd');
   window._regiSoloPerdidas = !!on;
-  if(on){
-    window._regiMostrarVinculadas = false;
-    var v = document.getElementById('regi-mostrar-vinc');
-    if(v) v.checked = false;
-  }
+  renderPipeline();
+}
+function _regiToggleSoloVinculadas(on){
+  if(on) _regiApagarToggles('solovinc');
+  window._regiSoloVinculadas = !!on;
   renderPipeline();
 }
 
@@ -1667,7 +1755,8 @@ function _regiPintarDashboard(rowsTotal, filtered, forecastFilter, hayFiltros){
   document.getElementById('dash-total').textContent = 'USD ' + fI(montoFiltrado);
   _pipeSetLbl('dash-total-sub', hayFiltros
     ? 'según los filtros aplicados'
-    : (window._regiSoloPerdidas ? 'solo las declaradas perdidas'
+    : (window._regiSoloVinculadas ? 'solo las ya vinculadas'
+    : window._regiSoloPerdidas ? 'solo las declaradas perdidas'
       : (window._regiMostrarVinculadas ? 'incluye las ya vinculadas' : 'de las oportunidades sin vincular')));
 
   var pillsHtml = '<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Por Forecast</div>'
@@ -1756,6 +1845,9 @@ function _regiRowHTML(r){
   // que el filtro la retire. Gana sobre el opacity:.55 de vinculada (el
   // keyframe la desvanece igual).
   var _saliendo = !!(window._regiPerdidaGracia && window._regiPerdidaGracia[r.opd]);
+  if(r.fueraExcel){
+    celdaAcc += '<div title="Ya no figura en el último Excel de HP. Se conserva porque está vinculada: queda lo último que informó HP." style="margin-top:3px;font-size:10px;font-weight:700;color:#b35333">fuera del Excel de HP</div>';
+  }
   return '<tr'+(_saliendo ? ' class="regi-row-saliendo"' : (r.vinculada ? ' style="opacity:.55"' : ''))+'>'
     // opd/regi/partner: pueden venir larguísimos del Excel de HP. Se recortan
     // con "…" dentro de un ancho fijo (título nativo para el texto completo),

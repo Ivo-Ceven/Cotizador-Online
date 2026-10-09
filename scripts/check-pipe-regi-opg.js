@@ -436,7 +436,81 @@ console.log('\n7 · El pipeline REGI no tiene nada editable');
   ok(e._els['dash-total-lbl'].textContent === 'Monto filtrado', 'con la etiqueta de filtrado, no la de total global', e._els['dash-total-lbl'].textContent);
 }
 
-console.log('\n' + (fallos
-  ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
-  : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
-process.exit(fallos ? 1 : 0);
+/* ═══ Las vinculadas NO se borran al importar un Excel nuevo (09/10/2026) ═══ */
+console.log('\nImportar Excel REGI: lo vinculado se conserva');
+{
+  const e = cargar();
+  const vinc = {'REGI-1': [filaReal('REGI-1')], 'OPD-3': [filaReal('OPD-3')]};
+  const existentes = [
+    {opd: 'OPD-1', regi: 'REGI-1'},                          // vinculada por REGI, ya no viene
+    {opd: 'OPD-2', regi: ''},                                  // sin vínculo, ya no viene
+    {opd: 'OPD-3', regi: ''},                                  // vinculada por OPD, ya no viene
+    {opd: 'OPD-4', regi: '', forecast_override: 'Perdido'},    // perdida a mano, ya no viene
+    {opd: 'OPD-5', regi: 'REGI-5'}                             // viene en el Excel nuevo
+  ];
+  const plan = e._regiPlanBorrado(existentes, {'OPD-5': true}, vinc);
+  ok(JSON.stringify(plan.borrar) === '["OPD-2"]', 'solo se borra lo que salió del Excel y no tiene nada de Ceven', JSON.stringify(plan));
+  ok(JSON.stringify(plan.conservar) === '["OPD-1","OPD-3","OPD-4"]', 'se conservan la vinculada por REGI, por OPD y la perdida a mano', JSON.stringify(plan.conservar));
+  ok(e._regiPlanBorrado(existentes, {'OPD-1': 1, 'OPD-2': 1, 'OPD-3': 1, 'OPD-4': 1, 'OPD-5': 1}, vinc).borrar.length === 0,
+     'si todo viene en el Excel no se borra nada');
+}
+{
+  // Filas fuera del último Excel: su imported_at es anterior al más nuevo.
+  const e = cargar();
+  const filas = [
+    {importadoAt: 2000}, {importadoAt: 2000}, {importadoAt: 1000}
+  ];
+  e._regiMarcarFueraDelExcel(filas);
+  ok(!filas[0].fueraExcel && !filas[1].fueraExcel && filas[2].fueraExcel === true, 'las del último Excel no se marcan; la más vieja sí');
+}
+{
+  // El filtro "Solo vinculadas" muestra únicamente las vinculadas (incluida una fuera del Excel).
+  const e = cargar();
+  e._pipelineData = [filaReal('REGI-1'), filaReal('OPD-3')];
+  e._regiPipeRows = [
+    filaRegi('OPD-1', 'REGI-1', {proyecto: 'Cliente OPD-1', fueraExcel: true}),
+    filaRegi('OPD-2', '', {proyecto: 'Cliente OPD-2'}),
+    filaRegi('OPD-3', '', {proyecto: 'Cliente OPD-3'}),
+    filaRegi('OPD-4', '', {proyecto: 'Cliente OPD-4', perdidaManual: true})
+  ];
+  e._regiSoloVinculadas = true;
+  e._renderRegiPipelineFromCache();
+  const html = e._els['regi-pipe-body'].innerHTML;
+  ok(/Cliente OPD-1/.test(html) && /Cliente OPD-3/.test(html) && /Cliente OPD-4/.test(html), 'Solo vinculadas: aparecen las vinculadas y la perdida a mano');
+  ok(!/Cliente OPD-2/.test(html), 'Solo vinculadas: no aparece la que no tiene vínculo');
+  ok(/fuera del Excel de HP/.test(e._regiRowHTML(e._regiPipeRows[0])) && !/fuera del Excel de HP/.test(e._regiRowHTML(e._regiPipeRows[1])), 'la que ya no está en el Excel lleva la marca "fuera del Excel de HP", las otras no');
+  e._regiSoloVinculadas = false;
+  e._regiMostrarVinculadas = false;
+  e._renderRegiPipelineFromCache();
+  ok(/Cliente OPD-2/.test(e._els['regi-pipe-body'].innerHTML) && !/Cliente OPD-1/.test(e._els['regi-pipe-body'].innerHTML),
+     'sin el filtro, por defecto sigue mostrando solo lo que falta vincular');
+}
+
+/* El flujo completo contra un "servidor" de mentira: GET, POST y DELETE por OPD.
+   Es asincrónico, así que el resumen final va adentro del setTimeout. */
+const e2 = cargar();
+e2._pipelineData = [filaReal('REGI-1')];                       // proyecto real con ese OPG
+const llamadas = [];
+e2.cevenAuthedFetch = function(url, opts){
+  const m = (opts && opts.method) || 'GET';
+  llamadas.push([m, url]);
+  if(m === 'GET') return Promise.resolve([{opd: 'OPD-1', regi: 'REGI-1'}, {opd: 'OPD-2', regi: ''}, {opd: 'OPD-9', regi: ''}]);
+  return Promise.resolve({});
+};
+e2.cevenSessionUser = () => 'ana';
+e2.cevenDealFechaISO = () => null;
+e2.showErr = (m) => { e2._lastErr = m; };
+e2._procesarRegiPipelineExcel([{OPD: 'OPD-9', Opportunity: 'X', Account: 'Y', Amount: 10}]);
+setTimeout(function(){
+  const metodos = llamadas.map(l => l[0]).join();
+  ok(metodos === 'GET,POST,DELETE', 'orden: lee lo que hay, actualiza por OPD y recién después borra', metodos + ' ' + (e2._lastErr || ''));
+  const del = llamadas.filter(l => l[0] === 'DELETE')[0];
+  ok(del && /opd=in\./.test(del[1]) && decodeURIComponent(del[1]).indexOf('"OPD-2"') !== -1, 'el DELETE es por OPD y nombra a la que no tiene vínculo', del && del[1]);
+  ok(del && decodeURIComponent(del[1]).indexOf('OPD-1') === -1, 'y NO nombra a la vinculada (REGI-1)');
+  ok(!llamadas.some(l => /imported_at=lt/.test(l[1])), 'ya no existe el borrado masivo por imported_at');
+  ok(/Se conservaron 1 vinculada/.test(e2._lastToast || ''), 'el aviso cuenta cuántas se conservaron', e2._lastToast);
+  console.log('\n' + (fallos
+    ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
+    : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
+  process.exit(fallos ? 1 : 0);
+}, 100);

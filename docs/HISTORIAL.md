@@ -150,6 +150,18 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 09/10/2026 · Importar el Excel REGI ya no borra las vinculadas + filtro "Solo vinculadas"
+
+**Problema.** Cada importación dejaba la tabla `poly_regi_pipeline` IGUAL al Excel: una oportunidad que HP sacaba de su archivo se borraba, aunque estuviera vinculada a un proyecto real. Se perdía la estimación de HP (monto, fecha, forecast), que es justo lo que sirve para validar después cuánto se equivocaron.
+
+**Ahora** (`_procesarRegiPipelineExcel`, `_regiPlanBorrado`): se lee lo que hay, se actualiza por OPD y solo se borra lo que salió del Excel **y** no está vinculado (OPG de un proyecto real igual a su REGI, o a su OPD si no tiene) **ni** declarado perdido a mano. Las conservadas muestran "fuera del Excel de HP" (su `imported_at` es anterior al de la última importación) y siguen sumando en los KPI de REGI. Sin migración. El DELETE ya no es masivo por `imported_at`: va por `opd=in.(...)`.
+
+**Filtro "Solo vinculadas"** (link real o perdida a mano): excluye a "Mostrar vinculadas" y "Solo perdidas".
+
+**Lo ya borrado antes de este cambio no se recupera desde el código:** la tabla no tiene copia en la app. Hay que volver a importar el Excel anterior (las vinculadas que traiga se restauran) o recurrir a un backup de Supabase.
+
+---
+
 ## 06/10/2026 · Las facturadas quedan en el mes en que se facturaron + split de pendientes
 
 **Problema.** Una cotización Facturada contaba en el mes de su `mesCierre` (cierre

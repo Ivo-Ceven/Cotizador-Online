@@ -461,9 +461,9 @@
          cuando hacía falta — que es siempre mirando los filtros, no la barra. -->
     <button class="bi" id="pipe-undo-btn" onclick="undoPipelineChange()" title="Deshacer el último cambio en el pipeline" disabled>↩</button>
     <button class="bo" id="pipe-backup-btn" onclick="pickBackupFolder()" title="Elegí una carpeta donde guardar backups automáticos">📂 Elegir carpeta backup</button>
-    <!-- Pipeline REGI (Deal Registration de HP/Poly): reemplaza ENTERA la tabla
+    <!-- Pipeline REGI (Deal Registration de HP/Poly): actualiza la tabla, conservando las vinculadas
          poly_regi_pipeline con lo que traiga este Excel. Ver pipeline-regi.js. -->
-    <button class="bo" onclick="document.getElementById('regi-pipe-up').click()" title="Excel del partner portal de HP (REgis.xlsx): reemplaza el pipeline REGI completo">⬇ Importar Excel REGI</button>
+    <button class="bo" onclick="document.getElementById('regi-pipe-up').click()" title="Excel del partner portal de HP (REgis.xlsx): actualiza el pipeline REGI; las oportunidades vinculadas que ya no figuran en el Excel se conservan">⬇ Importar Excel REGI</button>
     <input type="file" id="regi-pipe-up" accept=".xls,.xlsx" style="display:none" onchange="handleRegiPipelineFile(this.files[0]);this.value=''">
     <button class="bo" id="pipe-export-btn" onclick="exportPipeline()">⬇ Excel</button>
   </div>
@@ -498,14 +498,14 @@
       <div id="regi-vinc-wrap" style="display:none">
         <label class="lbl" aria-hidden="true">&nbsp;</label>
         <style>
-          #regi-mostrar-vinc,#regi-solo-perd{appearance:none;width:38px;height:22px;margin:0;border:0;border-radius:999px;background:#aeaeb2;cursor:pointer;position:relative;transition:background .18s ease;flex-shrink:0}
-          #regi-mostrar-vinc::after,#regi-solo-perd::after{content:'';position:absolute;width:16px;height:16px;top:3px;left:3px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s ease}
-          #regi-mostrar-vinc:checked{background:#15863a}
+          #regi-mostrar-vinc,#regi-solo-perd,#regi-solo-vinc{appearance:none;width:38px;height:22px;margin:0;border:0;border-radius:999px;background:#aeaeb2;cursor:pointer;position:relative;transition:background .18s ease;flex-shrink:0}
+          #regi-mostrar-vinc::after,#regi-solo-perd::after,#regi-solo-vinc::after{content:'';position:absolute;width:16px;height:16px;top:3px;left:3px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s ease}
+          #regi-mostrar-vinc:checked,#regi-solo-vinc:checked{background:#15863a}
           /* "Solo perdidas" en rojo: es un recorte a lo que NO prosperó, no a lo
              resuelto OK — de ahí otro color que "Mostrar vinculadas". */
           #regi-solo-perd:checked{background:#d70015}
-          #regi-mostrar-vinc:checked::after,#regi-solo-perd:checked::after{transform:translateX(16px)}
-          #regi-mostrar-vinc:focus-visible,#regi-solo-perd:focus-visible{outline:2px solid #0071e3;outline-offset:2px}
+          #regi-mostrar-vinc:checked::after,#regi-solo-perd:checked::after,#regi-solo-vinc:checked::after{transform:translateX(16px)}
+          #regi-mostrar-vinc:focus-visible,#regi-solo-perd:focus-visible,#regi-solo-vinc:focus-visible{outline:2px solid #0071e3;outline-offset:2px}
           /* Checkbox "Perdida" de cada fila de la tabla REGI (04/09/2026) — mismo
              estilo de toggle, por CLASE porque hay uno por fila, no un solo id.
              Rojo cuando está tildado: es lo contrario de "Mostrar vinculadas" en
@@ -538,6 +538,16 @@
         <label style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;white-space:nowrap;height:36px;padding:0 12px;border:0.5px solid #d2d2d7;border-radius:10px;background:#f5f5f7;cursor:pointer">
           <input type="checkbox" role="switch" id="regi-solo-perd" onchange="_regiToggleSoloPerdidas(this.checked)">
           Solo perdidas <span id="regi-perd-count" style="font-size:11px;font-weight:700;color:#6e6e73;background:#fff;border:0.5px solid #d2d2d7;border-radius:980px;padding:2px 6px">(0)</span>
+        </label>
+      </div>
+      <!-- "Solo vinculadas": ver únicamente las que tienen link real a un proyecto
+           o están declaradas perdidas, incluidas las que HP sacó de su Excel
+           (se conservan). Excluye a los otros dos toggles (_regiApagarToggles). -->
+      <div id="regi-solovinc-wrap" style="display:none">
+        <label class="lbl" aria-hidden="true">&nbsp;</label>
+        <label style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;white-space:nowrap;height:36px;padding:0 12px;border:0.5px solid #d2d2d7;border-radius:10px;background:#f5f5f7;cursor:pointer">
+          <input type="checkbox" role="switch" id="regi-solo-vinc" onchange="_regiToggleSoloVinculadas(this.checked)">
+          Solo vinculadas <span id="regi-solovinc-count" style="font-size:11px;font-weight:700;color:#6e6e73;background:#fff;border:0.5px solid #d2d2d7;border-radius:980px;padding:2px 6px">(0)</span>
         </label>
       </div>
       <!-- Una celda más de la misma grilla, así el botón queda alineado con los
