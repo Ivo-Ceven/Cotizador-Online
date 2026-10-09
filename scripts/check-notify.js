@@ -49,8 +49,9 @@ function nodo(){
   return n;
 }
 
-function cargar(){
+function cargar(storage){
   const body = nodo();
+  const _ls = storage || {};
   const registro = {};   // id -> nodo (lo que se hizo appendChild a body con id)
   body.appendChild = function(c){
     c._parent = body;
@@ -61,6 +62,7 @@ function cargar(){
   const ctx = {
     console,
     setTimeout: () => 1, clearTimeout: () => {},
+    localStorage: { getItem: k => (k in _ls ? _ls[k] : null), setItem: (k, v) => { _ls[k] = String(v); } },
     document: {
       body,
       getElementById: id => registro[id] || null,
@@ -73,6 +75,7 @@ function cargar(){
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/shared/notify.js'), 'utf8'), ctx, { filename: 'notify.js' });
   ctx._body = body;
   ctx._registro = registro;
+  ctx._ls = _ls;
   return ctx;
 }
 
@@ -162,6 +165,71 @@ console.log('\n4 · forceToast deja el aviso en la esquina');
   const e = cargar();
   e.notifyUndo('No se pudo deshacer del todo, ya no está en el historial.');
   ok(toast(e) && !popup(e), 'notifyUndo() con texto tipo error igual queda en la esquina');
+}
+
+/* ═══ 5 · Historial y visor (09/10/2026) ═════════════════════════════════ */
+console.log('\n5 · Historial de notificaciones y visor');
+function log(e){ return JSON.parse(e._ls['ceven_notif_log_v1'] || '[]'); }
+function textos(n, out){
+  out = out || [];
+  if(n && n._text) out.push(n._text);
+  ((n && n._children) || []).forEach(c => textos(c, out));
+  return out;
+}
+{
+  const e = cargar();
+  e.showToast('✓ Hecho');
+  e.showToast('Error: algo se rompió');
+  e.showError('falla de la API');
+  e.showWarning('aviso dinámico');
+  const l = log(e);
+  ok(l.length === 4, 'cada aviso queda UNA sola vez en el historial (cartel, error y aviso, sin duplicar)', JSON.stringify(l.map(x => x.type)));
+  ok(l[0].type === 'success' && l[0].msg === 'Hecho', 'el "✓" se guarda sin el prefijo y como éxito');
+  ok(l[1].type === 'error' && l[2].type === 'error' && l[3].type === 'warning', 'los errores y avisos se guardan con su tipo', JSON.stringify(l.map(x => x.type)));
+  e.showToast('Mismo aviso');
+  e.showToast('Mismo aviso');
+  ok(log(e).length === 5, 'el mismo aviso repetido al instante no se duplica');
+  ok(!!e._registro['ceven-notif-bell'], 'aparece la campana en cuanto hay algo para ver');
+}
+{
+  const e = cargar();
+  const largo = 'Parte uno. '.repeat(60);
+  e.showToast(largo);
+  e.cevenNotifAbrir();
+  const panel = e._registro['ceven-notif-panel'];
+  ok(!!(panel && panel._parent), 'el visor se abre');
+  ok(textos(panel).some(t => t === largo.trim()), 'muestra el texto COMPLETO, sin recortar');
+  e.cevenNotifAbrir();
+  ok(!e._registro['ceven-notif-panel'] || !e._registro['ceven-notif-panel']._parent, 'tocar de nuevo lo cierra');
+}
+{
+  // Sobrevive a recargar la página (otro contexto con el mismo almacenamiento).
+  const a = cargar();
+  a.showToast('Aviso de antes de recargar');
+  const b = cargar(a._ls);
+  b.cevenNotifAbrir();
+  ok(textos(b._registro['ceven-notif-panel']).some(t => /antes de recargar/.test(t)), 'el historial sobrevive a recargar la página');
+}
+{
+  const e = cargar();
+  for(let i = 0; i < 80; i++) e.showToast('aviso ' + i);
+  ok(log(e).length === 60, 'el historial guarda como máximo los últimos 60', String(log(e).length));
+  ok(log(e)[59].msg === 'aviso 79', 'y se queda con los más nuevos');
+}
+{
+  const e = cargar();
+  ok(e._toastDuracion('corto', false) === 5000, 'un cartel corto dura 5 s como siempre');
+  ok(e._toastDuracion('x'.repeat(280), false) === 14000, 'uno de 280 caracteres dura 14 s', String(e._toastDuracion('x'.repeat(280), false)));
+  ok(e._toastDuracion('x'.repeat(5000), false) === 25000, 'con tope de 25 s');
+  ok(e._toastDuracion('corto', true) === 8000, 'con botón de acción, 3 s más');
+}
+{
+  // Sin almacenamiento disponible no se rompe nada.
+  const e = cargar();
+  e.localStorage = undefined;
+  let rompio = false;
+  try{ e.showToast('sin storage'); }catch(er){ rompio = true; }
+  ok(!rompio, 'sin localStorage los avisos siguen funcionando');
 }
 
 console.log('\n' + (fallos

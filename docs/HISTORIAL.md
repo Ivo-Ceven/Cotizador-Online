@@ -150,6 +150,12 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 09/10/2026 · Visor de notificaciones
+
+Los carteles traían mucho texto y se iban a los 5 s. `shared/notify.js` ahora (1) guarda cada aviso en un historial (últimos 60, con hora y tipo, en localStorage `ceven_notif_log_v1`, sobrevive a recargar), (2) muestra una campana 🔔 abajo a la izquierda en cuanto hay algo, con el contador de no vistos, que abre un panel lateral con el texto COMPLETO (`cevenNotifAbrir`; también se abre tocando un cartel), (3) alarga los carteles largos (45 ms por carácter pasado de 80, tope 25 s, +3 s si tienen botón), no se van con el mouse encima, y recorta a 5 líneas lo que no entra. Test: `node scripts/check-notify.js`.
+
+---
+
 ## 09/10/2026 · Importar el Excel REGI ya no borra las vinculadas + filtro "Solo vinculadas"
 
 **Problema.** Cada importación dejaba la tabla `poly_regi_pipeline` IGUAL al Excel: una oportunidad que HP sacaba de su archivo se borraba, aunque estuviera vinculada a un proyecto real. Se perdía la estimación de HP (monto, fecha, forecast), que es justo lo que sirve para validar después cuánto se equivocaron.
