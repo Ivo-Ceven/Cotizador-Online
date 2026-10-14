@@ -160,7 +160,10 @@ function copiarCotizacion(){
   qNum = cevenReservarQNum();
   cevenPintarQNum();
   cevenEditandoQNum(null);
-  items = items.map(function(it){ return Object.assign({}, it, { id: Date.now() + Math.random() }); });
+  /* `lid: ''`: la copia es OTRA cotización, sus líneas necesitan ids propios (ver
+     shared/opciones.js). Compartirlos con el original haría chocar las claves
+     del pipeline si una línea pasa de una a la otra al facturar. */
+  items = items.map(function(it){ return Object.assign({}, it, { id: Date.now() + Math.random(), lid: '' }); });
   renderQ();
   doSave(true);
   var copiaQn = String(qNum).padStart(4,'0');
@@ -185,6 +188,7 @@ function copiarCotizacionHist(qn){
   var isAdmin = cevenIsAdmin();
   rows.forEach(function(r){
     var c=Object.assign({}, r);
+    if(c['_lid']) c['_lid'] = cevenLidNuevo();   /* ids propios: ver copiarCotizacion() */
     c['N° Cotización']=newQn;
     c['Fecha']=date;
     c['Hora']=time;
@@ -242,7 +246,10 @@ function editQuoteFromHistory(qn, skipUndoToast){
   }
   items=[];
   cevenOpcCargarDeFilas(rows);
-  rows.forEach(function(r){
+  /* Id estable de cada línea (shared/opciones.js): es lo que ata los estados por
+     artículo del pipeline a SU línea aunque se reordene o se inserte otra. */
+  var _lids = cevenLidsDeFilas(rows);
+  rows.forEach(function(r, _li){
     var sp = r['P. Venta Unitario'];
     sp = (sp===''||sp===null||sp===undefined) ? '' : parseFloat(sp);
     items.push({
@@ -257,7 +264,8 @@ function editQuoteFromHistory(qn, skipUndoToast){
         var t = r['Nivel de precio'] || '';
         return (t && _tg && t === _tg.value) ? '' : t;
       })(),
-      opc: cevenOpcDe(r)
+      opc: cevenOpcDe(r),
+      lid: _lids[_li]
     });
   });
   _qSortKey = null; _qSortDir = 1;

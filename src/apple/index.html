@@ -247,10 +247,8 @@
   <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <div id="plbadge" class="bk bkw">Sin price list</div>
     <div style="flex:1;min-width:8px"></div>
-    <button class="bo" onclick="document.getElementById('plup').click()" title="Elegí los dos price list de Apple juntos (el normal y el FTZ). Reemplaza todo el catálogo: perdés los productos manuales">📂 Cargar Excel/CSV</button>
+    <button class="bo" onclick="document.getElementById('plup').click()" title="Elegí los dos price list de Apple juntos (el normal y el FTZ). Actualiza el costo de los SKU que coincidan y agrega los nuevos; no borra nada: los productos que no vengan en el archivo quedan con su costo anterior y la marca Revisar costo">📂 Cargar Excel/CSV</button>
     <input type="file" id="plup" accept=".csv,.tsv,.txt,.xls,.xlsx" multiple style="display:none" onchange="handlePL(this.files)">
-    <button class="bo" onclick="document.getElementById('plprice-up').click()" title="Actualiza solo los precios de los SKU que coincidan, agrega los nuevos, y conserva tus productos manuales">💲 Actualizar precios</button>
-    <input type="file" id="plprice-up" accept=".xls,.xlsx" multiple style="display:none" onchange="handlePriceUpdate(this.files)">
     <div style="position:relative">
       <button class="bo red" onclick="toggleCleanupMenu(event)">🧹 Limpiar SKU ▾</button>
       <div id="cleanup-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:0.5px solid #d2d2d7;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);min-width:210px;z-index:50;overflow:hidden">

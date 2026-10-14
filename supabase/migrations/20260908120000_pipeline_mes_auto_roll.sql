@@ -2,7 +2,7 @@
 -- pipeline."mesAutoRoll"  ·  auto-roll del mes de cierre estimado vencido
 -- ---------------------------------------------------------------------------
 -- Columna aditiva, sin restriccion de marca (igual que "fechaMod" /
--- "perdidoMotivo" en 20260818130000). Guarda el mes de cierre ORIGINAL
+-- "perdidoMotivo" en 20260819121117). Guarda el mes de cierre ORIGINAL
 -- ('YYYY-MM') de una fila cuyo cierre estimado vencio y el sistema movio al
 -- mes actual al entrar al pipeline (rollOverdueEntries() en
 -- src/<marca>/js/pipeline-data.js). Sirve para pintar la chapita "↪ auto" y,

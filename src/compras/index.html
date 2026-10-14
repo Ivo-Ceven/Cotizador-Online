@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Compras estimadas · Ceven</title>
+<meta name="description" content="Forecast de compras: cuántos equipos se necesitan según el pipeline, en total y estimado por probabilidad de cierre.">
+
+<!-- PWA (instalable + offline). El service worker se registra en ../shared/pwa.js. -->
+<meta name="theme-color" content="#f5f5f7">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Ceven Compras">
+
+<!-- Sin dark.css, igual que el shell y Tareas: es parte del panel, no de un cotizador. -->
+<link rel="stylesheet" href="../shared/css/base.css">
+<link rel="stylesheet" href="css/compras.css">
+</head>
+<body>
+
+<!-- El login vive en el shell (../index.html). Esta página exige sesión válida. -->
+<script src="../shared/safe.js"></script>
+<script src="../shared/config.js"></script>
+<script src="../shared/auth.js"></script>
+<script src="../shared/notify.js"></script>
+<script>if(!cevenIsValidSession()) location.replace('../index.html');</script>
+
+<script>window.CEVEN_PAGE = {label: 'Compras', icon: '🛒'};</script>
+<script src="../shared/navbar.js"></script>
+
+<main class="fc">
+
+  <header class="fc-hd">
+    <div>
+      <h1 class="h1">Compras estimadas</h1>
+      <p class="sub">Cuántos equipos se necesitan según el pipeline abierto de todas las marcas</p>
+    </div>
+    <div class="fc-acc">
+      <button type="button" class="fc-btn" id="fc-csv" title="Descargar la tabla que se ve ahora" disabled>⬇ CSV</button>
+      <button type="button" class="fc-btn" id="fc-recargar" title="Volver a leer el pipeline y las cotizaciones">↻ Actualizar</button>
+    </div>
+  </header>
+
+  <!-- ── Filtros ── -->
+  <section class="fc-filtros" aria-label="Filtros">
+    <label>Marca
+      <select id="fc-marca">
+        <option value="">Todas</option>
+        <option value="apple">Apple</option>
+        <option value="poly">Poly</option>
+        <option value="legamaster">Legamaster</option>
+        <option value="huawei">Huawei</option>
+      </select>
+    </label>
+    <label>Cierre hasta
+      <select id="fc-hasta"><option value="">Todos los meses</option></select>
+    </label>
+    <label class="fc-busq">Buscar
+      <input type="search" id="fc-q" placeholder="SKU o descripción" autocomplete="off">
+    </label>
+    <button type="button" class="fc-btn" id="fc-quitar" aria-expanded="false" aria-controls="fc-excl"
+            title="Sacar del cálculo órdenes puntuales muy grandes">Quitar órdenes<span class="fc-n" id="fc-quitar-n" hidden></span></button>
+    <div class="fc-estados" id="fc-estados" role="group" aria-label="Estados incluidos"></div>
+  </section>
+
+  <!-- ── Quitar órdenes puntuales ──
+       Una orden enorme (4.000 auriculares de un solo cliente) distorsiona el
+       forecast de todo el equipo. Se elige acá cuál sacar; el cálculo se rehace
+       sin ese negocio completo. La elección queda en ESTE navegador. -->
+  <section class="fc-card fc-excl" id="fc-excl" hidden>
+    <div class="fc-card-hd">
+      <h2 class="h2">Quitar órdenes</h2>
+      <span class="fc-nota">Tildá los negocios que no querés que cuenten. Salen completos (todos sus equipos). Los más grandes primero.</span>
+      <button type="button" class="fc-btn fc-btn-s" id="fc-restaurar-todos">Restaurar todos</button>
+    </div>
+    <div class="fc-excl-lista" id="fc-excl-lista"></div>
+  </section>
+
+  <p class="fc-info" id="fc-excl-bar" hidden></p>
+
+  <p class="fc-aviso" id="fc-aviso" hidden></p>
+
+  <!-- ── Resumen ── -->
+  <section class="fc-kpis" id="fc-kpis" aria-live="polite"></section>
+
+  <!-- ── Por equipo: total | estimado ── -->
+  <section class="fc-card">
+    <div class="fc-card-hd">
+      <h2 class="h2">Por equipo</h2>
+      <span class="fc-nota">Tocá una fila para ver los negocios que la componen</span>
+    </div>
+    <div class="fc-scroll"><table class="fc-tabla" id="fc-tabla"></table></div>
+  </section>
+
+  <!-- ── Por mes de cierre ── -->
+  <section class="fc-card">
+    <div class="fc-card-hd"><h2 class="h2">Por mes de cierre</h2></div>
+    <div class="fc-scroll"><table class="fc-tabla fc-chica" id="fc-meses"></table></div>
+  </section>
+
+  <!-- ── Cómo se calcula (y ajuste de probabilidades) ── -->
+  <section class="fc-card">
+    <div class="fc-card-hd">
+      <h2 class="h2">Probabilidades</h2>
+      <span class="fc-nota" id="fc-calib-estado"></span>
+      <button type="button" class="fc-btn fc-btn-s" id="fc-editar" hidden>✎ Editar</button>
+    </div>
+    <p class="fc-expl">
+      El <b>estimado</b> pondera cada negocio por su probabilidad de cerrar. Parte de una
+      <b>base</b> por estado, se va <b>calibrando</b> con lo que realmente pasó con los negocios
+      (cuántos terminaron facturándose), y se <b>erosiona con el tiempo</b>: un negocio sin tocar
+      hace semanas, o con el cierre vencido, vale menos. Nada se sale de los <b>umbrales</b> mín–máx de cada estado.
+    </p>
+    <div class="fc-scroll"><table class="fc-tabla fc-chica" id="fc-probs"></table></div>
+    <div id="fc-params" class="fc-params"></div>
+    <div id="fc-form" class="fc-form" hidden></div>
+  </section>
+
+</main>
+
+<script src="../shared/nav.js"></script>
+<script src="../shared/pipeline-status.js"></script>
+<script src="../shared/opciones.js"></script>
+<script src="../shared/pipeline-sku.js"></script>
+<script src="../shared/compras-forecast.js"></script>
+<script src="js/compras.js"></script>
+<script src="../shared/pwa.js"></script>
+
+</body>
+</html>

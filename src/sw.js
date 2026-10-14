@@ -102,6 +102,9 @@ var ASSETS = [
   './apple/css/cevencare.css',
   './tareas/css/board.css',
   './tareas/js/board.js',
+  './compras/css/compras.css',
+  './compras/js/compras.js',
+  './shared/compras-forecast.js',
 
   './apple/brand.js',
   './apple/js/pricing-core.js',
@@ -219,7 +222,9 @@ var DOCS = [
   './multi/',
   './multi/index.html',
   './tareas/',
-  './tareas/index.html'
+  './tareas/index.html',
+  './compras/',
+  './compras/index.html'
 ];
 
 /* Una respuesta redirigida (308 de cleanUrls) no puede devolverse tal cual a

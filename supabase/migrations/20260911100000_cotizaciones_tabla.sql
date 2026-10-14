@@ -63,7 +63,7 @@ create index if not exists cotizaciones_vivas_idx
   on public.cotizaciones (brand, qnum desc) where borrada_at is null;
 
 -- ----------------------------------------------------------------------------
--- RLS · mismas cuatro policies que `pipeline` (20260730120000_rls_por_rol_y_marca)
+-- RLS · mismas cuatro policies que `pipeline` (20260731180813_rls_por_rol_y_marca)
 -- ----------------------------------------------------------------------------
 -- select abierto a cualquier usuario autenticado (el equipo ve todo el
 -- historial); escribir exige que la marca este en el claim del usuario. El

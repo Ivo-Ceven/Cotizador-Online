@@ -33,7 +33,7 @@ function cevenIsValidEmail(u){
    y escribir TODO por REST con su propio token legítimo, sin pasar por esta
    UI ni por estas funciones. Lo único que cierra ese agujero son las
    policies por operación, rol y marca:
-   supabase/migrations/20260730120000_rls_por_rol_y_marca.sql
+   supabase/migrations/20260731180813_rls_por_rol_y_marca.sql
    ============================================================ */
 var CEVEN_ROLES = ['admin','ventas','lector'];
 /* Claims del token actual (null si no hay sesión o el token no parsea).

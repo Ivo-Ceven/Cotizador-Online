@@ -1,0 +1,13 @@
+-- ============================================================================
+--  rls_parte_b_policies_por_rol_y_marca  ·  (20260731181934 en el historial)
+--  ---------------------------------------------------------------------------
+--  Esta migración se aplicó en dos pasos en la base: la parte A (tabla
+--  user_roles + custom_access_token_hook, 20260731180813) y la parte B (las
+--  policies por rol y marca, 20260731181934). En el repo viven JUNTAS en
+--  20260731180813_rls_por_rol_y_marca.sql, que es el archivo con el SQL
+--  completo y sus comentarios.
+--
+--  Este archivo es un marcador SIN SQL: existe para que el repo y la base
+--  tengan exactamente la misma lista de versiones. Si se reconstruye la base
+--  desde cero, el archivo de la parte A ya trae todo lo de la parte B.
+-- ============================================================================

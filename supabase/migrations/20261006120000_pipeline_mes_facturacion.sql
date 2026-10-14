@@ -38,6 +38,6 @@ comment on column public.pipeline."mesFact" is
 comment on column public.pipeline."fechaFact" is
   'ISO del momento en que la fila quedo Facturada.';
 comment on column public.pipeline."skuMesFact" is
-  'Mes de facturacion por linea: { "SKU|idx": "YYYY-MM" }, solo para lineas con estado propio Facturado.';
+  'Mes de facturacion por linea: { "SKU|id": "YYYY-MM" } (id = _lid de la linea; en cotizaciones viejas, el indice), solo para lineas con estado propio Facturado.';
 comment on column public.pipeline."mesCierreAntes" is
   'Cierre estimado (YYYY-MM) previo a pasar a Facturado; se restaura si se revierte el estado.';

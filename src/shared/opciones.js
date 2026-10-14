@@ -141,11 +141,82 @@ function cevenOpcFilasDeCotiz(db, qn, tipos){
   });
 }
 
+/* ── ID ESTABLE DE LÍNEA (`_lid`) ─────────────────────────────────────────────
+   El pipeline guarda estados, meses y entregas parciales POR ARTÍCULO, y los
+   ata a una clave `SKU|<id de la línea>` (ver cevenSkuLineKey en
+   pipeline-sku.js). Antes el id era la POSICIÓN de la línea en la cotización,
+   y cualquier cosa que moviera una línea —reordenarla, insertar una, cambiar
+   de opción A/B, listar con otro filtro de `Tipo`— corría todas las claves y
+   los estados se aplicaban al artículo equivocado, sin avisar.
+
+   Ahora cada línea lleva su propio `_lid`, que se genera UNA vez, viaja en la
+   fila de cquotes (y por lo tanto en `cotizaciones.lineas`) y no cambia nunca:
+   la posición deja de importar.
+
+   Dos orígenes de id, que no pueden chocar:
+     · NUEVO   'n' + aleatorio. Líneas creadas desde esta versión.
+     · LEGADO  el índice (numérico) que la línea ya tenía como clave. Se
+               "congela" al reabrir y re-guardar una cotización vieja, así las
+               claves que el pipeline ya tenía siguen siendo válidas. */
+function cevenLidNuevo(){
+  var s = '';
+  try{
+    if(typeof crypto !== 'undefined' && crypto.getRandomValues){
+      var b = new Uint8Array(6);
+      crypto.getRandomValues(b);
+      for(var i = 0; i < b.length; i++) s += (b[i] % 36).toString(36);
+    }
+  }catch(e){ s = ''; }
+  while(s.length < 6) s += Math.floor(Math.random() * 36).toString(36);
+  return 'n' + s;
+}
+
+/* El id de una línea de pantalla (item del cotizador). Se asigna al primer uso
+   y queda en el item. */
+function cevenLidDe(item){
+  if(!item) return '';
+  if(!item.lid) item.lid = cevenLidNuevo();
+  return item.lid;
+}
+
+/* Los ids de las filas guardadas de una cotización, en el MISMO orden que
+   `rows`, para armar los items al reabrirla. Una fila que ya trae `_lid` lo
+   conserva; una vieja recibe el índice que tenía como clave (LEGADO) si es de
+   la opción vigente, o uno nuevo si no tuvo nunca clave. '' = fila que no es
+   una línea (meta). `tipos` tiene que ser el mismo filtro con que el pipeline
+   de esa marca arma sus claves (Apple: ['producto','garantia']; el resto, sin
+   filtro). Un id repetido dentro de la misma cotización —no debería pasar,
+   pero una copia a mano lo puede dejar— se reasigna: dos líneas con la misma
+   clave se pisarían el estado entre sí. */
+function cevenLidsDeFilas(rows, tipos){
+  var out = [], vistos = {}, n = 0;
+  if(!rows) return out;
+  var ef = cevenOpcEfectivaDeFilas(rows);
+  for(var i = 0; i < rows.length; i++){
+    var r = rows[i];
+    var esLinea = !tipos || tipos.indexOf(r['Tipo']) !== -1;
+    var enVigente = esLinea && cevenOpcDe(r) === ef;
+    var lid = r['_lid'] ? String(r['_lid']) : '';
+    if(!lid){
+      if(!esLinea) lid = '';
+      else if(enVigente) lid = String(n);
+      else lid = cevenLidNuevo();
+    }
+    if(enVigente) n++;
+    if(lid && vistos[lid]) lid = cevenLidNuevo();
+    if(lid) vistos[lid] = 1;
+    out.push(lid);
+  }
+  return out;
+}
+
 /* Sella una fila de cquotes con la opción de su línea y la vigente de la
-   cotización. Lo llama el doSave() de cada marca. */
+   cotización, y con el id estable de la línea. Lo llama el doSave() de cada
+   marca. */
 function cevenOpcSellarFila(fila, item){
   fila['Opción'] = cevenOpcDe(item);
   fila['_opcEf'] = _qOpcEfectiva;
+  if(item) fila['_lid'] = cevenLidDe(item);
   return fila;
 }
 

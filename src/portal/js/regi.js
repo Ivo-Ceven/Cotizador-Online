@@ -11,8 +11,8 @@
 
    Todo pasa por dos funciones SQL security definer
    (portal_equipo_ceven, portal_regi_solicitar) — no por una Edge
-   Function nueva, ver supabase/migrations/20260821120000_regi_
-   deal_registration.sql y 20260821121500_regi_solicitar_informa_
+   Function nueva, ver supabase/migrations/20260821141214_regi_
+   deal_registration.sql y 20260821142329_regi_solicitar_informa_
    rechazo_previo.sql.
 
    Exclusivo de Poly: la tarjeta se muestra/oculta según _portalMarca

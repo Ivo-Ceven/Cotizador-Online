@@ -46,7 +46,7 @@ window.CEVEN_BRAND = {
      que esto es declarativo: no hubo migracion. */
   // `fechaMod` (08/09/2026): ISO de la ultima modificacion real de la fila, la
   //   sella savePipeline() (shared). La columna ya existia en Supabase desde
-  //   20260818130000 (la usaba solo Apple) — esto es declarativo, sin migracion.
+  //   20260819121117 (la usaba solo Apple) — esto es declarativo, sin migracion.
   // `mesAutoRoll` (08/09/2026): mes de cierre ORIGINAL de una fila que el
   //   sistema movio al mes actual por estar vencida y abierta. Columna nueva:
   //   migracion 20260908120000, que se aplica ANTES de deployar esto.

@@ -57,6 +57,83 @@ function fk(obj) {
   return null;
 }
 
+/* ── IMPORTAR SIN BORRAR ───────────────────────────────────────────────────────
+   Monta lo que trae un Excel sobre el catálogo que ya está cargado. Lo usan los
+   importadores de Poly, Huawei y Legamaster; Apple tiene su propio merge porque
+   su producto no tiene `precios` (ver apple/js/catalog.js).
+
+   Por SKU:
+     · el SKU YA estaba  → se actualiza lo que el archivo trae (precios, stock,
+       IVA, link…). Se conserva el `id`, las marcas internas (`deal`, `manual`
+       salvo que el archivo lo traiga, etc.) y todo lo que el archivo no diga.
+     · el SKU es NUEVO   → se suma al final.
+     · el SKU ya no está en el archivo → NO se toca. Una lista de precios
+       incompleta o de otra sucursal no tiene por qué vaciar el catálogo; quien
+       quiera sacar un producto lo borra desde el catálogo.
+
+   Reglas campo a campo, para que "actualizar" no pise de más:
+     · `precios` se funde nivel por nivel: el archivo gana en los niveles que
+       trae y los demás se quedan. Es lo que mantiene el nivel DEAL de Poly vivo
+       cuando se reimporta NetSuite, sin que el importador tenga que saberlo.
+     · `description` y `rubro` solo se completan si estaban vacíos: son los que
+       el equipo ya conoce y los que salen impresos en las cotizaciones.
+     · un valor vacío del archivo (null, '', sin stock) no borra el que había.
+     · si el SKU estaba cargado a mano y ahora viene en el archivo oficial,
+       deja de ser `manual`: el archivo manda, como cuando el catálogo se
+       reemplazaba entero.
+
+   Los ausentes quedan marcados con `needsReview` (el punto amarillo de
+   cevenPuntoAusente(), en shared/safe.js). La marca se va cuando el SKU vuelve a venir en un
+   archivo o cuando alguien edita el producto a mano.
+
+   Devuelve {lista, actualizados, nuevos, ausentes}. Marca los productos en
+   memoria pero no guarda nada: guardar es cosa de quien llama. */
+function cevenMezclarCatalogo(actuales, nuevos){
+  var lista = (actuales || []).slice();
+  var porSku = {};
+  for(var i=0;i<lista.length;i++){ if(lista[i] && lista[i].sku != null) porSku[lista[i].sku] = lista[i]; }
+
+  var enArchivo = {}, actualizados = 0, sumados = 0;
+  for(var j=0;j<nuevos.length;j++){
+    var n = nuevos[j];
+    enArchivo[n.sku] = 1;
+    var v = porSku[n.sku];
+    if(!v){ lista.push(n); porSku[n.sku] = n; sumados++; continue; }
+
+    Object.keys(n).forEach(function(k){
+      if(k === 'id' || k === 'sku') return;
+      var val = n[k];
+      if(k === 'precios'){
+        v.precios = v.precios || {};
+        Object.keys(val || {}).forEach(function(t){ v.precios[t] = val[t]; });
+        return;
+      }
+      if(val === null || val === undefined || val === '') return;
+      if((k === 'description' || k === 'rubro') && v[k]) return;
+      v[k] = val;
+    });
+    delete v.manual;
+    delete v.needsReview;   // vino en el archivo: su precio quedó confirmado
+    actualizados++;
+  }
+
+  var ausentes = 0;
+  // Los manuales y los que existen por un deal nunca vienen en este archivo:
+  // contarlos como "ausentes" sería ruido en el aviso.
+  for(var m=0;m<lista.length;m++){
+    var q = lista[m];
+    if(!enArchivo[q.sku] && !q.manual && !q.deal){ q.needsReview = true; ausentes++; }
+  }
+  return {lista: lista, actualizados: actualizados, nuevos: sumados, ausentes: ausentes};
+}
+
+/* El renglón que va al final del aviso de una importación: cuántos productos
+   siguen en el catálogo sin que el archivo los haya mencionado. Vacío si no hay. */
+function cevenAvisoAusentes(n){
+  return n ? (' · ' + n + (n === 1 ? ' producto no estaba' : ' productos no estaban')
+    + ' en el archivo (se conservaron con su precio anterior)') : '';
+}
+
 // ── MULTI-SKU PASTE ──
 // Pegar una columna de SKUs desde un mail o un Excel y que queden seleccionados.
 var _pendingNewSKUs = []; // SKUs a crear manualmente (pegados pero no encontrados)

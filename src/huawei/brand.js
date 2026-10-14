@@ -61,7 +61,7 @@ window.CEVEN_BRAND = {
   //   mes actual por estar vencida y abierta.
   //
   // Las dos columnas YA EXISTEN en la tabla `pipeline` (migraciones
-  // 20260818130000 y 20260908120000, hechas para Apple y Poly). Declararlas aca
+  // 20260819121117 y 20260908120000, hechas para Apple y Poly). Declararlas aca
   // no pide ninguna migracion nueva: la tabla es compartida y separa por la
   // columna `brand`, asi que Huawei no toca el esquema.
   // `mesFact`,`fechaFact`,`skuMesFact`,`mesCierreAntes` (06/10/2026): mes en que se

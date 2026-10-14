@@ -1,4 +1,4 @@
--- Ajuste sobre 20260821120000_regi_deal_registration.sql, antes de que
+-- Ajuste sobre 20260821141214_regi_deal_registration.sql, antes de que
 -- portal_regi_solicitar() tuviera ningún uso real (regi_solicitudes vacía).
 --
 -- La primera versión solo evitaba duplicar una solicitud PENDIENTE; un

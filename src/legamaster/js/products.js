@@ -152,6 +152,7 @@ function saveNewProd(){
         products[i].sku=sku; products[i].description=datos.description;
         products[i].rubro=datos.rubro; products[i].disponibilidad=datos.disponibilidad;
         products[i].precios=datos.precios; products[i].ivaPct=datos.ivaPct;
+        delete products[i].needsReview;   // precio confirmado a mano
         break;
       }
     }

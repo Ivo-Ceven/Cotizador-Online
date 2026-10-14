@@ -124,7 +124,7 @@ const celdaSku  = celdas[1] || '';
 const celdaDesc = celdas[2] || '';
 ok(celdaSku.indexOf('manual') === -1, 'la chapita "manual" NO está en la celda del SKU');
 ok(celdaDesc.indexOf('manual') !== -1, 'la chapita "manual" está en Descripción');
-ok(celdaDesc.indexOf('Revisar costo') !== -1, 'la chapita "⚠ Revisar costo" está en Descripción');
+ok(celdaDesc.indexOf('pto-ausente') !== -1, 'el punto amarillo de "no vino en la última carga" está en Descripción');
 
 /* ---- 2) Alta de a uno = alta en lote (el precio no puede diferir) ---------- */
 const esperado = ctx.calcP(P_IPAD.sellingPrice, ctx.getNac(P_IPAD), 20);

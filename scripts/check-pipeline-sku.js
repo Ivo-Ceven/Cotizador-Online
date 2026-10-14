@@ -43,14 +43,17 @@ function cargar(){
   const ctx = {console};
   ctx.window = ctx;
   vm.createContext(ctx);
-  ['src/shared/safe.js', 'src/shared/pipeline-status.js', 'src/shared/pipeline-sku.js']
+  ['src/shared/safe.js', 'src/shared/pipeline-status.js', 'src/shared/pipeline-sku.js', 'src/shared/opciones.js']
     .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, {filename: f}));
   return ctx;
 }
 
-// Una línea de cquotes, con lo mínimo que mira pipeline-sku.js.
-function ln(sku, cant, precio){
-  return {'SKU': sku, 'Cantidad': cant, 'P. Venta Unitario': precio};
+// Una línea de cquotes, con lo mínimo que mira pipeline-sku.js. `lid` es el id
+// estable (`_lid`); sin él la fila es "vieja" y la clave cae al índice.
+function ln(sku, cant, precio, lid){
+  const l = {'SKU': sku, 'Cantidad': cant, 'P. Venta Unitario': precio};
+  if(lid !== undefined) l['_lid'] = lid;
+  return l;
 }
 function claves(e, lines){ return lines.map(e.cevenSkuLineKey); }
 
@@ -213,7 +216,125 @@ console.log('\n6 · El <select> de la línea no pierde un estado desconocido');
      'pero si la línea YA está en un valor fuera de la lista, se agrega para no pisarlo', h2);
 }
 
+/* ═══ 7 · Id estable por línea: la posición ya no importa ══════════════════ */
+console.log('\n7 · Reordenar, insertar o cambiar de opción NO mueve los estados');
+{
+  // El bug original: los estados se ataban a la POSICIÓN. Con `_lid` se atan a la línea.
+  const A = ln('A', 1, 10, 'n000001'), B = ln('B', 1, 20, 'n000002'), C = ln('C', 1, 30, 'n000003');
+  const fila = {estado: 'Cotizado', skuStatus: {[e.cevenSkuLineKey(B, 1)]: 'Facturado'}};
+
+  const reord = [C, A, B];                                   // B pasa de la posición 1 a la 2
+  const est = reord.map((l, i) => e.cevenSkuEstado(fila, e.cevenSkuLineKey(l, i)));
+  ok(est.join(',') === 'Cotizado,Cotizado,Facturado',
+     'reordenar las líneas: el estado sigue en B y no se corre a otra', est.join(','));
+
+  const ins = [ln('X', 1, 5, 'n000009'), A, B, C];           // se inserta una línea ARRIBA de todas
+  const est2 = ins.map((l, i) => e.cevenSkuEstado(fila, e.cevenSkuLineKey(l, i)));
+  ok(est2.join(',') === 'Cotizado,Cotizado,Facturado,Cotizado',
+     'insertar una línea arriba: el estado sigue en B', est2.join(','));
+
+  ok(e.cevenSkuLineKey(B, 0) === e.cevenSkuLineKey(B, 7),
+     'la clave de una línea no depende del índice con que se la consulte');
+}
+{
+  // Mismo SKU repetido: es el caso donde "SKU|índice" era la única diferencia.
+  const A1 = ln('A', 1, 10, 'n000001'), A2 = ln('A', 1, 20, 'n000002');
+  const fila = {estado: 'Cotizado', skuStatus: {[e.cevenSkuLineKey(A2, 1)]: 'Perdido'}};
+  ok(e.cevenSkuEstado(fila, e.cevenSkuLineKey(A2, 0)) === 'Perdido' && e.cevenSkuEstado(fila, e.cevenSkuLineKey(A1, 1)) === 'Cotizado',
+     'con el mismo SKU en dos líneas, el estado sigue a SU línea aunque se inviertan');
+}
+{
+  // El reparto del monto (lo que ve el dashboard) tampoco se corre.
+  const lines = [ln('A', 1, 100, 'n000001'), ln('B', 1, 300, 'n000002')];
+  const fila = {estado: 'Cotizado', monto: 400, skuStatus: {[e.cevenSkuLineKey(lines[1], 1)]: 'Facturado'}};
+  const rep1 = e.cevenSkuRepartoPorEstado(fila, lines);
+  const rep2 = e.cevenSkuRepartoPorEstado(fila, lines.slice().reverse());
+  ok(rep1['Facturado'] === 300 && rep2['Facturado'] === 300 && rep1['Cotizado'] === 100 && rep2['Cotizado'] === 100,
+     'el reparto por estado da lo mismo con las líneas en cualquier orden', JSON.stringify([rep1, rep2]));
+}
+{
+  // Borrar una línea con id estable: las demás NO cambian de clave; la borrada se va.
+  const A = ln('A', 1, 10, 'n000001'), B = ln('B', 1, 20, 'n000002'), C = ln('C', 1, 30, 'n000003');
+  const fila = {skuStatus: {[e.cevenSkuLineKey(B, 1)]: 'Facturado', [e.cevenSkuLineKey(C, 2)]: 'Perdido'}};
+  e.cevenSkuReindex(fila, ['skuStatus'], [A, B, C], 0);       // se borra A
+  ok(fila.skuStatus[e.cevenSkuLineKey(B, 0)] === 'Facturado' && fila.skuStatus[e.cevenSkuLineKey(C, 1)] === 'Perdido'
+     && Object.keys(fila.skuStatus).length === 2,
+     'borrar una línea deja intactas las claves de las demás', JSON.stringify(fila.skuStatus));
+  e.cevenSkuReindex(fila, ['skuStatus'], [B, C], 0);          // ahora se borra B (la que tenía override)
+  ok(fila.skuStatus[e.cevenSkuLineKey(B, 0)] === undefined && fila.skuStatus[e.cevenSkuLineKey(C, 0)] === 'Perdido',
+     'y el override de la línea borrada se va con ella');
+}
+{
+  // Compatibilidad: una fila SIN `_lid` (cotización vieja) sigue usando el índice.
+  ok(e.cevenSkuLineKey(ln('A', 1, 10), 3) === 'A|3', 'sin _lid la clave sigue siendo SKU|índice');
+  ok(e.cevenSkuLineKey(ln('A', 1, 10, ''), 3) === 'A|3', 'un _lid vacío también cae al índice');
+  ok(e.cevenSkuLineKey(ln('A', 1, 10, '0'), 3) === 'A|0',
+     'un _lid legado ("0", el índice congelado) vale como id y no se confunde con "sin id"');
+}
+
+console.log('\n7b · Al reabrir una cotización vieja, las claves que ya tenía siguen valiendo');
+{
+  // Tres líneas sin _lid: el id legado es el índice, así que las claves NO cambian.
+  const rows = [ln('A', 1, 10), ln('B', 1, 20), ln('C', 1, 30)];
+  const lids = e.cevenLidsDeFilas(rows);
+  ok(lids.join(',') === '0,1,2', 'cada línea vieja recibe el índice que ya tenía como clave', lids.join(','));
+  rows.forEach((r, i) => { r['_lid'] = lids[i]; });
+  ok(rows.every((r, i) => e.cevenSkuLineKey(r, i) === r['SKU'] + '|' + i),
+     'y la clave resultante es idéntica a la de antes: ningún override existente queda huérfano');
+  // Ya congeladas, mover una línea no corre nada.
+  const fila = {estado: 'Cotizado', skuStatus: {'B|1': 'Facturado'}};
+  const reord = [rows[2], rows[0], rows[1]];
+  ok(reord.map((l, i) => e.cevenSkuEstado(fila, e.cevenSkuLineKey(l, i))).join(',') === 'Cotizado,Cotizado,Facturado',
+     'tras congelar, reordenar ya no corre el estado de B');
+}
+{
+  // Dos opciones: el índice legado se cuenta SOLO dentro de la vigente.
+  const rows = [
+    Object.assign(ln('A1', 1, 1), {'Opción': 1, '_opcEf': 1}),
+    Object.assign(ln('A2', 1, 1), {'Opción': 1, '_opcEf': 1}),
+    Object.assign(ln('B1', 1, 1), {'Opción': 2, '_opcEf': 1}),
+  ];
+  const lids = e.cevenLidsDeFilas(rows);
+  ok(lids[0] === '0' && lids[1] === '1', 'las líneas de la opción vigente conservan su índice legado', lids.join(','));
+  ok(/^n/.test(lids[2]), 'una línea de la opción NO vigente (que nunca tuvo clave) recibe un id nuevo', lids.join(','));
+
+  const rows2 = rows.map(r => Object.assign({}, r, {'_opcEf': 2}));
+  const lids2 = e.cevenLidsDeFilas(rows2);
+  ok(lids2[2] === '0' && /^n/.test(lids2[0]) && /^n/.test(lids2[1]),
+     'si la vigente es la B, el índice legado se cuenta entre las de la B', lids2.join(','));
+}
+{
+  // Apple: el filtro de Tipo es el del pipeline; las filas meta no son líneas.
+  const rows = [
+    Object.assign(ln('P1', 1, 1), {'Tipo': 'producto'}),
+    Object.assign(ln('G1', 1, 1), {'Tipo': 'garantia'}),
+    {'Tipo': 'meta_nac'},
+    Object.assign(ln('P2', 1, 1), {'Tipo': 'producto'}),
+  ];
+  const lids = e.cevenLidsDeFilas(rows, ['producto', 'garantia']);
+  ok(lids.join(',') === '0,1,,2', 'la fila meta no cuenta ni recibe id; producto y garantía se numeran juntos', lids.join(','));
+}
+{
+  // Un id repetido dentro de la misma cotización se reasigna: se pisarían el estado.
+  const rows = [ln('A', 1, 1, 'n000001'), ln('B', 1, 1, 'n000001')];
+  const lids = e.cevenLidsDeFilas(rows);
+  ok(lids[0] === 'n000001' && lids[1] !== 'n000001' && lids[1] !== '', 'dos líneas con el mismo _lid: la segunda recibe otro', lids.join(','));
+}
+
+console.log('\n7c · El id se estampa al guardar y nunca cambia');
+{
+  const item = {sku: 'A'};
+  const f1 = e.cevenOpcSellarFila({'SKU': 'A'}, item);
+  const f2 = e.cevenOpcSellarFila({'SKU': 'A'}, item);
+  ok(/^n[0-9a-z]{6,}$/.test(f1['_lid']), 'la fila guardada trae un _lid nuevo, con prefijo "n" (no numérico)', f1['_lid']);
+  ok(f1['_lid'] === f2['_lid'], 'guardar dos veces la misma línea conserva el mismo id');
+  ok(e.cevenOpcSellarFila({'Tipo': 'meta_nac'}, null)['_lid'] === undefined, 'una fila meta (sin item) no recibe id');
+  const set = new Set();
+  for(let i = 0; i < 5000; i++) set.add(e.cevenLidNuevo());
+  ok(set.size === 5000, 'ids nuevos: 5000 generados, ninguno repetido');
+}
+
 console.log('\n' + (fallos
-  ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
+  ?('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
   : ('✓ ' + corridas + '/' + corridas + ' OK\n')));
 process.exit(fallos ? 1 : 0);

@@ -184,19 +184,19 @@ function processRows(rows) {
   var nuevos = orden.map(function(k){ return seen[k]; });
   if(!nuevos.length){ showErr('El archivo no trajo ningún producto (¿la columna SKU está vacía en todas las filas?).'); return; }
 
-  /* Los SKUs cargados a mano (p.manual) NO están en el Excel del proveedor: si se
-     pisara la lista entera con lo importado, cada importación los borraría. */
-  var conservar = (products||[]).filter(function(p){ return p.manual; });
-  var enArchivo = {};
-  nuevos.forEach(function(p){ enArchivo[p.sku] = 1; });
-  products = nuevos.concat(conservar.filter(function(p){ return !enArchivo[p.sku]; }));
+  /* NO reemplaza el catálogo: actualiza los precios de los SKU que ya estaban,
+     suma los nuevos y deja en paz lo que el Excel no menciona (los cargados a
+     mano incluidos). Ver cevenMezclarCatalogo() en shared/catalog-core.js. */
+  var mezcla = cevenMezclarCatalogo(products, nuevos);
+  products = mezcla.lista;
 
   var okPL = cevenLsSet(cevenK('cpl'), JSON.stringify(products));
   showErr(okPL ? '' : '⚠ El catálogo se cargó en pantalla pero NO se pudo guardar: se pierde al recargar.');
   initCat();
 
   var conDup = products.filter(function(p){ return p.skuDuplicado; }).length;
-  var msg = '✓ ' + nuevos.length + ' productos';
+  var msg = '✓ ' + mezcla.actualizados + ' actualizados · ' + mezcla.nuevos + ' nuevos'
+    + cevenAvisoAusentes(mezcla.ausentes) + ' · catálogo: ' + products.length;
   if(conDup) msg += ' · ⚠ ' + conDup + ' con SKU a confirmar con Legamaster (código repetido en la lista)';
   showToast(msg);
 }
@@ -342,6 +342,7 @@ function _catRowHTML(p, idx, idAttr, opts){
       +(p.link ? ' <a href="'+cevenEsc(p.link)+'" target="_blank" rel="noopener noreferrer" title="Ver ficha del producto" style="text-decoration:none">🔗</a>' : '')
       +(p.rubro ? ' <span style="font-size:10px;color:#6e6e73;background:#f0f0f3;padding:1px 6px;border-radius:8px;white-space:nowrap">'+cevenEsc(p.rubro)+'</span>' : '')
       +(p.manual ? ' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Artículo cargado a mano, no vino del Excel del proveedor">manual</span>' : '')
+      +cevenPuntoAusente(p)
       +(p.skuDuplicado ? ' <span style="font-size:10px;color:#b35333;font-weight:600;background:#fbe9e3;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Este código se repite en la lista de precios de Legamaster con otro producto — confirmar el SKU correcto con la marca">⚠ SKU a confirmar</span>' : '')
     +'</td>'
     +'<td style="text-align:right;color:#6e6e73;white-space:nowrap">'+_catPreciosHTML(p)+'</td>'

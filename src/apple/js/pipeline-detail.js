@@ -136,7 +136,7 @@ function tryAutoMerge(entry){
 
   // Solo considerar líneas NO totalmente archivadas
   var activeLines = lines.filter(function(ln, idx){
-    var lk = (ln['SKU']||'') + '|' + idx;
+    var lk = cevenSkuLineKey(ln, idx);
     var archQty = (entry.skuArchivedQty && parseInt(entry.skuArchivedQty[lk])) || 0;
     return archQty < (parseInt(ln['Cantidad'])||0);
   });
@@ -145,12 +145,12 @@ function tryAutoMerge(entry){
   var allStatuses = activeLines.map(function(ln, idx){
     // idx aquí es el índice en activeLines; necesitamos el índice original en lines
     var origIdx = lines.indexOf(ln);
-    var lk = (ln['SKU']||'') + '|' + origIdx;
+    var lk = cevenSkuLineKey(ln, origIdx);
     return skuStatus[lk] || defStatus;
   });
   var allMeses = activeLines.map(function(ln){
     var origIdx = lines.indexOf(ln);
-    var lk = (ln['SKU']||'') + '|' + origIdx;
+    var lk = cevenSkuLineKey(ln, origIdx);
     return skuMesCierre[lk] !== undefined ? skuMesCierre[lk] : defMes;
   });
 
@@ -317,7 +317,7 @@ function renderPipelineDetailRow(r, db, pipe){
   if(lineKeysFilter){
     rows = [];
     allLines.forEach(function(ln, idx){
-      var lk = (ln['SKU']||'') + '|' + idx;
+      var lk = cevenSkuLineKey(ln, idx);
       var isDirect = lineKeysFilter.indexOf(lk) !== -1;
       var isRem    = lineKeysFilter.indexOf('REM|' + lk) !== -1;
       if(isDirect || isRem){
@@ -339,7 +339,7 @@ function renderPipelineDetailRow(r, db, pipe){
   } else {
     rows = allLines.map(function(ln, idx){
       ln = Object.assign({}, ln); ln._origIdx = idx;
-      var archQty1 = (pipeEntry.skuArchivedQty||{})[(ln['SKU']||'')+'|'+idx];
+      var archQty1 = (pipeEntry.skuArchivedQty||{})[cevenSkuLineKey(ln, idx)];
       if(archQty1) ln['Cantidad'] = Math.max(0,(parseInt(ln['Cantidad'])||0) - parseInt(archQty1));
       return ln;
     }).filter(function(ln){ return (parseInt(ln['Cantidad'])||0) > 0; });
@@ -391,7 +391,7 @@ function renderPipelineDetailRow(r, db, pipe){
     var ln = rows[i];
     // Clave única para la línea: SKU + índice ORIGINAL (en filas virtuales puede ser distinto al índice local)
     var origIdx = (ln._origIdx !== undefined) ? ln._origIdx : i;
-    var lineKey = (ln['SKU']||'') + '|' + origIdx;
+    var lineKey = cevenSkuLineKey(ln, origIdx);
     // Para filas de resto parcial, el estado es el remSt guardado (no el skuStatus del lineKey)
     var lnStatus = ln._isPartialRem
       ? ((pipeEntry.skuPartialRemSt||{})[ln._origLineKey] || (r.estado||'Cotizado'))
@@ -575,7 +575,7 @@ function quitarLineaDeCotizacion(pipeId, lineKey){
   var db = getDB();
   var lines = cevenOpcFilasDeCotiz(db, row.qNum, ['producto','garantia']);
   var idx = -1;
-  for(var j=0;j<lines.length;j++){ if((lines[j]['SKU']||'') + '|' + j === lineKey){ idx = j; break; } }
+  for(var j=0;j<lines.length;j++){ if(cevenSkuLineKey(lines[j], j) === lineKey){ idx = j; break; } }
   if(idx < 0){ showToast('Ese artículo ya no está en la cotización.'); renderPipeline(); return; }
 
   /* Sacar el último dejaría una fila de pipeline apuntando a una cotización

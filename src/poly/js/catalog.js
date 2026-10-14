@@ -30,7 +30,8 @@ function _ayudaExcelAuto(){
 
    1. Catálogo y precios por nivel — sale de NetSuite (búsqueda guardada
       "ResultadosPreviewCatalogDistri", el `ingresoPoly.xls`). Formato largo: una
-      fila por (SKU × depósito × nivel de precio). REEMPLAZA el catálogo.
+      fila por (SKU × depósito × nivel de precio). NO reemplaza el catálogo: lo mezcla
+      (ver cevenMezclarCatalogo() en shared/catalog-core.js).
    2. Precios de deal — hoja "Promos" del BOM Calculator que manda HP/Poly
       (`BOM-Calculator-ARG-<mes>-HP-Poly*.xlsx`). Una fila por SKU en promoción,
       con su precio BDNet, su número de deal y hasta cuándo vale. NO reemplaza
@@ -454,30 +455,16 @@ function processRows(rows) {
     nuevos = Object.keys(seen).map(function(k){ return seen[k]; });
   }
 
-  /* Los SKUs cargados a mano (p.manual) NO están en el archivo del ERP: si se
-     pisara la lista entera con lo importado, cada importación los borraría.
+  /* NO reemplaza el catálogo: actualiza los precios de los SKU que ya estaban,
+     suma los nuevos y deja en paz lo que el archivo no menciona. Ver
+     cevenMezclarCatalogo() en shared/catalog-core.js.
 
-     Lo mismo vale para los deals, que vienen del OTRO Excel (ver processDeals):
-     un SKU que está en los dos archivos se queda con su precio de deal, y uno
-     que existe solo por un deal sigue en el catálogo. Sin esto, reimportar el
-     catálogo de NetSuite borraba todos los deals sin decir nada — y el archivo
-     de NetSuite se reimporta seguido, así que el precio de deal habría durado
-     hasta la próxima actualización de stock. */
-  var conservar = (products||[]).filter(function(p){ return p.manual || p.deal; });
-  var dealPrevio = {};
-  conservar.forEach(function(p){ if(p.deal) dealPrevio[p.sku] = p; });
-
-  var enArchivo = {};
-  nuevos.forEach(function(p){
-    enArchivo[p.sku] = 1;
-    var viejo = dealPrevio[p.sku];
-    var precioDeal = viejo && viejo.precios && viejo.precios[CEVEN_TIER_DEAL];
-    if(typeof precioDeal !== 'number') return;
-    p.precios = p.precios || {};
-    p.precios[CEVEN_TIER_DEAL] = precioDeal;
-    p.deal = viejo.deal;
-  });
-  products = nuevos.concat(conservar.filter(function(p){ return !enArchivo[p.sku]; }));
+     Los deals vienen del OTRO Excel (ver processDeals) y el archivo de NetSuite
+     se reimporta seguido. Como el merge funde `precios` nivel por nivel y no
+     toca `p.deal`, el precio de deal sobrevive solo: antes había que rescatarlo
+     a mano o duraba hasta la próxima actualización de stock. */
+  var mezcla = cevenMezclarCatalogo(products, nuevos);
+  products = mezcla.lista;
 
   // El catálogo ya está en memoria: se muestra igual, pero si no se pudo persistir
   // hay que decirlo en vez de dejar el cartel de "OK".
@@ -485,13 +472,14 @@ function processRows(rows) {
   showErr(okPL ? '' : '⚠ El catálogo se cargó en pantalla pero NO se pudo guardar: se pierde al recargar.');
   initCat();
   if(nivelK){
-    // Sin contar el DEAL, que no es un nivel del ERP y se acaba de reinyectar.
+    // Sin contar el DEAL, que no es un nivel del ERP.
     var conTier = nuevos.filter(function(p){
       return Object.keys(p.precios).some(function(t){ return t !== CEVEN_TIER_DEAL; });
     }).length;
     var conDeal = products.filter(function(p){ return !!p.deal; }).length;
-    showToast('✓ ' + nuevos.length + ' productos · ' + conTier + ' con precios por nivel'
-      + (conDeal ? (' · ' + conDeal + ' con precio de deal, conservados') : ''));
+    showToast('✓ ' + mezcla.actualizados + ' actualizados · ' + mezcla.nuevos + ' nuevos · ' + conTier + ' con precios por nivel'
+      + (conDeal ? (' · ' + conDeal + ' con precio de deal, conservados') : '')
+      + cevenAvisoAusentes(mezcla.ausentes) + ' · catálogo: ' + products.length);
   }
 }
 
@@ -753,6 +741,7 @@ function _catRowHTML(p, idx, idAttr, opts){
       // El rubro viene de la columna RUBRO del archivo del ERP y es informativo.
       +(p.rubro ? ' <span style="font-size:10px;color:#6e6e73;background:#f0f0f3;padding:1px 6px;border-radius:8px;white-space:nowrap">'+cevenEsc(p.rubro)+'</span>' : '')
       +(p.manual ? ' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Artículo cargado a mano, no vino del Excel del ERP">manual</span>' : '')
+      +cevenPuntoAusente(p)
     +'</td>'
     /* Los 4 niveles, uno debajo del otro: es la única vista donde se pueden
        comparar. El selector de la cotización muestra el precio al lado de cada

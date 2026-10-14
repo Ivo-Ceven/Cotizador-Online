@@ -13,7 +13,7 @@
    que quedó fijado al emitir el pedido).
 
    estado_cliente/motivo_perdida SÍ son editables por el cliente-
-   canal (migración 20260820193000): es SU seguimiento de este
+   canal (migración 20260820210142): es SU seguimiento de este
    pedido frente a SU cliente final, no el fulfillment de Ceven
    (estado_ceven, que sigue siendo solo lectura — lo pisa el
    trigger trg_portal_sync_estado). Nunca confundir motivo_perdida

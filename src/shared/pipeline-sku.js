@@ -12,12 +12,17 @@
    saca de Apple la parte que no depende de su facturación parcial para que
    Poly y Legamaster la usen igual, sin migración y sin copiar código.
 
-   LA CLAVE DE UNA LÍNEA es `SKU + '|' + índice` sobre la lista que devuelve
-   cevenOpcFilasDeCotiz() (o sea, solo la opción VIGENTE). Es la convención
-   que Apple ya tiene en producción y por eso no se cambia. Su límite
-   conocido: si alguien reordena las líneas desde el cotizador, los
-   overrides quedan apuntando a la línea equivocada. Borrar una línea SÍ
-   está cubierto — para eso está cevenSkuReindex().
+   LA CLAVE DE UNA LÍNEA es `SKU + '|' + id`, donde el id es el `_lid` estable
+   que lleva cada fila de cquotes (ver cevenLidNuevo en opciones.js). No
+   depende de la posición: reordenar, insertar, cambiar de opción A/B o
+   listar con otro filtro de `Tipo` no mueve ninguna clave.
+
+   Las filas guardadas ANTES de que existiera `_lid` no lo tienen. Para esas,
+   el id es el índice dentro de la lista que devuelve cevenOpcFilasDeCotiz()
+   (la opción VIGENTE) —la convención original, así las claves que el pipeline
+   ya tenía siguen valiendo— y se congela como `_lid` la primera vez que la
+   cotización se re-guarda. Mientras una cotización sea de ese tipo conserva
+   el límite viejo; borrar una línea sigue cubierto por cevenSkuReindex().
 
    Depende de: shared/safe.js (cevenEsc) y shared/pipeline-status.js
    (cevenEstadoValores, cevenEstadoLabel). Se carga DESPUÉS de los dos y
@@ -41,10 +46,14 @@ function cevenSkuActEl(ev, container){
   return null;
 }
 
-/* La clave de una línea dentro de su cotización. `idx` es la posición en la
-   lista de la opción vigente, no en `cquotes` entero. */
+/* La clave de una línea dentro de su cotización. Usa el `_lid` de la fila; solo
+   si no lo tiene (cotización vieja, nunca re-guardada) cae al `idx`: la
+   posición en la lista de la opción vigente, no en `cquotes` entero.
+   TODO lugar que arme una clave tiene que pasar por acá y no concatenar
+   `SKU|idx` a mano: es lo que garantiza que todos usen el mismo id. */
 function cevenSkuLineKey(ln, idx){
-  return String((ln && ln['SKU']) || '') + '|' + idx;
+  var id = (ln && ln['_lid'] !== undefined && ln['_lid'] !== null && ln['_lid'] !== '') ? ln['_lid'] : idx;
+  return String((ln && ln['SKU']) || '') + '|' + id;
 }
 
 function cevenSkuTieneOverrides(row){

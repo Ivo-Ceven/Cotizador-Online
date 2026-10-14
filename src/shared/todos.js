@@ -29,7 +29,7 @@
    entero y filtra en JavaScript, y las policies siguen dejando
    que cualquier @ceven.com lea y escriba todo. Sirve para
    organizarse, no para esconder. El porqué y qué haría falta para
-   que fuera real están en 20260804200000_tareas_equipos.sql.
+   que fuera real están en 20260805123449_tareas_equipos.sql.
 
    ------------------------------------------------------------
    DEGRADACIÓN: la app se puede deployar ANTES que las migraciones
@@ -141,7 +141,7 @@
       fecha:     r.fecha     || '',
       fechaISO:  r.fechaISO  || '',
       /* Cuándo pasó a done — la escribe el trigger de la base, no el cliente
-         (ver la migración 20260804180000). Se fuerza a null fuera de done para
+         (ver la migración 20260805123431). Se fuerza a null fuera de done para
          que una fila que quedó sucia en el servidor no archive nada acá. */
       terminadaEn: (estado === 'done' && r.terminadaEn) ? String(r.terminadaEn) : null,
       /* Tablero al que pertenece. Una tarea sin equipo (fila vieja, o creada

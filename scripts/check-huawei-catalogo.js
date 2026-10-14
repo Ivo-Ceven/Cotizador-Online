@@ -277,6 +277,38 @@ ok(manual && manual.precios[TIERS[0]] === 500, 'y conserva su precio');
 ok(ctx.products.length === antes,
    'el reimport no duplica productos', 'antes ' + antes + ', después ' + ctx.products.length);
 
+/* Reimportar no borra: precios nuevos sobre los que estaban, nuevos al final,
+   y lo que el archivo no trae se queda. */
+{
+  const p = ctx.products.find(x => x.sku === '02312DKT');
+  const precioArchivo = p.precios[TIERS[0]];
+  p.precios[TIERS[0]] = 1;
+  p.description = 'Descripción conocida';
+  ctx.products.push({ id: 'VIEJO-1', sku: 'VIEJO-1', description: 'Ya no viene', precios: { [TIERS[0]]: 10 },
+    stock: 2, iva: '', ivaPct: 0.21, rubro: '' });
+  const n = ctx.products.length;
+  ctx._toast = '';
+  ctx.processRows(filasHuawei);
+  const q = ctx.products.find(x => x.sku === '02312DKT');
+  ok(ctx.products.length === n, 'el mismo archivo no cambia la cantidad de productos', n + ' → ' + ctx.products.length);
+  ok(q.precios[TIERS[0]] === precioArchivo, 'el SKU que viene recibe el precio nuevo', 'dio ' + q.precios[TIERS[0]]);
+  ok(q.description === 'Descripción conocida', 'y conserva su descripción');
+  const v = ctx.products.find(x => x.sku === 'VIEJO-1');
+  const filaQ = ctx._catRowHTML(q, 0, 'data-i', {admin:true});   // antes del segundo archivo
+  ok(!!v && v.precios[TIERS[0]] === 10, 'un SKU que ya no viene en el archivo se conserva con su precio');
+  ok(/1 producto no estaba/.test(ctx._toast || ''), 'el aviso cuenta los que no estaban', ctx._toast);
+  ctx.processRows(filasHuawei.filter(r => r['Nombre'] !== '02312DKT'));
+  ok(ctx.products.some(x => x.sku === '02312DKT'), 'un archivo con menos SKU no vacía el catálogo');
+  // El punto amarillo.
+  ok(v.needsReview === true, 'un SKU que no vino queda marcado para revisar');
+  ok(/pto-ausente/.test(ctx._catRowHTML(v, 0, 'data-i', {admin:true})), 'la fila del SKU ausente lleva el punto amarillo');
+  ok(/Consultar al PM/.test(ctx._catRowHTML(v, 0, 'data-i', {admin:true})), 'el punto dice que hay que consultar al PM');
+  ok(!/pto-ausente/.test(filaQ), 'la fila de un SKU que vino no lo lleva');
+  ok(ctx.products.find(x => x.sku === '02312DKT').needsReview === true, 'el SKU que faltó en el segundo archivo quedó marcado');
+  ctx.processRows(filasHuawei);
+  ok(!ctx.products.find(x => x.sku === '02312DKT').needsReview, 'y se le saca la marca cuando vuelve a venir');
+}
+
 /* ── 6 · El precio que va a dar el multimarca ──────────────────────────────── */
 console.log('\n6 · pricing-core (el mismo archivo que carga src/multi/)');
 

@@ -26,8 +26,9 @@
                             mes y lo pendiente pasa a una cotización nueva,
                             "<proyecto> (artículos pendientes)".
 
-   Depende de: pipeline-store.js (getPipeline, savePipeline, currentMonthKey) y
-   pipeline-sku.js en tiempo de ejecución. Se carga DESPUÉS de los dos.
+   Depende de: pipeline-store.js (getPipeline, savePipeline, currentMonthKey),
+   pipeline-sku.js y opciones.js (cevenLidNuevo) en tiempo de ejecución. Se
+   carga DESPUÉS de los tres.
    ============================================================ */
 
 var CEVEN_SUFIJO_PENDIENTES = ' (artículos pendientes)';
@@ -273,6 +274,9 @@ function cevenFactMergeOrigen(){
       });
       c['_qid'] = cab['_qid'] || cevenQIdLegacy(origen.qNum);
       c['Opción'] = 1; c['_opcEf'] = 1;
+      /* La línea pasa a ser una línea NUEVA de la cotización de origen: id propio,
+         no el de la que tenía en la hija (podría repetir uno de los de acá). */
+      c['_lid'] = cevenLidNuevo();
       origen.skuMesFact[cevenSkuLineKey(c, base + k)] = om;
       aMover.push(c);
       aSacar.push(lines[i]);

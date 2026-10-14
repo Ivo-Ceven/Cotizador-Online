@@ -198,7 +198,10 @@ function copiarCotizacion(){
   cevenPintarQNum();
   cevenEditandoQNum(null);   // es una copia nueva, no la original
   // Clonar productos (ids nuevos para los items)
-  items = items.map(function(it){ return Object.assign({}, it, { id: Date.now() + Math.random() }); });
+  /* `lid: ''`: la copia es OTRA cotización, sus líneas necesitan ids propios (ver
+     shared/opciones.js). Compartirlos con el original haría chocar las claves
+     del pipeline si una línea pasa de una a la otra al facturar. */
+  items = items.map(function(it){ return Object.assign({}, it, { id: Date.now() + Math.random(), lid: '' }); });
   // El resto de los campos (cliente, OPG, proyecto, ejecutivo, observaciones, mes, estado, fecha
   // efectiva, entrega) se mantienen tal cual están en pantalla → ya forman parte de la copia.
   renderQ();
@@ -233,6 +236,7 @@ function copiarCotizacionHist(qn){
   var isAdmin = cevenIsAdmin();
   rows.forEach(function(r){
     var c=Object.assign({}, r);
+    if(c['_lid']) c['_lid'] = cevenLidNuevo();   /* ids propios: ver copiarCotizacion() */
     c['N° Cotización']=newQn;
     c['Fecha']=date;
     c['Hora']=time;
@@ -302,7 +306,10 @@ function editQuoteFromHistory(qn, skipUndoToast){
   items=[];
   // Opciones A/B: qué líneas son de cuál y cuál es la vigente (shared/opciones.js).
   cevenOpcCargarDeFilas(rows);
-  rows.forEach(function(r){
+  /* Id estable de cada línea (shared/opciones.js): es lo que ata los estados por
+     artículo del pipeline a SU línea aunque se reordene o se inserte otra. */
+  var _lids = cevenLidsDeFilas(rows);
+  rows.forEach(function(r, _li){
     var sp = r['P. Venta Unitario'];
     sp = (sp===''||sp===null||sp===undefined) ? '' : parseFloat(sp);
     items.push({
@@ -323,7 +330,8 @@ function editQuoteFromHistory(qn, skipUndoToast){
         var t = r['Nivel de precio'] || '';
         return (t && _tg && t === _tg.value) ? '' : t;
       })(),
-      opc: cevenOpcDe(r)
+      opc: cevenOpcDe(r),
+      lid: _lids[_li]
     });
   });
   // Resetear sort para que los productos cargados queden en orden de importación

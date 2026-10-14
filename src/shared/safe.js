@@ -38,6 +38,22 @@ window.cevenFormatoIVA = function(v){
     .replace(/(\d+)\s*%/g, '$1%');
 };
 
+/* El punto amarillo de "este producto no vino en la última carga de precios".
+   Va en la celda Descripción del catálogo de las cuatro marcas y del multimarca.
+   Vive acá y no en catalog-core.js porque el multimarca no carga ese archivo, y
+   es un solo texto para que el mensaje no discrepe entre pantallas. La marca es
+   `needsReview` (la pone cevenMezclarCatalogo() / finishPriceUpdate() de Apple y
+   la saca volver a venir en un archivo o editar el producto a mano).
+   Sin `needsReview` devuelve ''. */
+window.CEVEN_PUNTO_AUSENTE_TXT = 'No vino en la última carga de precios: el precio puede estar desactualizado. Consultar al PM.';
+window.cevenPuntoAusente = function(p){
+  if(!p || !p.needsReview) return '';
+  var t = window.cevenEsc(window.CEVEN_PUNTO_AUSENTE_TXT);
+  return ' <span class="pto-ausente" role="img" aria-label="' + t + '" title="' + t + '"'
+    + ' style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#f5b800;'
+    + 'box-shadow:0 0 0 2px #fff3c4;vertical-align:middle;cursor:help"></span>';
+};
+
 /* Escribe en localStorage. Devuelve true si se guardo, false si no.
    NUNCA falla en silencio: ante cuota llena avisa al usuario. */
 window.cevenLsSet = function(key, value){

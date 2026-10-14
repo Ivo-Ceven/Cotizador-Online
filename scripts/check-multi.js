@@ -544,6 +544,19 @@ console.log('\n8c · La subpantalla de productos ("+ Agregar producto")');
   const lista = els['pk-body'].innerHTML;
   ok(/mk-apple/.test(lista) && /mk-poly/.test(lista), 'la lista trae productos de las dos marcas');
   ok(/data-act="add"/.test(lista), 'cada producto tiene su botón de agregar');
+  // El punto amarillo (no vino en la última carga): la marca `needsReview` que
+  // pone cada cotizador viaja en el catálogo y sobrevive a _catNormalizar().
+  ok(!/pto-ausente/.test(lista), 'sin marcas en el catálogo no hay ningún punto amarillo');
+  ctx.catalogos.poly[0].needsReview = true;
+  ctx._catRearmar();
+  const filaMarcada = ctx._catRowHTML(ctx.products.find(p => p.brand === 'poly' && p.sku === ctx.catalogos.poly[0].sku));
+  const filaLimpia  = ctx._catRowHTML(ctx.products.find(p => p.brand === 'apple'));
+  ok(/pto-ausente/.test(filaMarcada) && /Consultar al PM/.test(filaMarcada),
+     'un producto marcado muestra el punto amarillo "consultar al PM" en el multimarca');
+  ok(!/pto-ausente/.test(filaLimpia), 'y uno que vino en la carga no lo muestra');
+  delete ctx.catalogos.poly[0].needsReview;
+  ctx._catRearmar();
+
   ok(/Todas/.test(els['pk-marca'].innerHTML) && /Poly/.test(els['pk-marca'].innerHTML),
      'y están los chips para filtrar por marca');
   ok(/Todavía no agregaste nada/.test(els['pk-cart'].innerHTML),
@@ -664,7 +677,7 @@ console.log('\n9 · Una marca con muchos SKUs no tapa a las demás');
   };
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
-  ['src/apple/js/pricing-core.js','src/poly/js/pricing-core.js','src/multi/js/marcas.js',
+  ['src/shared/safe.js','src/apple/js/pricing-core.js','src/poly/js/pricing-core.js','src/multi/js/marcas.js',
    'src/multi/js/catalogo-multi.js','src/multi/js/quote.js','src/multi/js/catalog-view.js']
     .forEach(f => vm.runInContext(lee(f), ctx, {filename: f}));
 

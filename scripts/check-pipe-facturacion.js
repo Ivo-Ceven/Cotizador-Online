@@ -63,7 +63,9 @@ function nuevoCtx(pipeInicial, dbInicial, pipeCols){
   };
   ctx.window = ctx;
   vm.createContext(ctx);
-  ['src/shared/pipeline-status.js', 'src/shared/pipeline-sku.js',
+  // opciones.js: al mover líneas entre cotizaciones, facturación les genera un id
+  // estable con cevenLidNuevo (las tres marcas que la usan ya cargan opciones.js).
+  ['src/shared/pipeline-status.js', 'src/shared/pipeline-sku.js', 'src/shared/opciones.js',
    'src/shared/pipeline-store.js', 'src/shared/pipeline-facturacion.js']
     .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, {filename: f}));
   ctx._store = store; ctx._toasts = toasts;
@@ -217,7 +219,9 @@ console.log('\n6 · Apple: porción facturada archivada, el resto queda "(artíc
     categorize: () => 'acc', showToast: () => {}, cevenMesLabel: (k) => k, renderPipeline: () => {}
   };
   ctx.window = ctx; vm.createContext(ctx);
-  ['src/shared/pipeline-facturacion.js', 'src/apple/js/pipeline-data.js']
+  // pipeline-sku.js: pipeline-data.js arma las claves de línea con cevenSkuLineKey
+  // (en la app real se carga en el index.html de Apple, después de pipeline-data).
+  ['src/shared/pipeline-facturacion.js', 'src/shared/pipeline-sku.js', 'src/apple/js/pipeline-data.js']
     .forEach(f => vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, {filename: f}));
   ctx.archiveOldEntries();
   ok(_archive[MP] && _archive[MP][0].proyecto === 'Proy' && _archive[MP][0].monto === 100,

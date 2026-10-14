@@ -242,7 +242,7 @@
     <div id="plbadge" class="bk bkw">Sin catálogo</div>
     <div id="dealbadge" class="bk bkok" style="display:none"></div>
     <div style="flex:1;min-width:8px"></div>
-    <button class="bo" onclick="document.getElementById('plup').click()" title="Excel de NetSuite: reemplaza el catálogo, los precios por nivel, el stock y el IVA">📂 Catálogo NetSuite</button>
+    <button class="bo" onclick="document.getElementById('plup').click()" title="Excel de NetSuite: actualiza los precios por nivel, el stock y el IVA de los SKU que ya están y suma los nuevos. No borra los que el archivo no trae">📂 Catálogo NetSuite</button>
     <button class="bo" onclick="document.getElementById('dealup').click()" title="BOM Calculator de HP/Poly, hoja Promos: precios de deal por SKU, con su número y vencimiento">🎯 Deals (BOM Calculator)</button>
     <!-- `this.value=''` después de leer: sin eso, volver a elegir EL MISMO
          archivo no dispara `change` y no pasa nada — sin error y sin aviso.
@@ -276,7 +276,7 @@
           <li><code>Programa fiscal</code> — <i>IVA GENERAL</i> (21 %) o <i>IVA REDUCIDO</i> (10,5 %)</li>
           <li><code>RUBRO</code> — la categoría de los globitos del filtro</li>
         </ul>
-        <div style="margin-top:4px"><b>Qué hace:</b> <b>reemplaza</b> el catálogo entero. Conserva los artículos cargados a mano y los precios de deal que ya estaban.</div>
+        <div style="margin-top:4px"><b>Qué hace:</b> <b>no borra nada</b>: actualiza los precios (y el stock y el IVA) de los SKU que ya estaban y suma los nuevos. Los productos que el archivo no trae se quedan como estaban, con su precio anterior; para sacar uno, se borra desde el catálogo. Los precios de deal que ya estaban se conservan.</div>
       </div>
 
       <div>

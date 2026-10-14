@@ -2,7 +2,7 @@
 --  TAREAS DEL EQUIPO · tableros por equipo de trabajo
 --  ---------------------------------------------------------------------------
 --  ✅ APLICADA el 05/08/2026 en el proyecto iqewnebpdyctexavtpmt, después de
---     20260804180000_tareas_archivado.sql (ese es el orden correcto: el trigger
+--     20260805123431_tareas_archivado.sql (ese es el orden correcto: el trigger
 --     de `todos` lo define la de archivado).
 --
 --     Verificado: `todos.equipo` quedó NOT NULL con default 'General' y todas

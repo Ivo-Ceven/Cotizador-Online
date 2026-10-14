@@ -266,7 +266,7 @@ Una página, no una marca. Entra desde la tarjeta del shell igual que un cotizad
 Lo que hay que saber para tocarlo:
 
 - **El estado y la sincronización no están acá**, están en `shared/todos.js` (`window.cevenTareas`). `board.js` solo pinta y llama; el shell usa el mismo store para la pastilla de pendientes.
-- **Un tablero por equipo**, con pestañas arriba. ⚠ Separan el trabajo en la **pantalla, no en la base**: el cliente se baja `todos` entero y filtra en JS, y cualquier `@ceven.com` puede leer y escribir todos los equipos. Es deliberado — el porqué y qué haría falta para que fuera aislamiento real están en `20260804200000_tareas_equipos.sql`.
+- **Un tablero por equipo**, con pestañas arriba. ⚠ Separan el trabajo en la **pantalla, no en la base**: el cliente se baja `todos` entero y filtra en JS, y cualquier `@ceven.com` puede leer y escribir todos los equipos. Es deliberado — el porqué y qué haría falta para que fuera aislamiento real están en `20260805123449_tareas_equipos.sql`.
 - **Las terminadas hace más de 3 días se archivan solas** (constante `DIAS_ARCHIVO`): salen del tablero, no se borran, y hay un botón en Done para verlas. El corte se mide sobre `terminadaEn`, que escribe **solo el trigger** de la base.
 - **Conviven dos arrastres** en la misma pantalla: tarjeta→columna mueve de estado, miembro→tarjeta delega. Se distinguen por el **tipo MIME** del `dataTransfer` (`application/x-ceven-tarea` / `-miembro`), porque `getData()` no se puede leer durante `dragover` — solo `types`. Cada objetivo llama a `preventDefault()` **únicamente** para su tipo, y por eso la tarjeta anidada dentro de la columna no se pisan.
 - **Todo lo que se hace arrastrando se puede hacer sin arrastrar**: en celular no existe `dragstart`. El detalle (tocar la tarjeta) mueve y delega, y con el teclado `Enter` abre y `←`/`→` mueven de columna.
@@ -447,10 +447,13 @@ cosas de esos archivos están cableadas en `apple/js/catalog.js`:
   unos pocos el precio del FTZ es mayor. `_plFold()` pliega por `Model #` y
   **se queda con el precio más alto**: cotizar de menos sale plata.
 
-`📂 Cargar Excel/CSV` reemplaza el catálogo entero (y con él los productos
-manuales); `💲 Actualizar precios` mergea sobre lo que ya hay, marca `needsReview`
-lo que no apareció y conserva los manuales. Los dos caminos comparten
-`_plCols()`/`_plFold()`, así que no pueden discrepar sobre cuál es el SKU — que
+`📂 Cargar Excel/CSV` **no reemplaza nada** (desde 14/10/2026): `processRows()`
+delega en `finishPriceUpdate()`, que mergea sobre lo que ya hay — actualiza el
+costo de los SKU que coinciden, suma los nuevos, conserva los manuales y marca
+`needsReview` (punto amarillo, `cevenPuntoAusente()` de `shared/safe.js`) lo que no apareció en el archivo. Antes había
+dos botones (uno reemplazaba, `💲 Actualizar precios` mergeaba); quedó uno solo.
+Sacar un producto es una baja explícita desde el catálogo. Todo pasa por
+`_plCols()`/`_plFold()`, así que no hay dos criterios sobre cuál es el SKU — que
 es justo lo que pasaba antes: la carga completa guardaba el código interno y la
 actualización buscaba por `Model #`, así que "actualizar" duplicaba el catálogo.
 
@@ -466,7 +469,7 @@ por `handlePL()`, que **decide por el CONTENIDO, no por el botón**.
 | Origen | NetSuite, búsqueda guardada `ResultadosPreviewCatalogDistri` (`ingresoPoly.xls`) | el BOM Calculator mensual de HP/Poly, **hoja `Promos`** |
 | Forma | una fila por (SKU × depósito × nivel): 77 SKU = 564 filas | una fila por SKU en promoción (673 en el archivo de 07/2026) |
 | Columnas | `Nombre`, `Nombre para mostrar`, `Nivel de precio`, `Precio unitario`, `Ubicacion del inventario`+`LocAvailable`, `Programa fiscal`, `RUBRO` | `Base SKU`, `Description`, `BDNet`, `Deal`, `End Date` |
-| Efecto | **reemplaza** el catálogo | **mergea**: agrega el nivel `DEAL` y da de alta los SKU que no estaban |
+| Efecto | **mergea** (`cevenMezclarCatalogo`): actualiza precios/stock/IVA de los SKU que ya estaban y suma los nuevos; **no borra** lo que el archivo no trae | **mergea**: agrega el nivel `DEAL` y da de alta los SKU que no estaban; **reemplaza todos los deals** |
 | Función | `processRows()` → `_processRowsTiers()` | `processDeals()` → `_leerFilasDeals()` |
 
 Cuatro cosas cableadas en `poly/js/catalog.js`:
@@ -482,11 +485,16 @@ Cuatro cosas cableadas en `poly/js/catalog.js`:
   hizo falta tocar `pricing-core.js`** (que es byte a byte igual al de las Edge
   Functions del portal). Lo que un tier no tiene —número y vencimiento— va en
   `p.deal = {nro, fin}`; el precio **no** se duplica ahí.
-- **Reimportar NetSuite conserva los deals.** `processRows()` guarda el
-  `p.deal`/`precios.DEAL` de lo que ya había y se lo vuelve a poner a los SKU
-  del archivo nuevo, y conserva los SKU que existen solo por un deal — igual
-  que hace con los `manual`. Sin eso, un deal duraba hasta la próxima
-  actualización de stock, que es cosa de horas.
+- **Reimportar NetSuite conserva los deals.** `processRows()` mezcla con
+  `cevenMezclarCatalogo()` (`shared/catalog-core.js`), que funde `precios` nivel
+  por nivel y no toca `p.deal`: el `DEAL` sobrevive sin código especial, igual
+  que los SKU que existen solo por un deal y los `manual`. Sin eso, un deal
+  duraba hasta la próxima actualización de stock, que es cosa de horas. La misma
+  función la usan Huawei y Legamaster: **ninguna importación de catálogo borra
+  productos** (los que el archivo no trae se quedan con su precio anterior y el
+  aviso los cuenta y quedan con `needsReview`, que se dibuja como un punto amarillo
+  "consultar al PM" en la celda Descripción, también en el multimarca; se limpia
+  al volver a venir o al editar el producto).
 - **Un archivo de deals nuevo reemplaza TODOS los deals**, no los acumula: si
   se fueran sumando, un SKU que salió de la promoción se seguiría cotizando al
   precio viejo hasta que Poly rechazara la orden. Los SKU que existían solo por

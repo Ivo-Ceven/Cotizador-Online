@@ -23,8 +23,8 @@ function recalcPipelineUnits(){
     lines.forEach(function(ln, idx){
       var qty = parseInt(ln['Cantidad'])||0;
       // Descontar unidades ya facturadas y archivadas de esta línea
-      var lk = (ln['SKU']||'')+'|'+idx;
-      var arch = (r.skuArchivedQty && parseInt(r.skuArchivedQty[lk])) || 0;
+      var lk = cevenSkuLineKey(ln, idx);
+      var arch =(r.skuArchivedQty && parseInt(r.skuArchivedQty[lk])) || 0;
       qty = Math.max(0, qty - arch);
       if(qty===0) return;
       // Monto efectivo de la porción no archivada
@@ -401,7 +401,7 @@ function renderPipeline(){
     var defaultStatus = r.estado || 'Cotizado';
     var defaultMes = r.mesCierre || '';
     lines.forEach(function(ln, idx){
-      var lineKey = (ln['SKU']||'') + '|' + idx;
+      var lineKey = cevenSkuLineKey(ln, idx);
       var st = (r.skuStatus && r.skuStatus[lineKey]) || defaultStatus;
       var mc = (r.skuMesCierre && r.skuMesCierre[lineKey] !== undefined) ? r.skuMesCierre[lineKey] : defaultMes;
 

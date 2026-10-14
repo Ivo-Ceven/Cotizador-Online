@@ -150,6 +150,129 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 14/10/2026 · Importar el catálogo ya no borra nada: actualiza precios y suma productos nuevos
+
+**El pedido.** Que cargar un Excel con precios nuevos no se lleve lo que ya estaba: solo pisa los precios y agrega los productos que no existían. En las **cuatro** marcas.
+
+**Cómo estaba.** Apple, Poly, Huawei y Legamaster **reemplazaban el catálogo entero** (solo rescataban los artículos `manual` y, en Poly, los deals). Un Excel incompleto —de otra sucursal, filtrado, con menos filas— vaciaba productos sin avisar. Apple ya tenía un camino que mergeaba (`💲 Actualizar precios`) pero el botón principal reemplazaba.
+
+**Cómo es ahora.** `cevenMezclarCatalogo(actuales, nuevos)` en `shared/catalog-core.js`, usada por Poly, Huawei y Legamaster desde `processRows()`:
+- SKU que ya estaba → se actualiza lo que trae el archivo (precios, stock, IVA, link, disponibilidad). Conserva el `id` y las marcas internas.
+- SKU nuevo → se suma.
+- SKU que el archivo no menciona → **no se toca**, pero queda marcado con `needsReview` y se dibuja con un **punto amarillo** en la celda Descripción (`cevenPuntoAusente()` en `shared/safe.js`, que cargan todas las páginas; tooltip "No vino en la última carga de precios: el precio puede estar desactualizado. Consultar al PM."). La marca se va cuando el SKU vuelve a venir en un archivo o cuando alguien lo edita a mano (✎). Los `manual` y los que existen por un deal no se marcan: nunca vienen en este archivo. El aviso al cargar dice cuántos eran (`N productos no estaban en el archivo (se conservaron con su precio anterior)`).
+- `precios` se funde **nivel por nivel**: gana el archivo en los niveles que trae y los demás quedan. Por eso el nivel `DEAL` de Poly sobrevive a un reimport sin código especial (se borró el rescate manual de `dealPrevio`).
+- `description` y `rubro` solo se completan si estaban vacíos (son los que el equipo ya conoce y salen en las cotizaciones). Un valor vacío del archivo (sin stock, sin link) no borra el que había.
+- Un SKU `manual` que ahora viene en el archivo oficial deja de ser manual (igual que antes, cuando el archivo lo pisaba).
+
+**Apple** no usa el helper de merge (su producto no tiene `precios`): `processRows()` ahora delega en `finishPriceUpdate()`, el merge que ya existía, que ya marcaba `needsReview`; el chip "⚠ Revisar costo" se reemplazó por el mismo punto amarillo que las otras tres marcas. Se sacó el botón duplicado `💲 Actualizar precios` y `handlePriceUpdate()`: `📂 Cargar Excel/CSV` hace lo mismo y además acepta CSV.
+
+**Ojo con esto.**
+- **Ya no hay forma de vaciar el catálogo con un Excel.** Para sacar un producto hay que borrarlo desde el catálogo (cada marca tiene el borrado individual con deshacer; Apple además la baja masiva por sufijo). Si discontinúan un SKU, se queda con su último precio y con el punto amarillo hasta que alguien lo borre. El multimarca también lo muestra (`multi/js/catalog-view.js`, en el catálogo y en la flotante "+ Agregar producto"): `needsReview` viaja dentro del `cpl` que baja de `app_settings` y sobrevive a `_catNormalizar()`. Por eso el helper vive en `safe.js` y no en `catalog-core.js`, que el multimarca no carga. Ahí es solo lectura: la marca se saca desde el cotizador de cada marca.
+- Los **deals de Poly siguen reemplazándose enteros** al cargar el BOM Calculator (`processDeals()`): es el otro archivo y la regla es distinta a propósito (un deal que salió de la promoción no puede seguir cotizándose). No se tocó.
+- Las **cotizaciones ya guardadas no cambian**: llevan su propio precio por línea.
+
+**Verificación.** Tests nuevos en `check-poly-catalogo` (37), `check-huawei-catalogo` (36), `check-legamaster-catalogo` (39) y `check-apple-catalogo` (30): precio nuevo sobre el viejo, SKU ausente conservado, descripción conocida respetada, aviso, y que un archivo con menos filas no vacía el catálogo. De paso se arregló `check-poly-deals.js`, que ya fallaba antes de este cambio porque su harness no cargaba `safe.js` (`cevenFormatoIVA is not defined`); ahora 52/52. **No se probó en el navegador con un Excel real.** `check-precache.js` falla con 17 rutas de `portal/` y `vendor/` que no están en `ASSETS`: ya fallaba y no tiene que ver con esto.
+
+---
+
+## 13/10/2026 · Compras estimadas: forecast de necesidad de compra por equipo
+
+**Qué es.** Página nueva `src/compras/` (tarjeta "Compras estimadas" en el panel, al lado de Tareas), de todas las marcas juntas. Por **equipo** (marca + SKU) muestra dos bloques lado a lado: **Necesidad total** (unidades y valor de venta de todos los negocios abiertos, como si cerraran todos) y **Estimado** (lo mismo ponderado por la probabilidad de cierre de cada negocio). Cada fila se despliega en los negocios que la componen, con su probabilidad y por qué (base, días sin tocar, cierre vencido). Más: tabla por mes de cierre, filtros (marca, cierre hasta, estados, búsqueda de texto), KPI arriba, CSV.
+
+**De dónde sale.** `pipeline` (estado, mes de cierre, estados por artículo) × `cotizaciones.lineas` (SKU, cantidad, precio), por REST con la sesión del usuario. Cuenta solo la opción vigente A/B; deja afuera Facturado/Perdido, las garantías (Tipo `garantia`: no es mercadería) y lo que Apple ya archivó o facturó parcial; un artículo con estado propio usa el suyo (por eso dependía del cambio de ids estables del mismo día). Sin cambios de esquema para esto.
+
+**Probabilidad** = `clamp( base × factorEdad × factorVencido, mín, máx )` por estado (`src/shared/compras-forecast.js`, lógica pura con test):
+- **Base** por estado, editable. Defaults: En proyecto 5 %, Cotizado 10 %, Negociación 30 %, Commit 70 %, Con OC 95 %, Autorizando 90 %. **Son supuestos míos para arrancar, no datos de Ceven: hay que revisarlos.**
+- **Se corre con el tiempo (edad):** pasados 30 días sin tocar (`fechaMod`), pierde 0,5 % por día hasta un piso del 50 % de la base. **Vencido:** ×0,6 si el mes de cierre ya pasó. No aplican a Con OC / Autorizando (ya hay compromiso del cliente).
+- **Umbrales mín–máx por estado**: ninguna corrección se sale de ahí (hay un barrido de 54 combinaciones en el test). Es lo que mantiene el modelo previsible.
+- **Calibración con lo que pasó:** `(n × observada + k × base) / (n + k)`, con `k = 10` y n = negocios resueltos que pasaron por ese estado. Con pocos casos casi no se mueve; con muchos manda lo observado, siempre dentro de los umbrales.
+- Editable solo por el admin; se guarda en `app_settings` con `brand='compras'`, `key='fc_config'` (valores saneados: nunca se guarda algo roto).
+
+**Quitar órdenes puntuales (14/10/2026).** Una orden enorme de un solo cliente (4.000 unidades en Poly) distorsiona el forecast de todos los equipos, así que se puede sacar a mano: botón **"Quitar órdenes"** (abre la lista de negocios, los más grandes primero, con casillas) y un **✕** en cada negocio del detalle de un equipo. Se quita el **negocio completo** (todos sus equipos), no una línea suelta. Detalles que importan:
+- Con exclusiones activas hay un **aviso fijo** ("N órdenes quitadas del cálculo… Los totales no las incluyen" + Restaurar), y el CSV lo aclara al final: nadie debería leer un total sin saber que no es todo el pipeline.
+- Se **recuerda en el navegador de cada persona** (`localStorage`, `ceven_fc_excluidos_v1`), no se comparte: es un análisis de quien mira, no un dato del negocio. Si se quisiera una exclusión compartida por todo el equipo habría que guardarla en `app_settings` como la configuración.
+- Una exclusión de un negocio que ya no está en el pipeline se olvida sola al cargar.
+- La lógica es `excluir` en `cevenFcConstruir` y `cevenFcNegocios` en `compras-forecast.js` (14 casos nuevos en el test: 83 en total). La lista se arma sobre el cálculo SIN exclusiones, para que una orden ya quitada siga apareciendo y se pueda devolver. No se pudo ver una captura del panel (el renderizador del navegador de pruebas se colgó): se verificó por el DOM, no visualmente.
+
+**⚠ La calibración todavía no aprende nada.** `pipeline` solo guarda el estado ACTUAL: no hay forma de saber cuántos de los que pasaron por Commit se facturaron. Hace falta un registro de cambios de estado: **`supabase/pendientes/pipeline_transiciones_log.sql`** (tabla `pipeline_transiciones` + trigger sobre `pipeline`, aditivo, con siembra de los negocios abiertos de hoy). **NO está aplicada**: la aplicación se rechazó en la sesión. Hasta entonces la página funciona y lo dice ("Sin historial todavía: la calibración usa solo la base"); recién desde que se aplique empieza a juntar datos. Está en `pendientes/` y no en `migrations/` a propósito (ver la entrada del historial de migraciones). Al aplicarla: `apply_migration` y mover el archivo con la versión que devuelva `list_migrations`.
+
+**Datos que condicionan hoy el resultado.**
+- `fechaMod` tiene dos formatos (ISO y `d/m/aaaa`, día primero): el parser acepta los dos. 87 de 88 filas de Poly tienen el mismo sello del 09/10 (un estampado masivo), así que **hasta que pasen semanas la edad todavía no discrimina** entre negocios.
+- Todo está en USD (las 106 filas); la página rotula "US$" fijo. Si aparece otra moneda hay que revisarlo.
+- Hay negocios sin cotización encontrada (2 de 88 en Poly al armarlo): se cuentan aparte en el KPI, no se pierden en silencio.
+- Un solo negocio puede dominar un SKU (una línea de 4.000 unidades explica casi todo el Commit de Poly): por eso cada fila se abre en sus negocios.
+
+**Qué NO hace.** No conoce **stock** ni **plazos de entrega** (no están en la app): es demanda, no "qué comprar" neto; no usa **costo** (el valor es de venta; las líneas de Poly no traen costo); no distingue qué parte de una línea Apple tiene remanente parcial con otro estado.
+
+**Archivos.** `src/compras/{index.html,css/compras.css,js/compras.js}`, `src/shared/compras-forecast.js`, `scripts/check-compras-forecast.js` (83 casos), tarjeta en `src/index.html`, `src/sw.js` (precarga offline) y `scripts/check-precache.js`. `APP_VERSION` 8.0 → 8.1.
+
+**Verificación.** `node scripts/check-compras-forecast.js` (83/83). Probada en navegador contra `localhost` con respuestas de la API simuladas (datos armados a mano, **no** los reales: no hay credenciales): números verificados a mano, detalle desplegable, edición y guardado (POST a `app_settings`), recálculo, caso sin historial, sin errores de consola. **No se probó con datos reales ni en el celular.**
+
+---
+
+## 13/10/2026 · El historial de migraciones del repo y el de la base vuelven a coincidir
+
+**Problema.** `supabase_migrations.schema_migrations` (lo que la base cree que se aplicó) y `supabase/migrations/` (lo que el repo cree que se aplicó) habían divergido: 14 migraciones figuraban con una versión distinta en cada lado (el repo usaba la hora en que se escribió el archivo, y `apply_migration` registraba la hora en que corrió), 6 estaban en el repo y aplicadas pero sin registrar (se aplicaron por SQL directo) y 8 solo existían en la base (el esquema inicial, `clientes`, el portal…). El repo no podía reconstruir la base ni el CLI de Supabase habría sabido qué estaba aplicado.
+
+**Qué se hizo.**
+1. **14 archivos renombrados** (`git mv`) a la versión con que la base los tiene registrados. No se tocó ninguna fila de `schema_migrations` para esto.
+2. **8 archivos nuevos** con el SQL que la base tenía guardado (esquema inicial, `brand_multimarcas_pk_compuestas`, `rls_solo_usuarios_autenticados`, `clientes_tabla_real`, `portal_clientes_canal`, `portal_solicitudes_qnum`, `portal_solicitudes_estado_sync`, `portal_sync_estado_revoke_execute`). Se verificaron con md5 contra lo registrado: idénticos byte a byte. Más un archivo marcador **sin SQL** (`20260731181934_rls_parte_b_...`): el repo tenía las partes A y B de RLS en un solo archivo, la base en dos filas.
+3. **6 filas insertadas** en `schema_migrations` (solo `INSERT`; `created_by = 'reconciliacion-2026-10-13'`): `tareas_tablero_y_equipo`, `asistente_ia_uso`, `pipeline_mes_auto_roll`, `pipeline_esfob_y_comentarios`, `cotizaciones_tabla`, `pipeline_mes_facturacion`. Antes de registrarlas se verificó en el catálogo que cada objeto existiera (tablas, columnas, índices, constraints, triggers, policies, comentarios). **Faltaban** los 4 comentarios de columna de `pipeline_mes_facturacion` (`mesFact`, `fechaFact`, `skuMesFact`, `mesCierreAntes`): se aplicaron antes de registrarla. Su `statements` no es el SQL (se aplicó por fuera): dice que el de referencia es el archivo.
+4. Las referencias a los números viejos en `docs/` y en comentarios de código se actualizaron (40 en 19 archivos).
+
+Resultado: **29 versiones en el repo, 29 en la base, mismas versiones.**
+
+| Antes (repo) | Ahora (versión en la base) |
+|---|---|
+| `20260730120000_rls_por_rol_y_marca` | `20260731180813_rls_por_rol_y_marca` (+ marcador `20260731181934`) |
+| `20260731090000_exigir_dominio_ceven` | `20260731185148_exigir_dominio_ceven` |
+| `20260804180000_tareas_archivado` | `20260805123431_tareas_archivado` |
+| `20260804200000_tareas_equipos` | `20260805123449_tareas_equipos` |
+| `20260818130000_apple_perdido_motivo_y_fechamod` | `20260819121117_…` |
+| `20260820193000_portal_solicitudes_estado_motivo_cliente` | `20260820210142_…` |
+| `20260820200000_portal_lectura_staff` | `20260820212707_…` |
+| `20260820203000_pipeline_espejo_estado_cliente_portal` | `20260820213621_…` |
+| `20260821120000_regi_deal_registration` | `20260821141214_…` |
+| `20260821121500_regi_solicitar_informa_rechazo_previo` | `20260821142329_…` |
+| `20260825120000_poly_regi_pipeline` | `20260825124137_…` |
+| `20260825130000_poly_regi_pipeline_productos` | `20260825133245_…` |
+| `20260825140000_poly_regi_pipeline_forecast_override` | `20260825141912_…` |
+| `20260831145054_poly_regi_perdido_motivo` | `20260831194200_…` |
+
+**Regla para que no vuelva a pasar.** Una migración nueva se aplica con `apply_migration` y **el archivo se nombra con la versión que devuelve `list_migrations`**, no con la hora en que se escribió. Nada de DDL por `execute_sql` sin registrar la migración.
+
+**Límites conocidos.**
+- El texto de los archivos del repo **no es idéntico** al que la base guardó para esas migraciones (el repo tiene más comentarios; en algunas varía también el SQL). El que cuenta como "lo aplicado" es el de la base. Los 4 que coincidían byte a byte (`regi_deal_registration`, `regi_solicitar_informa_rechazo_previo`, `poly_regi_pipeline_productos`, `poly_regi_pipeline_forecast_override`) dejaron de coincidir en 2 casos solo por el cambio de números en un comentario.
+- Un cambio de esquema **posterior** a una migración que se hizo a mano (como los comentarios que faltaban) no deja rastro; por eso se verificó objeto por objeto y no solo por nombre.
+- Sigue sin existir `supabase/config.toml`: el CLI (`supabase db push`) no está configurado, las migraciones se aplican por MCP.
+- No se recorrió la base completa buscando objetos que no estén en ninguna migración (por ejemplo, el bucket de Storage `portal-logos` sí está en `portal_clientes_canal`, pero no se auditó el resto).
+
+---
+
+## 13/10/2026 · Los estados por artículo ya no dependen de la posición de la línea
+
+**Problema.** Todo lo que el pipeline guarda POR ARTÍCULO (`skuStatus`, `skuMesCierre`, `skuMesFact`, entregas parciales de Apple…) se ataba a una clave `SKU|índice`, donde el índice era la posición de la línea en la cotización. Cualquier cosa que moviera una línea corría todas las claves y el estado/mes/cantidad quedaba aplicado al artículo equivocado, sin ningún error visible: reordenar o insertar al reabrir y re-guardar una cotización, cambiar la opción A/B vigente, o listar con otro filtro de `Tipo` (Apple lo hacía: `['producto','garantia']` en el pipeline y `['producto']` en `target.js`, así que ahí los índices ya diferían). Borrar una línea sí estaba cubierto (`cevenSkuReindex`).
+
+**Arreglo.** Cada línea de `cquotes` lleva un id propio, **`_lid`**, que se genera una vez y no cambia. La clave pasa a ser `SKU|_lid` (`cevenSkuLineKey`, `shared/pipeline-sku.js`).
+
+- Se sella en `cevenOpcSellarFila` (`shared/opciones.js`), el único punto por donde pasan las filas al guardar de las 5 marcas. Los items del cotizador lo traen en `item.lid`; al reabrir una cotización (`editQuoteFromHistory`) se recupera con `cevenLidsDeFilas`.
+- **Cotizaciones viejas, sin `_lid`**: la clave cae al índice, como siempre. Al reabrirlas y re-guardarlas el índice se **congela** como id (la línea vigente nº 2 recibe `"2"`), así que las claves que el pipeline ya tenía siguen valiendo y ningún override queda huérfano. Las líneas que nunca tuvieron clave (opción no vigente) reciben un id nuevo. Los ids nuevos empiezan con `n`, así que no chocan con los legados (numéricos).
+- **Copias de una cotización** (`copiarCotizacion*`) regeneran los ids: son otra cotización. La línea que la facturación mueve de una cotización a otra también recibe uno nuevo.
+- Apple tenía 16 lugares que armaban `SKU|idx` a mano; todos pasan ahora por `cevenSkuLineKey`. **Regla: nadie concatena `SKU|idx` a mano.**
+- Sin migración de base. `_lid` viaja dentro de las filas de `cquotes` (y de `cotizaciones.lineas`, que es jsonb). `APP_VERSION` 7.9 → 8.0.
+
+**Estado de los datos al hacerlo.** Las 106 filas de `pipeline` tenían `skuStatus`/`skuMesCierre`/`skuPartialQty` en NULL (los mapas se borran solos cuando todas las líneas quedan en el mismo estado), así que no había nada que migrar.
+
+**Límites conocidos.**
+- Una cotización que **nunca se re-guardó** conserva la clave por índice. Mientras sea así tiene el límite de antes; se resuelve sola la primera vez que se la reabre y guarda.
+- Las filas que escribe la Edge Function `portal-emitir` no traen `_lid` (cae al índice hasta el primer re-guardado desde el cotizador). No usa estados por artículo, así que no afecta.
+- Un navegador con el bundle viejo en caché (PWA offline) que re-guarde una cotización ya sellada **pierde el `_lid`** de sus filas. Pasa solo en la transición, hasta que el service worker toma el 8.0.
+- `skuStatus` etc. con claves `SKU|índice` pueden seguir existiendo en filas de pipeline viejas: siguen leyéndose igual mientras la cotización no se re-guarde.
+
+**Verificación.** `node scripts/check-pipeline-sku.js` (54 casos; la sección 7 reproduce el bug: con el código anterior el estado de B se pierde al reordenar) y `node scripts/check-pipe-facturacion.js` (62 casos; su contexto ahora carga `pipeline-sku.js` y `opciones.js`). **No se probó en un navegador.** Fallan, igual que antes de este cambio, `check-entrega`, `check-poly-deals`, `check-portal-pricing-parity` y `check-precache`.
+
+---
+
 ## 09/10/2026 · Visor de notificaciones
 
 Los carteles traían mucho texto y se iban a los 5 s. `shared/notify.js` ahora (1) guarda cada aviso en un historial (últimos 60, con hora y tipo, en localStorage `ceven_notif_log_v1`, sobrevive a recargar), (2) muestra una campana 🔔 abajo a la izquierda en cuanto hay algo, con el contador de no vistos, que abre un panel lateral con el texto COMPLETO (`cevenNotifAbrir`; también se abre tocando un cartel), (3) alarga los carteles largos (45 ms por carácter pasado de 80, tope 25 s, +3 s si tienen botón), no se van con el mouse encima, y recorta a 5 líneas lo que no entra. Test: `node scripts/check-notify.js`.
@@ -560,7 +683,7 @@ la lleva a la cajita; editar el mes a mano limpia `mesAutoRoll` (en
 Se reusa **`fechaMod`** (ISO, ya la sella `savePipeline()` ante cualquier
 cambio real de la fila; ya alimenta el chip de estancadas de Apple). Para
 Poly/Legamaster solo se sumó `'fechaMod'` a `pipeCols` — la columna en Supabase
-ya existía (`20260818130000`), **sin migración**. `savePipeline()` ahora acepta
+ya existía (`20260819121117`), **sin migración**. `savePipeline()` ahora acepta
 `opts.systemChange`: el auto-roll guarda con `{systemChange:true}` para **NO**
 mover `fechaMod` (si no, el reloj de "días sin movimiento" se resetearía solo
 cada mes y la alerta futura nunca dispararía).
@@ -1690,7 +1813,7 @@ avisar. La tabla REGI volvió a 8 columnas (las 7 de siempre + Acciones);
 ### 2. Forecast editable, con Perdido excluido del total
 
 Columna nueva `forecast_override` en `poly_regi_pipeline` (migración
-`20260825140000_poly_regi_pipeline_forecast_override.sql`), con
+`20260825141912_poly_regi_pipeline_forecast_override.sql`), con
 `check (... in ('Commit','Pipeline','Upside','Perdido'))`. Aparte de
 `forecast` (el que trae el Excel) y no un UPDATE directo sobre esa columna,
 por la misma razón que `poly_regi_pipeline_productos` es una tabla aparte:
@@ -1776,7 +1899,7 @@ asignación de productos: no se agregó edición de los campos del archivo.
 ### Tabla nueva, hija por `opd` con `ON DELETE CASCADE`
 
 `poly_regi_pipeline_productos` (migración
-`20260825130000_poly_regi_pipeline_productos.sql`): `opd` (FK a
+`20260825133245_poly_regi_pipeline_productos.sql`): `opd` (FK a
 `poly_regi_pipeline.opd`), `sku`, `descripcion`, `cantidad`,
 `precio_unitario`. RLS igual que la tabla padre —
 `ceven_is_staff()`/`ceven_is_writer()`, sin Edge Function ni función
@@ -1903,7 +2026,7 @@ Tres decisiones de diseño, confirmadas con el usuario antes de tocar código
    nada.
 2. **Se comparte con todo el equipo vía Supabase**, no queda solo en el
    navegador de quien importa: tabla nueva `poly_regi_pipeline`
-   (`supabase/migrations/20260825120000_poly_regi_pipeline.sql`), RLS
+   (`supabase/migrations/20260825124137_poly_regi_pipeline.sql`), RLS
    `ceven_is_staff()`/`ceven_is_writer()` — mismo criterio que `regi_codigos`
    (sin columna `brand`, exclusivo de Poly a propósito). Sin Edge Function ni
    `security definer` nueva: es dato de negocio común, igual que
@@ -1959,7 +2082,7 @@ Excel y reimportar (esa oportunidad tiene que desaparecer), y volver a
 "Pipeline actual" para confirmar que el pipeline de siempre no quedó tocado
 (filtros, dashboard, filas editables).
 
-Archivos: `supabase/migrations/20260825120000_poly_regi_pipeline.sql` (nuevo),
+Archivos: `supabase/migrations/20260825124137_poly_regi_pipeline.sql` (nuevo),
 `src/poly/js/pipeline-regi.js` (nuevo), `src/poly/index.html` (opción del
 selector Vista, botón + input de importar, tabla `#pipe-table-regi`, ids
 `pipe-exec-wrap`/`pipe-status-wrap`/`pipe-export-btn`), `src/poly/js/pipeline-view.js`
@@ -2473,8 +2596,8 @@ no pueden leer archivos en runtime) y evita tocar
 `scripts/build-portal-pricing-embeds.js`.
 
 Dos funciones nuevas (migración
-`20260821120000_regi_deal_registration.sql`, refinada por
-`20260821121500_regi_solicitar_informa_rechazo_previo.sql`):
+`20260821141214_regi_deal_registration.sql`, refinada por
+`20260821142329_regi_solicitar_informa_rechazo_previo.sql`):
 
 - **`portal_equipo_ceven()`** — la lista de ejecutivos (admin+ventas, nunca
   lector) que puede leer un cliente-canal para elegir a quién dirigir su
@@ -2660,9 +2783,9 @@ exponen). Es lo opuesto en dos sentidos:
   viven en un archivo aparte de `pipeline-view.js` que no se llegó a leer
   todavía — retomar ahí si se pide.
 
-Migraciones: `20260820193000_portal_solicitudes_estado_motivo_cliente`,
-`20260820200000_portal_lectura_staff`,
-`20260820203000_pipeline_espejo_estado_cliente_portal`.
+Migraciones: `20260820210142_portal_solicitudes_estado_motivo_cliente`,
+`20260820212707_portal_lectura_staff`,
+`20260820213621_pipeline_espejo_estado_cliente_portal`.
 
 ---
 
@@ -4026,8 +4149,8 @@ hay lápiz. Estáticos: `check-globals`, `check-precache`, `check-tareas`.
 
 ## 04/08/2026 · Tareas: archivado automático y tableros por equipo
 
-Migraciones `20260804180000_tareas_archivado.sql` y
-`20260804200000_tareas_equipos.sql`. `APP_VERSION` 5.1 → 5.3.
+Migraciones `20260805123431_tareas_archivado.sql` y
+`20260805123449_tareas_equipos.sql`. `APP_VERSION` 5.1 → 5.3.
 
 ### Done crecía para siempre
 
@@ -4719,7 +4842,7 @@ todo UI nueva. Ver "Pendientes".
 
 ## 31/07/2026 · Solo cuentas @ceven.com acceden a los datos
 
-Migración `20260731090000_exigir_dominio_ceven.sql`.
+Migración `20260731185148_exigir_dominio_ceven.sql`.
 
 **El requisito real del usuario**, dicho por él: lo único que importa es que
 nadie sin cuenta Ceven llegue a los datos, ni siquiera como lector. Los roles
@@ -4751,7 +4874,7 @@ Si algún día hay que sumar otro dominio, es un solo lugar: el `in (...)` de
 
 ## 31/07/2026 · RLS por rol y marca: los roles dejan de ser decorativos
 
-Migración `20260730120000_rls_por_rol_y_marca.sql`, aplicada en dos pasos.
+Migración `20260731180813_rls_por_rol_y_marca.sql`, aplicada en dos pasos.
 
 **El problema**: las tres tablas tenían una sola policy, `for all to authenticated
 using(true) with check(true)`. Cualquier usuario logueado —incluido uno con rol

@@ -214,6 +214,42 @@ ok(ctx.cevenProductoIva({ sku: 'MANUAL-1', manual: true }) === '21%',
 ok(ctx.cevenIvaDeCatalogo('772D0AA') === '21%', 'cevenIvaDeCatalogo() encuentra el SKU en el catálogo');
 ok(ctx.cevenIvaDeCatalogo('NO-EXISTE') === '21%', 'un SKU que no está en el catálogo cae al 21%');
 
+/* ---- Reimportar NO borra: actualiza precios, suma nuevos, deja el resto ---- */
+console.log('Reimportar sobre un catálogo que ya existe');
+{
+  const T = Object.keys(s1.precios)[0];
+  const precioArchivo = s1.precios[T];
+  ctx.products.push({ id: 'VIEJO-1', sku: 'VIEJO-1', description: 'Ya no viene en el Excel',
+    precios: { [T]: 10 }, stock: 3, iva: '', ivaPct: '21%', rubro: '' });
+  s1.precios[T] = 1;                       // precio viejo
+  s1.description = 'Descripción que ya conocía el equipo';
+  const antes = ctx.products.length;
+  ctx._toast = '';
+  ctx.processRows(rows);
+  const p1 = ctx.products.find(p => p.sku === '772D0AA');
+  const v1 = ctx.products.find(p => p.sku === 'VIEJO-1');
+  const p1Marcado = !!p1.needsReview, filaP1 = ctx._catRowHTML(p1, 0, 'data-i', {admin:true});   // antes del segundo archivo
+  ok(ctx.products.length === antes, 'el reimport no suma ni quita productos si el archivo es el mismo',
+     antes + ' → ' + ctx.products.length);
+  ok(!!v1 && v1.precios[T] === 10, 'un SKU que ya no viene en el archivo se conserva con su precio');
+  ok(p1.precios[T] === precioArchivo, 'un SKU que sí viene recibe el precio nuevo', 'dio ' + p1.precios[T]);
+  ok(p1.description === 'Descripción que ya conocía el equipo', 'y conserva la descripción que ya tenía');
+  ok(/1 producto no estaba/.test(ctx._toast || ''), 'el aviso cuenta los que no estaban en el archivo', ctx._toast);
+  const mitad = rows.filter(r => r['Nombre'] !== '772D0AA');
+  ctx.processRows(mitad);
+  ok(ctx.products.some(p => p.sku === '772D0AA'), 'un archivo con menos SKU no vacía el catálogo');
+  // El punto amarillo: lo que no vino se marca, lo que vino no, y vuelve a limpiarse.
+  ok(!p1Marcado, 'un SKU que vino en el archivo no queda marcado');
+  ok(v1.needsReview === true, 'un SKU que no vino queda marcado para revisar');
+  ok(/pto-ausente/.test(ctx._catRowHTML(v1, 0, 'data-i', {admin:true})), 'la fila del SKU ausente lleva el punto amarillo');
+  ok(!/pto-ausente/.test(filaP1), 'la fila de un SKU que vino no lo lleva');
+  ok(/Consultar al PM/.test(ctx._catRowHTML(v1, 0, 'data-i', {admin:true})), 'el punto dice que hay que consultar al PM');
+  const marcado = ctx.products.find(p => p.sku === '772D0AA');
+  ok(marcado.needsReview === true, 'el SKU que faltó en el segundo archivo quedó marcado');
+  ctx.processRows(rows);
+  ok(!ctx.products.find(p => p.sku === '772D0AA').needsReview, 'y se le saca la marca cuando vuelve a venir');
+}
+
 console.log('\n' + (fallos
   ? ('✗ ' + fallos + ' de ' + corridas + ' fallaron\n')
   : ('✓ ' + corridas + '/' + corridas + ' OK\n')));

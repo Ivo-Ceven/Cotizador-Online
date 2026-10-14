@@ -191,6 +191,7 @@ function saveNewProd(){
            no se toca: no es un campo de `precios`. */
         var dealPrevio = products[i].precios && products[i].precios[CEVEN_TIER_DEAL];
         products[i].precios=datos.precios;
+        delete products[i].needsReview;   // precio confirmado a mano
         if(typeof dealPrevio === 'number') products[i].precios[CEVEN_TIER_DEAL] = dealPrevio;
         products[i].iva=datos.iva; products[i].ivaPct=datos.ivaPct;
         break;

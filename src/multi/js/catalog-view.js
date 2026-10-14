@@ -208,7 +208,7 @@ function _catRowHTML(p){
     + '</td>'
     + '<td><span class="mk mk-' + cevenEsc(p.brand) + '">' + cevenEsc(cevenMultiMarcaLabel(p.brand)) + '</span></td>'
     + '<td style="font-weight:500;font-size:12px;font-family:monospace">' + cevenEsc(p.sku) + '</td>'
-    + '<td class="wrap">' + cevenEsc(p.description) + '</td>'
+    + '<td class="wrap">' + cevenEsc(p.description) + cevenPuntoAusente(p) + '</td>'
     + '<td style="text-align:right;white-space:nowrap">'
       + (precio === null
           ? '<span class="sub" title="Sin precio para el nivel elegido: se completa a mano en el pedido">—</span>'

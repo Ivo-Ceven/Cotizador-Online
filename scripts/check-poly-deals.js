@@ -100,6 +100,7 @@ function filasPromos(){
 
 /* ---- Cargar el importador real, con lo justo del entorno del navegador ----- */
 function cargarCatalogo(productosIniciales){
+  const safe = fs.readFileSync(path.join(ROOT, 'src/shared/safe.js'), 'utf8');
   const opc  = fs.readFileSync(path.join(ROOT, 'src/shared/opciones.js'), 'utf8');
   const core = fs.readFileSync(path.join(ROOT, 'src/shared/catalog-core.js'), 'utf8');
   const cat  = fs.readFileSync(path.join(ROOT, 'src/poly/js/catalog.js'), 'utf8');
@@ -148,6 +149,7 @@ function cargarCatalogo(productosIniciales){
   ctx.window = ctx;
   ctx.globalThis = ctx;
   vm.createContext(ctx);
+  vm.runInContext(safe, ctx);
   vm.runInContext(opc, ctx);
   vm.runInContext(core, ctx);
   vm.runInContext(cat, ctx);

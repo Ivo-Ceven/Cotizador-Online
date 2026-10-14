@@ -152,13 +152,14 @@ ok(/no es un número válido/.test(ctx._els['nperr'].textContent),
 /* ---- Edición: no se pierden los campos que el formulario no toca ----------- */
 ctx = cargar({ sku:'X-3', desc:'Nuevo nombre', rubro:'Audio', stock:'7', iva:'21%',
                precios:[['Ceven - Tier 1','100']] });
-ctx.products.push({ id:'m9', sku:'X-3', description:'Viejo', manual:true, needsReview:true });
+ctx.products.push({ id:'m9', sku:'X-3', description:'Viejo', manual:true, needsReview:true, campoAjeno:'x' });
 ctx.editingManualId = 'm9';
 ctx.saveNewProd();
 const editado = ctx.products[0];
 ok(ctx.products.length === 1, 'editar no duplica la fila');
 ok(editado.description === 'Nuevo nombre' && editado.stock === 7, 'los campos editados se aplican');
-ok(editado.needsReview === true, 'un campo que el formulario NO edita sobrevive a la edición');
+ok(editado.campoAjeno === 'x', 'un campo que el formulario NO edita sobrevive a la edición');
+ok(!editado.needsReview, 'editar el artículo a mano le saca el punto amarillo (precio confirmado)');
 ok(editado.manual === true, 'sigue siendo manual después de editar');
 
 console.log('\n' + (fallos

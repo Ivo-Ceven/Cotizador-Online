@@ -240,7 +240,7 @@
   <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <div id="plbadge" class="bk bkw">Sin catálogo</div>
     <div style="flex:1;min-width:8px"></div>
-    <button class="bo" onclick="document.getElementById('plup').click()" title="Excel de NetSuite: reemplaza el catálogo, los precios por nivel, el stock y el IVA">📂 Catálogo NetSuite</button>
+    <button class="bo" onclick="document.getElementById('plup').click()" title="Excel de NetSuite: actualiza los precios por nivel, el stock y el IVA de los SKU que ya están y suma los nuevos. No borra los que el archivo no trae">📂 Catálogo NetSuite</button>
     <!-- `this.value=''` después de leer: sin eso, volver a elegir EL MISMO
          archivo no dispara `change` y no pasa nada — sin error y sin aviso.
          Es facil caer ahi al reintentar despues de corregir el archivo.
@@ -272,7 +272,7 @@
           <li><code>Programa fiscal</code> — <i>IVA GENERAL</i> (21 %) o <i>IVA REDUCIDO</i> (10,5 %)</li>
           <li><code>RUBRO</code> — la categoría de los globitos del filtro</li>
         </ul>
-        <div style="margin-top:4px"><b>Qué hace:</b> <b>reemplaza</b> el catálogo entero. Conserva los artículos cargados a mano.</div>
+        <div style="margin-top:4px"><b>Qué hace:</b> <b>no borra nada</b>: actualiza los precios (y el stock y el IVA) de los SKU que ya estaban y suma los nuevos. Los productos que el archivo no trae se quedan como estaban, con su precio anterior; para sacar uno, se borra desde el catálogo.</div>
       </div>
 
     </div>

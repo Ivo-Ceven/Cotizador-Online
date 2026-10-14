@@ -57,7 +57,8 @@ const paginas = {
   'legamaster/index.html':  'legamaster/',
   'huawei/index.html':      'huawei/',
   'multi/index.html':       'multi/',
-  'tareas/index.html':      'tareas/'
+  'tareas/index.html':      'tareas/',
+  'compras/index.html':     'compras/'
 };
 for (const [pagina, base] of Object.entries(paginas)) {
   const html = fs.readFileSync(path.join(SRC, pagina), 'utf8');

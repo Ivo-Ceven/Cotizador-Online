@@ -182,7 +182,7 @@
       if(faltan.length){
         msg = 'La base todavía no tiene ' + (faltan.length === 1 ? 'la columna' : 'las columnas') + ' '
             + faltan.join(', ') + ': eso no se está guardando. Faltan correr las migraciones de '
-            + 'supabase/migrations (20260804180000 y 20260804200000).';
+            + 'supabase/migrations (20260805123431 y 20260805123449).';
       } else if(eq.length <= 1){
         msg = 'Este tablero tiene un solo miembro. Sumá gente con ⚙ para poder delegarle tareas.';
       }

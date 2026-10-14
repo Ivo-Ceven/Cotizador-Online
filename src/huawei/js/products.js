@@ -186,6 +186,7 @@ function saveNewProd(){
            que reemplazarlo no pierde ninguno. (En Poly acá hay que rescatar el
            precio de DEAL, que el formulario no muestra.) */
         products[i].precios=datos.precios;
+        delete products[i].needsReview;   // precio confirmado a mano
         products[i].iva=datos.iva; products[i].ivaPct=datos.ivaPct;
         break;
       }

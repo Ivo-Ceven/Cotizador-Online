@@ -189,7 +189,7 @@
   <div class="card" style="margin:0 0 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <div id="plbadge" class="bk bkw">Sin catálogo</div>
     <div style="flex:1;min-width:8px"></div>
-    <button class="bo" onclick="document.getElementById('plup').click()" title="Excel de Legamaster: reemplaza el catálogo entero (categoría, precios por nivel, IVA, link y disponibilidad)">📂 Cargar lista de precios</button>
+    <button class="bo" onclick="document.getElementById('plup').click()" title="Excel de Legamaster: actualiza precios por nivel, IVA, link y disponibilidad de los SKU que ya están y suma los nuevos. No borra los que el archivo no trae">📂 Cargar lista de precios</button>
     <input type="file" id="plup" accept=".csv,.tsv,.txt,.xls,.xlsx" style="display:none" onchange="handlePL(this.files[0]);this.value=''">
   </div>
 
@@ -207,7 +207,7 @@
         <li><code>Link</code> — la ficha del producto (se muestra como 🔗 al lado de la descripción)</li>
         <li><code>Stock</code> — texto libre de disponibilidad ("Consultar Stock", "Entrega 7 días de PO"…)</li>
       </ul>
-      <div style="margin-top:4px"><b>Qué hace:</b> <b>reemplaza</b> el catálogo entero. Conserva los artículos cargados a mano.</div>
+      <div style="margin-top:4px"><b>Qué hace:</b> <b>no borra nada</b>: actualiza los precios (y el IVA, el link y la disponibilidad) de los SKU que ya estaban y suma los nuevos. Los productos que el archivo no trae se quedan como estaban, con su precio anterior; para sacar uno, se borra desde el catálogo.</div>
       <div style="margin-top:4px">Un SKU repetido con un producto distinto (pasa en algunos artículos de Mounting) se carga igual, con un sufijo interno, y queda marcado <b>⚠ SKU a confirmar</b> hasta que Legamaster confirme el código correcto.</div>
     </div>
   </details>

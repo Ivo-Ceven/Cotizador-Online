@@ -8,7 +8,7 @@
    datos de negocio comunes, con RLS ceven_is_staff()/
    ceven_is_writer() igual que `clientes`/`pipeline` — el staff ya
    puede leerlas y escribirlas directo por REST con su propio JWT.
-   Ver supabase/migrations/20260821120000_regi_deal_registration.sql.
+   Ver supabase/migrations/20260821141214_regi_deal_registration.sql.
 
    Solo vive en el shell (src/index.html), que es donde está el
    modal `#ceven-regi-modal`; navbar.js solo pinta el botón 🎯 si

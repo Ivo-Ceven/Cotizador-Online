@@ -231,5 +231,19 @@ if(!ARCHIVOS.length){
   ok(/1 actualizados, 3 nuevos/.test(ctx2._toast || ''), 'el aviso resume el merge', ctx2._toast);
 }
 
+/* ---- 3) Cargar de nuevo un archivo con menos SKU no vacía el catálogo ------- */
+/* El botón "Cargar Excel/CSV" ya no reemplaza: es el mismo merge. */
+{
+  const n = ctx2.products.length;
+  ctx2._toast = '';
+  ctx2.processRows(filasA);
+  ok(ctx2.products.length === n, 'cargar un archivo con menos SKU no quita los que no vienen', n + ' → ' + ctx2.products.length);
+  ok(ctx2.products.some(p => p.needsReview), 'los que no vinieron quedan marcados "a revisar"');
+  const aus = ctx2.products.find(p => p.needsReview), vino = ctx2.products.find(p => !p.needsReview);
+  ok(/pto-ausente/.test(ctx2._catChapitas(aus)) && /Consultar al PM/.test(ctx2._catChapitas(aus)),
+     'el ausente lleva el punto amarillo que manda a consultar al PM');
+  ok(!/pto-ausente/.test(ctx2._catChapitas(vino)), 'el que vino no lleva el punto');
+}
+
 console.log('\n' + (fallos ? '✗ ' + fallos + ' de ' + corridas + ' fallaron' : '✓ ' + corridas + ' chequeos OK') + '\n');
 process.exit(fallos ? 1 : 0);

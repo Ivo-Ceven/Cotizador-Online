@@ -3,7 +3,7 @@
 -- Ver docs/HISTORIAL.md (25/08/2026) y el plan de diseño para el porqué.
 --
 -- Exclusivo de Poly a propósito, mismo criterio que regi_codigos/
--- regi_solicitudes (20260821120000_regi_deal_registration.sql): sin columna
+-- regi_solicitudes (20260821141214_regi_deal_registration.sql): sin columna
 -- `brand`.
 --
 -- No es un log de cambios: cada importación del Excel deja esta tabla

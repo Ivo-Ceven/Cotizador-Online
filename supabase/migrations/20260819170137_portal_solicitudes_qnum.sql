@@ -1,0 +1,2 @@
+alter table public.portal_solicitudes add column if not exists pipeline_qnum text;
+comment on column public.portal_solicitudes.pipeline_qnum is 'N° de cotización formateado (ej. "0071") de la marca real — así el portal lo muestra sin tener que leer pipeline, que le está vedado por RLS.';

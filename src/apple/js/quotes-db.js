@@ -196,8 +196,11 @@ function copiarCotizacion(){
   cevenPintarQNum();
   cevenEditandoQNum(null);   // es una copia nueva, no la original
   // Clonar productos y garantías (ids nuevos y únicos para los items)
-  items = items.map(function(it){ return Object.assign({}, it, { id: _nextItemId() }); });
-  warrantyItems = warrantyItems.map(function(w){ return Object.assign({}, w); });
+  /* `lid: ''`: la copia es OTRA cotización, sus líneas necesitan ids propios. Si
+     compartieran el `_lid` con el original, una línea movida de una a la otra
+     (facturación) chocaría con su gemela en la clave del pipeline. */
+  items = items.map(function(it){ return Object.assign({}, it, { id: _nextItemId(), lid: '' }); });
+  warrantyItems = warrantyItems.map(function(w){ return Object.assign({}, w, { lid: '' }); });
   // Clonar overrides de Nac de la cotización
   quoteNacOverrides = Object.assign({}, quoteNacOverrides);
   // El resto de los campos (cliente, ejecutivo, observaciones, mes, estado, fecha efectiva,
@@ -236,6 +239,7 @@ function copiarCotizacionHist(qn){
   var isAdmin = cevenIsAdmin();
   rows.forEach(function(r){
     var c=Object.assign({}, r);
+    if(c['_lid']) c['_lid'] = cevenLidNuevo();   /* ids propios: ver copiarCotizacion() */
     c['N° Cotización']=newQn;
     c['Fecha']=date;
     c['Hora']=time;
@@ -293,7 +297,10 @@ function editQuoteFromHistory(qn, skipUndoToast){
   quoteNacOverrides = {};
   // Opciones A/B: qué líneas son de cuál y cuál es la vigente (shared/opciones.js).
   cevenOpcCargarDeFilas(rows);
-  rows.forEach(function(r){
+  /* Id estable de cada línea (shared/opciones.js). Mismo filtro de `Tipo` que
+     usa el pipeline de Apple para armar sus claves. */
+  var _lids = cevenLidsDeFilas(rows, ['producto','garantia']);
+  rows.forEach(function(r, _li){
     if(r['Tipo']==='meta_nac' && r['_qnac']){
       try{ quoteNacOverrides = JSON.parse(r['_qnac']); } catch(e){}
       return;
@@ -304,6 +311,7 @@ function editQuoteFromHistory(qn, skipUndoToast){
         // La opción manda desde la COLUMNA de la fila: `_wdata` de una cotización
         // guardada antes de 08/2026 no la trae.
         _w.opc = cevenOpcDe(r);
+        _w.lid = _lids[_li];
         warrantyItems.push(_w);
       } catch(e){}
       return;
@@ -350,7 +358,8 @@ function editQuoteFromHistory(qn, skipUndoToast){
       taxes: taxesVal,
       nacIncluded: r['_nacIncluded'] === true || r['_nacIncluded'] === 'true' || r['_nacIncluded'] === 1,
       manualMargin: isManualMg,
-      opc: cevenOpcDe(r)
+      opc: cevenOpcDe(r),
+      lid: _lids[_li]
     });
   });
   // Resetear sort para que los productos cargados queden en orden de importación

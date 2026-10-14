@@ -99,7 +99,7 @@ function archiveOldEntries(){
     var entryChanged = false;
 
     lines.forEach(function(ln, idx){
-      var lk    = (ln['SKU']||'')+'|'+idx;
+      var lk    = cevenSkuLineKey(ln, idx);
       var tQty  = parseInt(ln['Cantidad'])||0;
       var already = (r.skuArchivedQty && parseInt(r.skuArchivedQty[lk])) || 0;
       var remainQty = tQty - already;
@@ -195,8 +195,8 @@ function archiveOldEntries(){
          sobre las líneas de esta misma cotización y partirla rompería ese
          conteo (DOCUMENTACION.md: borrarlo provoca doble conteo). */
       var quedaPendiente = lines.some(function(ln, idx){
-        var k = (ln['SKU']||'')+'|'+idx;
-        var ya = (r.skuArchivedQty && parseInt(r.skuArchivedQty[k])) || 0;
+        var k = cevenSkuLineKey(ln, idx);
+        var ya =(r.skuArchivedQty && parseInt(r.skuArchivedQty[k])) || 0;
         return (parseInt(ln['Cantidad'])||0) - ya > 0;
       });
       var huboFacturado = Object.keys(archByMonth).length > 0;

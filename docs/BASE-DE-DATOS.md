@@ -1,6 +1,6 @@
 # Base de datos · Esquema (Supabase)
 
-Proyecto activo: **`iqewnebpdyctexavtpmt`** (config en `src/shared/config.js`). Este documento describe el esquema desplegado y cómo lo usa la app. Estado 2026-07-14: tablas + policies + Edge Function **aplicadas**.
+Proyecto activo: **`iqewnebpdyctexavtpmt`** (config en `src/shared/config.js`). Este documento describe el esquema desplegado y cómo lo usa la app. Estado del esquema verificado contra la base real el 13/10/2026 (las secciones de abajo se fueron ampliando desde 2026-07-14).
 
 La app habla con Supabase **por REST puro** (sin SDK):
 
@@ -34,6 +34,9 @@ create table public.pipeline (
   monto           numeric,
   "margenPond"    numeric,
   moneda          text,
+  -- Todos los mapas "sku*" usan como clave `SKU|<_lid>` (desde 13/10/2026): `_lid` es el
+  -- id estable que lleva cada fila de cquotes. Las cotizaciones viejas, sin `_lid`,
+  -- usan `SKU|<índice>` hasta que se re-guardan. Ver docs/HISTORIAL.md (13/10/2026).
   "skuStatus"        jsonb,   -- overrides de estado por línea de producto.
                               -- Desde 03/09/2026 la usan LAS TRES marcas (antes solo
                               -- Apple): el estado de la fila vale para todos sus
@@ -70,20 +73,11 @@ create table public.pipeline (
 -- Nota: qMac/qIph/qIpad/qServ/qAcc/montoMac.../qNum/margenPond/skuMesCierre/skuPartial*/ovLink
 -- son 100% de brand='apple' (skuStatus YA NO: ver arriba) — para brand='poly' quedan siempre NULL (agregados 2026-07-24, migración aditiva).
 --
--- 🔴 FALTA "esFOB" (boolean), Y EL CLIENTE LA ESCRIBE.
--- Este bloque describe la base REAL, verificada contra information_schema el
--- 12/08/2026. La columna "esFOB" está en
--- supabase/migrations/20260909120000_pipeline_esfob_y_comentarios.sql (extraída
--- el 09/09/2026 del viejo 20260803120000, que se eliminó porque empezaba
--- borrando datos reales de Poly — ver docs/HISTORIAL.md). Esa migración aún NO
--- se aplicó.
---
--- Consecuencia mientras no se aplique: TODO insert/upsert que incluya "esFOB" se
--- rechaza con 400 y la fila entera no entra. Le pasa al multimarca al emitir
--- Apple, y al propio cotizador de Apple, cuyo `pipeCols` la incluye — ahí
--- sync.js se come el error con un console.warn, así que falla en silencio (0
--- filas de Apple en la tabla). El arreglo es aditivo y de una línea:
---     alter table public.pipeline add column if not exists "esFOB" boolean;
+-- "esFOB" (boolean): YA ESTÁ APLICADA (verificado contra la base el 13/10/2026).
+-- La agrega supabase/migrations/20260909120000_pipeline_esfob_y_comentarios.sql
+-- (extraída el 09/09/2026 del viejo 20260803120000, que se eliminó porque
+-- empezaba borrando datos reales de Poly — ver docs/HISTORIAL.md). Este bloque
+-- decía que faltaba: estaba desactualizado.
 
 -- Tareas del equipo: organizador colaborativo del SHELL (src/index.html), NO es
 -- de una marca — sin columna brand, un solo checklist compartido entre Apple y
@@ -137,7 +131,7 @@ create table public.equipos (
 -- fuera aislamiento real habría que filtrar por pertenencia en las policies
 -- (join contra `equipos.miembros` con `auth.jwt() ->> 'email'`) y que el
 -- cliente pida solo su equipo — ver el encabezado de la migración
--- 20260804200000_tareas_equipos.sql.
+-- 20260805123449_tareas_equipos.sql.
 alter table public.todos enable row level security;
 create policy "authenticated full access" on public.todos
   for all to authenticated using (true) with check (true);
@@ -172,7 +166,7 @@ Requisitos que impone `sync.js`:
 
 La sync manda `apikey` = publishable key y `Authorization: Bearer <access_token del usuario>` (lo toma de `ceven_auth_session` en cada request, con retry post-refresh si expira). Las policies exigen usuario logueado; el rol `anon` no tiene ningún privilegio:
 
-Desde el **31/07/2026** hay cuatro policies por tabla (una por operación) en vez de una sola `for all using(true)`. Las definen las migraciones `20260730120000_rls_por_rol_y_marca.sql` y `20260731090000_exigir_dominio_ceven.sql`; el detalle y el porqué están ahí y en `HISTORIAL.md`. En resumen:
+Desde el **31/07/2026** hay cuatro policies por tabla (una por operación) en vez de una sola `for all using(true)`. Las definen las migraciones `20260731180813_rls_por_rol_y_marca.sql` y `20260731185148_exigir_dominio_ceven.sql`; el detalle y el porqué están ahí y en `HISTORIAL.md`. En resumen:
 
 | Quién | Lee | Escribe |
 |---|---|---|
@@ -288,8 +282,8 @@ calcado del modal de Usuarios existente.
 
 Un cliente-canal puede pedir, durante la cotización, que se le aplique la
 lista de precios de un negocio registrado ante Poly. Migración
-`20260821120000_regi_deal_registration.sql` (refinada por
-`20260821121500_regi_solicitar_informa_rechazo_previo.sql`). Detalle
+`20260821141214_regi_deal_registration.sql` (refinada por
+`20260821142329_regi_solicitar_informa_rechazo_previo.sql`). Detalle
 completo y el porqué de cada decisión en `docs/HISTORIAL.md` (21/08/2026).
 
 ```sql
@@ -342,6 +336,12 @@ cliente-canal** (nunca lee esta tabla directo). `regi_solicitudes` —
 🎯 "Códigos REGI" del shell aprueba/rechaza con un `PATCH` directo, sin
 Edge Function), **sin policy de `insert` para `authenticated`** — el único
 insert lo hace `portal_regi_solicitar()`.
+
+## 1c. Forecast de compras (13/10/2026)
+
+La página `src/compras/` no tiene tablas propias: lee `pipeline` y `cotizaciones` y guarda su configuración en `app_settings` con `brand = 'compras'` y `key = 'fc_config'` (JSON con las probabilidades base, umbrales y parámetros de envejecimiento; la escribe solo el admin, porque `ceven_can_write_brand('compras')` solo es cierto para admin o ventas sin restricción de marcas). No interfiere con el sync de los cotizadores, que filtra por su propia marca.
+
+**Pendiente de aplicar:** `supabase/pendientes/pipeline_transiciones_log.sql` — tabla `pipeline_transiciones` (una fila por cada entrada de un negocio a un estado) y trigger `trg_pipeline_log_transicion` sobre `pipeline`. Es lo que permite calibrar las probabilidades con lo que realmente pasó. Mientras no exista, la página funciona sin calibración. Ver docs/HISTORIAL.md (13/10/2026, "Compras estimadas").
 
 ## 2. Autenticación (GoTrue)
 

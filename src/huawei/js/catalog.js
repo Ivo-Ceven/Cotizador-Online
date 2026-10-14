@@ -27,7 +27,8 @@ function _ayudaExcelAuto(){
 /* ── EL EXCEL DEL CATÁLOGO ────────────────────────────────────────────────────
    Un solo archivo: el catálogo y los precios por nivel, de NetSuite (búsqueda
    guardada "ResultadosPreviewCatalogDistri"). Formato largo: una fila por
-   (SKU × depósito × nivel de precio). REEMPLAZA el catálogo.
+   (SKU × depósito × nivel de precio). NO reemplaza el catálogo: lo mezcla (ver
+   cevenMezclarCatalogo() en shared/catalog-core.js).
 
    Poly tiene acá un SEGUNDO importador —la hoja "Promos" del BOM Calculator de
    HP, con los precios de deal— y por eso decide por el CONTENIDO del archivo y
@@ -195,16 +196,11 @@ function processRows(rows) {
     nuevos = Object.keys(seen).map(function(k){ return seen[k]; });
   }
 
-  /* Los SKUs cargados a mano (p.manual) NO están en el archivo del ERP: si se
-     pisara la lista entera con lo importado, cada importación los borraría.
-
-     (En Poly se conservan además los precios de deal del OTRO Excel; acá no
-     hay deals, así que lo único que hay que rescatar son los manuales.) */
-  var conservar = (products||[]).filter(function(p){ return p.manual; });
-
-  var enArchivo = {};
-  nuevos.forEach(function(p){ enArchivo[p.sku] = 1; });
-  products = nuevos.concat(conservar.filter(function(p){ return !enArchivo[p.sku]; }));
+  /* NO reemplaza el catálogo: actualiza los precios de los SKU que ya estaban,
+     suma los nuevos y deja en paz lo que el archivo no menciona (los cargados a
+     mano incluidos). Ver cevenMezclarCatalogo() en shared/catalog-core.js. */
+  var mezcla = cevenMezclarCatalogo(products, nuevos);
+  products = mezcla.lista;
 
   // El catálogo ya está en memoria: se muestra igual, pero si no se pudo persistir
   // hay que decirlo en vez de dejar el cartel de "OK".
@@ -215,7 +211,8 @@ function processRows(rows) {
     var conTier = nuevos.filter(function(p){
       return Object.keys(p.precios).length > 0;
     }).length;
-    showToast('✓ ' + nuevos.length + ' productos · ' + conTier + ' con precios por nivel');
+    showToast('✓ ' + mezcla.actualizados + ' actualizados · ' + mezcla.nuevos + ' nuevos · ' + conTier + ' con precios por nivel'
+      + cevenAvisoAusentes(mezcla.ausentes) + ' · catálogo: ' + products.length);
   }
 }
 
@@ -415,6 +412,7 @@ function _catRowHTML(p, idx, idAttr, opts){
       // El rubro viene de la columna RUBRO del archivo del ERP y es informativo.
       +(p.rubro ? ' <span style="font-size:10px;color:#6e6e73;background:#f0f0f3;padding:1px 6px;border-radius:8px;white-space:nowrap">'+cevenEsc(p.rubro)+'</span>' : '')
       +(p.manual ? ' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Artículo cargado a mano, no vino del Excel del ERP">manual</span>' : '')
+      +cevenPuntoAusente(p)
     +'</td>'
     /* Los 4 niveles, uno debajo del otro: es la única vista donde se pueden
        comparar. El selector de la cotización muestra el precio al lado de cada

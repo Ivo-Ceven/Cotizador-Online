@@ -124,7 +124,7 @@ function renderSkuDashboard(){
     var lines=cevenOpcFilasDeCotiz(db, r.qNum, ['producto']);
     lines.forEach(function(ln,idx){
       var sku=ln['SKU']||'—', desc=ln['Descripción']||'';
-      var lk=sku+'|'+idx;
+      var lk=cevenSkuLineKey(ln, idx);
       var tQty=parseInt(ln['Cantidad'])||0;
       var arch=(r.skuArchivedQty&&parseInt(r.skuArchivedQty[lk]))||0;
       if(arch>0) add(sku,desc,'Facturado',arch,r.cliente,'archivado');
@@ -355,7 +355,7 @@ function renderTargetAnual(){
       var r2=Object.assign({},r); delete r2.skuStatus; delete r2.skuPartialQty; _acumFacturado(r2); return;
     }
     lines.forEach(function(ln,idx){
-      var lk = (ln['SKU']||'')+'|'+idx;
+      var lk = cevenSkuLineKey(ln, idx);
       var st = (r.skuStatus && r.skuStatus[lk]) || defSt;
       var mc = (r.skuMesCierre && r.skuMesCierre[lk]!==undefined) ? r.skuMesCierre[lk] : defMes;
       if(st!=='Facturado') return;
@@ -503,7 +503,7 @@ function renderTargetAnual(){
     var pLines = cevenOpcFilasDeCotiz(_tgtDB, pr.qNum, ['producto','garantia']);
     if(!pLines.length){ _addRoot(defSt, pr); return; }
     pLines.forEach(function(ln,idx){
-      var lk  = (ln['SKU']||'')+'|'+idx;
+      var lk  = cevenSkuLineKey(ln, idx);
       var st  = (pr.skuStatus && pr.skuStatus[lk]) || defSt;
       var archQ = (pr.skuArchivedQty && parseInt(pr.skuArchivedQty[lk])) || 0;
       var qty = Math.max(0,(parseInt(ln['Cantidad'])||0) - archQ);

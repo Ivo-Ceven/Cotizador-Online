@@ -77,8 +77,7 @@ function handlePL(files) {
 // Los archivos de Apple traen cuatro filas de avisos ANTES del encabezado, así
 // que sheet_to_json() con el header por defecto devolvía columnas "__EMPTY…" y
 // la carga moría con "No se encontró Selling Price". Hay que ubicar la fila del
-// encabezado a mano — la cuenta ya la hacía handlePriceUpdate() y ahora la
-// comparten los dos caminos. Se piden DOS encabezados conocidos en la misma
+// encabezado a mano. Se piden DOS encabezados conocidos en la misma
 // fila: una celda suelta que diga "SKU" en el texto de arriba no es la tabla.
 var _PL_HEADERS = ['model #','model#','sku','selling price','sellingprice','price',
                    'model description','description','country','lob','model','status'];
@@ -184,64 +183,13 @@ function _plFold(rows){
   return {cols:c, order:order, bySku:bySku, leidas:leidas};
 }
 
-// Carga completa: REEMPLAZA el catálogo con lo que traigan el/los archivo(s).
-// El camino que conserva lo que ya había (y los productos manuales) es
-// handlePriceUpdate().
+// La carga NO reemplaza el catálogo: es un merge. Actualiza el costo de los SKU
+// que ya existen, agrega los nuevos y conserva intactos los productos manuales
+// y los que no aparecen en el/los archivo(s) (esos quedan marcados "Revisar
+// costo"). Quien quiera sacar un producto lo borra desde el catálogo.
 function processRows(rows) {
   if(!rows.length){ showErr('Archivo vacío.'); return; }
-  var fold = _plFold(rows);
-  if(!fold.cols.sku || !fold.cols.price){
-    showErr('No se encontró "Model #" o "Selling Price". Columnas: '+Object.keys(rows[0]).join(', '));
-    return;
-  }
-  products = fold.order.map(function(sku, i){
-    var p = fold.bySku[sku];
-    p.id = i;
-    return p;
-  });
-  // El catálogo ya está en memoria: se muestra igual, pero si no se pudo persistir
-  // hay que decirlo en vez de dejar el cartel de "OK".
-  var okPL = cevenLsSet('cpl',JSON.stringify(products));
-  showErr(okPL ? '' : '⚠ El price list se cargó en pantalla pero NO se pudo guardar: se pierde al recargar.');
-  initCat();
-  if(okPL && typeof showToast === 'function'){
-    var plegadas = fold.leidas - products.length;
-    showToast('✓ Price list cargado: '+products.length+' productos'
-      + (plegadas>0 ? ' · '+plegadas+' fila(s) repetida(s), se conservó el precio más alto' : '') + '.');
-  }
-}
-
-// ── Actualizar precios (merge): a diferencia de processRows(), NO reemplaza el catálogo.
-// Solo actualiza el costo de los SKU que ya existen, agrega los nuevos, y conserva
-// intactos los productos manuales y los que no aparecen en el/los archivo(s) nuevo(s).
-function handlePriceUpdate(files){
-  if(!files || !files.length) return;
-  var fileList = Array.prototype.slice.call(files);
-  var allRows = [];
-  var pending = fileList.length;
-  var hadError = false;
-
-  fileList.forEach(function(f){
-    var r = new FileReader();
-    r.onload = function(e){
-      try {
-        var wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-        var rows = _plWorkbookRows(wb);
-        if(!rows){
-          hadError = true;
-          showErr('No se encontraron encabezados ("Model #" / "Selling Price") en '+f.name+'.');
-        } else {
-          allRows = allRows.concat(rows);
-        }
-      } catch(er){
-        hadError = true;
-        showErr('Error leyendo '+f.name+': '+er.message);
-      }
-      pending--;
-      if(pending === 0) finishPriceUpdate(allRows, hadError);
-    };
-    r.readAsArrayBuffer(f);
-  });
+  finishPriceUpdate(rows, false);
 }
 
 function finishPriceUpdate(rows, hadError){
@@ -435,7 +383,7 @@ function _catChapitas(p){
   var ch = '';
   if(p.manual)      ch += ' <span style="font-size:10px;color:#0071e3;font-weight:600;background:#e8f4ff;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Artículo cargado a mano, no vino del price list">manual</span>';
   if(p.nacIncluded) ch += ' <span style="font-size:10px;color:#6e36c8;font-weight:600;background:#f0e8ff;padding:1px 6px;border-radius:8px;white-space:nowrap" title="Precio ya nacionalizado">NAC✓</span>';
-  if(p.needsReview) ch += ' <span style="font-size:10px;color:#c84e00;font-weight:600;background:#fff3e0;padding:1px 6px;border-radius:8px;white-space:nowrap" title="No apareció en la última actualización de precios — verificar costo">⚠ Revisar costo</span>';
+  ch += cevenPuntoAusente(p);   // el punto amarillo: no vino en la última carga
   return ch;
 }
 
