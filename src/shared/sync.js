@@ -418,6 +418,7 @@
     // como cambiada en cada poll y la tabla se re-renderiza para siempre.
     C.coerce = function(r){
       delete r.brand;   // dato redundante localmente (este cotizador es 100% de su marca)
+      delete r.updated_at;   // solo lo usa la huella del poll; no tiene por qué quedar en localStorage
       var i, c;
       for(i = 0; i < NUMC.length; i++){
         c = NUMC[i];
@@ -943,16 +944,62 @@
   }
   window.addEventListener('online', function(){ flushDirty('volvió la red'); });
   document.addEventListener('visibilitychange', function(){
-    if(document.visibilityState === 'visible') flushDirty('pestaña visible');
+    if(document.visibilityState === 'visible'){ flushDirty('pestaña visible'); poll(); }
   });
 
-  /* ---------- Poll ---------- */
+  /* Las claves que son colección (cquotes) viajan también como blob en
+     app_settings, pero el poll no las lee nunca (ver coleccionDe más abajo):
+     se excluyen en el servidor para no bajar ~50 KB ignorados en cada vuelta. */
+  function settingsPollPath(cols){
+    var excl = COLECCIONES.map(function(C){ return '"' + encodeURIComponent(C.key) + '"'; });
+    return 'app_settings?' + BQ + '&select=' + cols + (excl.length ? '&key=not.in.(' + excl.join(',') + ')' : '');
+  }
+
+  /* ---------- Huella ----------
+     Antes de bajar una tabla entera se pide solo `id,updated_at` (un trigger
+     en la base lo actualiza en cada insert/update, ver la migración
+     20261019120000). Si la huella es la misma que la última vez que se
+     APLICÓ, en el servidor no cambió nada —ni altas, ni ediciones, ni
+     borrados— y se saltea la descarga: pasa de ~100+ kB a unos pocos kB.
+
+     La huella se guarda solo cuando lo bajado quedó aplicado (o ya era igual):
+     si una vuelta se cortó a mitad (keyBusy, local ilegible, no se pudo
+     escribir), la próxima tiene que volver a bajar todo. Cada FORZAR_CADA
+     vueltas se baja completo igual, como red de seguridad para cualquier
+     camino que haya tocado el localStorage sin marcarlo sucio. null = no hay
+     huella (GET fallido o base sin la columna): se baja completo. */
+  /* ~20 min con POLL_MS = 15 s. En Poly una vuelta completa son ~780 kB contra
+     ~20 kB de huella: forzarla cada 5 min ya se comía la mitad del ahorro. */
+  var FORZAR_CADA = 80;
+  var _vueltas = 0;
+  var _settingsFp = null;
+  function huellaDe(res, campo){
+    if(!res.ok) return null;
+    return res.data.map(function(r){ return r[campo] + '@' + r.updated_at; }).sort().join('|');
+  }
+  function olvidarHuellas(){
+    COLECCIONES.forEach(function(C){ C.fp = null; });
+    _settingsFp = null;
+  }
+
+  /* ---------- Poll ----------
+     Con la pestaña oculta no se pide nada: una pestaña olvidada abierta todo
+     el día era casi todo el egreso de Supabase. Al volver a estar visible se
+     repasa en el acto (arriba). */
   function poll(){
     notifyPending();   // el contador depende del tiempo (gracia de _dirty)
+    if(document.visibilityState === 'hidden') return;
     if(!_booted || _paused || _pushing > 0 || !sessionOk()) return;
+    if(++_vueltas % FORZAR_CADA === 0) olvidarHuellas();
 
     COLECCIONES.forEach(function(C){
-      fetchRows(C.tabla + '?' + BQ + '&select=*').then(function(res){
+      fetchRows(C.tabla + '?' + BQ + '&select=id,updated_at').then(function(h){
+        var fp = huellaDe(h, 'id');
+        if(fp !== null && fp === C.fp) return null;   // sin cambios en el servidor
+        return fetchRows(C.tabla + '?' + BQ + '&select=*').then(function(res){ return {res: res, fp: fp}; });
+      }).then(function(x){
+        if(!x) return;
+        var res = x.res;
         if(!res.ok) return;                // GET fallido: NO se toca nada
         if(keyBusy(C.key)) return;         // cambio propio sin confirmar: primero sube lo nuestro
         var serverRows = res.data;
@@ -989,17 +1036,25 @@
 
         // C.norm compara solo las columnas sincronizadas (C.pick ignora las
         // localOnly), así que una diferencia únicamente local no reescribe nada.
-        if(C.norm(read.rows) === C.norm(merged)) return;
+        if(C.norm(read.rows) === C.norm(merged)){ C.fp = x.fp; return; }
         if(!C.write(merged)) return;       // no se pudo guardar: el snapshot NO puede avanzar
+        C.fp = x.fp;
         C.snap = {};
         merged.forEach(function(r){ if(r.id != null) C.snap[r.id] = C.snapKey(r); });
         try{ C.alCambiar(); }catch(e){ console.warn('[sync] render de "' + C.key + '"', e); }
       });
     });
 
-    fetchRows('app_settings?' + BQ + '&select=*').then(function(res){
+    fetchRows(settingsPollPath('key,updated_at')).then(function(h){
+      var fp = huellaDe(h, 'key');
+      if(fp !== null && fp === _settingsFp) return null;   // sin cambios en el servidor
+      return fetchRows(settingsPollPath('key,value')).then(function(res){ return {res: res, fp: fp}; });
+    }).then(function(x){
+      if(!x) return;
+      var res = x.res;
       if(!res.ok) return;
       var changed = {};
+      var completo = true;                 // ¿quedó aplicado todo lo bajado? (ver Huella)
       res.data.forEach(function(row){
         var k = row.key;
         if(SETTING_KEYS.indexOf(k) < 0) return;
@@ -1008,7 +1063,7 @@
            este corte, el blob viejo de un cliente sin actualizar volvería a
            pisar el historial de uno actualizado, que es el bug entero. */
         if(coleccionDe(k)) return;
-        if(keyBusy(k)) return;             // cambio propio sin confirmar: no pisarlo
+        if(keyBusy(k)){ completo = false; return; }   // cambio propio sin confirmar: no pisarlo
         var v = String(row.value);
         if(lsGet(k) === v) return;
         /* Las claves monótonas NO se pisan: se quedan con el mayor de los dos.
@@ -1022,8 +1077,10 @@
           return;
         }
         if(rawSet(k, v)) changed[k] = 1;
+        else completo = false;
       });
       applyChanged(changed);
+      if(completo) _settingsFp = x.fp;
     });
   }
   function startPolling(){
@@ -1044,6 +1101,7 @@
   window._syncResume = function(){
     _paused = false;
     _booted = true;
+    olvidarHuellas();   // el import reescribió el localStorage: la próxima vuelta baja todo
     startPolling();
     drainPreBoot();
     flushDirty('sync reanudada');

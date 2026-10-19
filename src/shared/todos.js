@@ -593,9 +593,13 @@
        refrescan junto a las tareas cada cuatro vueltas (~1 min). */
     var vuelta = 0;
     setInterval(function(){
+      if(document.visibilityState === 'hidden') return;   // pestaña oculta: no gastar egreso
       fetchTodos();
       if(++vuelta % 4 === 0) fetchEquipos();
     }, 15000);
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState === 'visible') fetchTodos();
+    });
   }
   window.addEventListener('ceven-session-ready', boot);
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

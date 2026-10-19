@@ -161,6 +161,7 @@ Requisitos que impone `sync.js`:
 - Todos los GET/DELETE de la sync filtran `brand=eq.<marca>`; cada fila subida lleva su `brand`.
 - Los `jsonb` reciben `null` cuando el override se limpia localmente (no omitir la columna).
 - `app_settings.value` puede ser **grande** (el price list entero, o el logo en base64) — es `text`, sin límite.
+- `pipeline`, `app_settings` y `cotizaciones` tienen `updated_at timestamptz` que mantiene el trigger `ceven_set_updated_at` (before insert/update; pisa lo que mande el cliente). Lo usa el poll de `sync.js` como huella barata (`select=id,updated_at`) para no bajar las tablas enteras cuando no cambió nada. Migración `20261019120000`.
 
 ### Permisos (RLS) — solo usuarios autenticados
 

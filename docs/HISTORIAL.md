@@ -150,6 +150,32 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 19/10/2026 · Egreso de Supabase: el poll ya no baja todo cada 15 s
+
+Auditoría de costos (en otro proyecto el egreso había sacado a Supabase del
+free tier). La base pesa 14 MB y el storage 7 kB: el riesgo era el egreso.
+Cada pestaña abierta bajaba **cada 15 s** las colecciones y `app_settings`
+enteras, aunque estuviera minimizada. En Poly eso eran ~780 kB por vuelta
+(cotizaciones 459 kB + settings 232 kB + pipeline 88 kB), unos 190 MB por hora
+por pestaña sin comprimir. El free tier trae 5 GB/mes.
+
+- **Pestaña oculta = no se pide nada** (`sync.js` y `todos.js`). Al volver a
+  estar visible se repasa en el acto.
+- **Huella**: migración `20261019120000_updated_at_para_poll_liviano` —
+  `updated_at` con trigger (`ceven_set_updated_at`) en `pipeline`,
+  `app_settings` y `cotizaciones` (esta ya tenía la columna, pero nada la
+  actualizaba). El poll pide `id,updated_at` (~20 kB en Poly) y baja todo
+  solo si cambió. La huella se guarda únicamente si lo bajado quedó aplicado;
+  cada 80 vueltas (~20 min) se baja completo igual, como red de seguridad.
+- El poll de `app_settings` excluye en el servidor el blob `cquotes`, que ya
+  no se leía nunca, y pide solo `key,value`.
+- `APP_VERSION` 8.2 → 8.3.
+
+Verificado: el trigger mueve `updated_at` en la base real, las consultas nuevas
+pasan el parser de PostgREST y `get_advisors` no marca nada nuevo. **No
+probado en un navegador** (pestaña oculta/visible, edición de otro usuario
+llegando por el camino de la huella).
+
 ## 14/10/2026 · Importar el catálogo ya no borra nada: actualiza precios y suma productos nuevos
 
 **El pedido.** Que cargar un Excel con precios nuevos no se lleve lo que ya estaba: solo pisa los precios y agrega los productos que no existían. En las **cuatro** marcas.
