@@ -68,7 +68,8 @@ function doSave(overwrite){
     var sp = (it.salePrice===''||it.salePrice==null) ? 0 : it.salePrice;
     db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'Nivel de precio':(typeof tierDeLinea==='function'?tierDeLinea(it):''),'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','IVA':cevenFormatoIVA(it.iva),'P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ}, it));
   }
-  saveDB(db);
+  // Si ya está en el pipeline, su fila sigue a la cotización (shared/pipeline-store.js).
+  if(saveDB(db) && typeof cevenPipeSincronizarConCotiz === 'function') cevenPipeSincronizarConCotiz(qn);
   if(typeof cevenClienteSet === 'function'){
     var _tg2 = document.getElementById('tier-global');
     if(_tg2 && _tg2.value && client && client !== '—') cevenClienteSet(client, {tier: _tg2.value});

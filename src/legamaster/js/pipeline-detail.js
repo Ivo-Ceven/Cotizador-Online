@@ -149,13 +149,11 @@ function renderPipelineDetailRow(r, esArchivo, db){
   });
 
   var qnA = cevenEsc(qn||'');
-  /* El total de los artículos puede no coincidir con el monto de la fila: el
-     monto es una foto del momento de agregar al pipeline y la cotización pudo
-     editarse después. Cuando difieren se avisa, en vez de dejar dos números
-     distintos en pantalla sin explicación. */
-  var descuadre = Math.abs(Math.round(total) - Math.round(r.monto||0)) > 1
-    ? '<span style="color:#c84e00;font-weight:500"> · la fila dice USD '+fI(r.monto||0)+': la cotización se editó después de agregarla</span>'
-    : '';
+  /* Si el total de los artículos no coincide con el monto de la fila, se avisa
+     en vez de dejar dos números distintos sin explicación. Desde el 19/10/2026
+     guardar la cotización ya mantiene la fila al día (cevenPipeSincronizarConCotiz);
+     el aviso queda para filas viejas o números reusados (shared/pipeline-store.js). */
+  var descuadre = cevenPipeDescuadreHTML(r, lines, total, editable);
 
   var inner = '<div style="padding:10px 14px 14px;background:#fafafa">'
     +'<div style="font-size:11px;color:#6e6e73;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">'
@@ -264,9 +262,7 @@ function quitarLineaDeCotizacion(id, lineKey){
   // Corre los índices de los estados por línea ANTES de recalcular el monto:
   // sin esto, los overrides de las líneas de abajo apuntan a la equivocada.
   cevenSkuReindex(row, ['skuStatus','skuMesFact'], lines, idx);
-  row.monto = _pipeMontoDeItems(lines.filter(function(x){ return x !== target; }).map(function(l){
-    return {qty: parseInt(l['Cantidad'], 10) || 1, salePrice: parseFloat(l['P. Venta Unitario']) || 0};
-  }));
+  _pipeAplicarAgregados(row, lines.filter(function(x){ return x !== target; }));
   savePipeline(f.pipe);
   renderPipeline();
 

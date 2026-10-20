@@ -88,7 +88,10 @@ function doSave(overwrite){
   if(Object.keys(quoteNacOverrides).length){
     db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'Tipo':'meta_nac','_qnac':JSON.stringify(quoteNacOverrides)}, null));
   }
-  return saveDB(db);
+  if(!saveDB(db)) return false;
+  // Si ya está en el pipeline, su fila sigue a la cotización (shared/pipeline-store.js).
+  if(typeof cevenPipeSincronizarConCotiz === 'function') cevenPipeSincronizarConCotiz(qn);
+  return true;
 }
 
 function saveQuote(){

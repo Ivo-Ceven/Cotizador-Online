@@ -96,6 +96,108 @@ function savePipeline(p, opts){
   return ok;
 }
 
+/* ── La fila del pipeline sigue a su cotización ─────────────────────────────
+   El monto de la fila (y en Apple las cantidades/montos por familia y el
+   margen ponderado) se calculaba UNA vez, al tocar "Agregar al pipeline". Si
+   después se editaba la cotización y se la guardaba, la fila quedaba con la
+   foto vieja y el detalle avisaba "la cotización se editó después de
+   agregarla". Ahora lo llama el doSave() de cada marca: guardar una cotización
+   que ya está en el pipeline le recalcula los agregados a su fila, con la misma
+   función que usa la ✂️ (_pipeAplicarAgregados, una por marca) y solo con la
+   opción vigente.
+
+   Guarda de identidad: solo si la cotización sigue siendo del MISMO canal y
+   cliente final que la fila. Antes del 11/09/2026 dos cotizaciones podían
+   compartir número, y hay filas cuyo número hoy apunta a otra cotización
+   (Poly #0184 y #0193): sincronizar a ciegas le pondría a esa fila la plata de
+   otro proyecto. En ese caso, o si se cambió el cliente final en la
+   cotización, no se toca nada y se avisa — "Agregar al pipeline" es el camino
+   explícito para eso.
+
+   Las filas del archivo (meses cerrados) no viven en getPipeline() y no se
+   tocan. Devuelve true si cambió la fila. */
+var _PIPE_CAMPOS_MONTO = ['monto','margenPond','qMac','qIph','qIpad','qServ','qAcc',
+                          'montoMac','montoIph','montoIpad','montoAcc','montoServ'];
+function _pipeNormIdent(s){
+  s = String(s == null ? '' : s).trim().toLowerCase();
+  return s === '—' ? '' : s;
+}
+// ¿Las líneas guardadas son de la misma oportunidad que la fila? (canal + cliente final)
+function _pipeCotizEsDeLaFila(row, lineas){
+  var cab = lineas[0];
+  return !!cab && _pipeNormIdent(cab['Proyecto']) === _pipeNormIdent(row.proyecto)
+               && _pipeNormIdent(cab['Cliente'])  === _pipeNormIdent(row.cliente);
+}
+/* `opts.antesDeCambiar(row)`: se llama solo si la fila VA a cambiar, antes de
+   mutarla (para el snapshot del Deshacer). `opts.silencioso`: sin cartel. */
+function cevenPipeSincronizarConCotiz(qn, opts){
+  opts = opts || {};
+  if(typeof _pipeAplicarAgregados !== 'function' || typeof cevenOpcFilasDeCotiz !== 'function') return false;
+  var pipe = getPipeline(), row = null;
+  for(var i=0;i<pipe.length;i++){ if(pipe[i].qNum === qn){ row = pipe[i]; break; } }
+  if(!row) return false;
+  if(typeof cevenCanEditPipelineRow === 'function' && !cevenCanEditPipelineRow(row.ejecutivo)) return false;
+
+  var lineas = cevenOpcFilasDeCotiz(getDB(), qn, ['producto','garantia']);
+  if(!lineas.length) return false;
+  if(!_pipeCotizEsDeLaFila(row, lineas)){
+    if(!opts.silencioso && typeof showToast === 'function'){
+      showToast('La #'+qn+' está en el pipeline como "'+(row.proyecto||'—')+'" ('+(row.cliente||'—')+
+                '): el monto de esa fila no se actualizó. Si es la misma oportunidad, usá "Agregar al pipeline".');
+    }
+    return false;
+  }
+
+  // Se calcula sobre una copia: si no cambia nada, no hay snapshot ni guardado.
+  var nueva = Object.assign({}, row);
+  _pipeAplicarAgregados(nueva, lineas);
+  var igual = _PIPE_CAMPOS_MONTO.every(function(k){ return nueva[k] === row[k]; });
+  if(igual) return false;
+  if(typeof opts.antesDeCambiar === 'function') opts.antesDeCambiar(row);
+  _PIPE_CAMPOS_MONTO.forEach(function(k){ if(k in nueva) row[k] = nueva[k]; });
+  savePipeline(pipe);
+  return true;
+}
+
+/* Botón "↻" del aviso de descuadre en el detalle de la fila. Para las filas
+   que ya venían descuadradas de antes (o que editó un cliente sin actualizar). */
+function cevenPipeActualizarMontoFila(id){
+  var pipe = getPipeline(), row = null;
+  for(var i=0;i<pipe.length;i++){ if(pipe[i].id === id){ row = pipe[i]; break; } }
+  if(!row){ showToast('Ese proyecto ya no está en el pipeline actual.'); return; }
+  if(typeof cevenCanEditPipelineRow === 'function' && !cevenCanEditPipelineRow(row.ejecutivo)){
+    showToast('No tenés permiso para modificar este proyecto: es de otro ejecutivo.'); return;
+  }
+  var montoAntes = row.monto;
+  var ok = cevenPipeSincronizarConCotiz(row.qNum, {
+    antesDeCambiar: function(r){ if(typeof pushPipeUndo === 'function') pushPipeUndo(r.id); }
+  });
+  if(typeof renderPipeline === 'function') renderPipeline();
+  if(!ok) return;   // sin cambios, o ya avisó por qué no
+  var ahora = getPipeline().filter(function(r){ return r.id === id; })[0] || {};
+  notifyUndo('Cotización #'+row.qNum+': el monto pasó de USD '+fI(montoAntes||0)+' a USD '+fI(ahora.monto||0)+'.',
+    function(){ if(typeof undoPipelineChange === 'function') undoPipelineChange(); });
+}
+
+/* El aviso que va al lado de "Total de la cotización" cuando el monto de la
+   fila no coincide con los artículos. Distingue los dos casos reales:
+   · la cotización es otra (número reusado antes del 11/09/2026, o se le cambió
+     el cliente final): no se puede recalcular, y se dice;
+   · es la misma pero el monto quedó viejo: se ofrece actualizarlo. */
+function cevenPipeDescuadreHTML(r, lineas, total, editable){
+  if(Math.abs(Math.round(total) - Math.round(r.monto||0)) <= 1) return '';
+  var pre = '<span style="color:#c84e00;font-weight:500"> · la fila dice USD '+fI(r.monto||0);
+  if(!_pipeCotizEsDeLaFila(r, lineas)){
+    var cab = lineas[0] || {};
+    return pre + ': la #'+cevenEsc(r.qNum||'')+' del historial hoy es de otra oportunidad ('
+      + cevenEsc(cab['Proyecto']||'—') + ' · ' + cevenEsc(cab['Cliente']||'—')
+      + '). Revisá a mano cuál es el monto real.</span>';
+  }
+  return pre + ': no coincide con la cotización'
+    + (editable ? ' <button class="bs" data-dact="sync-monto" data-did="'+cevenEsc(r.id)+'" title="Recalcular el monto de la fila con los artículos de la cotización" style="padding:1px 6px;font-size:10px">↻ Actualizar a USD '+fI(total)+'</button>' : '')
+    + '</span>';
+}
+
 function getArchive(){
   var a = cevenLsJSON(cevenK('carchive'), {});
   return (a && typeof a === 'object') ? a : {};

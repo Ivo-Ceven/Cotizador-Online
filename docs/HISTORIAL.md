@@ -150,6 +150,36 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 19/10/2026 · La fila del pipeline sigue a su cotización
+
+El detalle de una fila avisaba "la fila dice USD X: la cotización se editó
+después de agregarla". El monto se calculaba una sola vez, en "Agregar al
+pipeline"; guardar la cotización después no lo tocaba.
+
+- **`doSave()` de las cuatro marcas** llama a `cevenPipeSincronizarConCotiz(qn)`
+  (`shared/pipeline-store.js`): si la cotización está en el pipeline vivo, le
+  recalcula los agregados a su fila con `_pipeAplicarAgregados` (la misma
+  función de la ✂️, ahora una por marca; antes solo Apple la tenía) y solo con
+  la opción vigente. Las filas del archivo no se tocan.
+- **Guarda de identidad**: solo si la cotización sigue siendo del mismo canal y
+  cliente final que la fila. Si no, no toca nada y avisa con un cartel.
+- El aviso del detalle (`cevenPipeDescuadreHTML`, antes copiado en tres
+  archivos) distingue "es otra oportunidad" (sin botón) de "quedó vieja"
+  (botón **↻ Actualizar a USD X**, con Deshacer).
+- Probado con un arnés en Node sobre `opciones.js` + `pipeline-store.js` reales
+  (15 casos: edición, sin cambios, número reusado, opción A/B vigente,
+  normalización, sin permiso, botón con Deshacer). **No probado en navegador.**
+
+Las tres filas descuadradas que había en la base tenían otra causa:
+
+- **Legamaster #0011**: sumaba las opciones A + B (5.022) con la A vigente
+  (2.239). Corregida en la base a 2.239.
+- **Poly #0184 (IBERO ASISTENCIA, USD 38.480) y #0193 (BRITISH AMERICAN
+  TOBACCO, USD 61.199)**: el número lo usa hoy otra cotización (MAPFRE y SAP).
+  Las originales **no están en el servidor** (ni en `cotizaciones` ni en el
+  blob `poly_cquotes`): número reusado antes del 11/09/2026. No se tocaron.
+  Para recuperarlas: el backup completo local de quien las cargó (Rodrigo).
+
 ## 19/10/2026 · Egreso de Supabase: el poll ya no baja todo cada 15 s
 
 Auditoría de costos (en otro proyecto el egreso había sacado a Supabase del

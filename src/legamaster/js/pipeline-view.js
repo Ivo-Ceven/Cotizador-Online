@@ -350,6 +350,7 @@ function pipeBindDelegation(){
       var dlk = dEl.getAttribute('data-lk');
       if(dact === 'sku-est-clear') clearSkuEstadoPipe(did, dlk);
       else if(dact === 'sku-rm')   quitarLineaDeCotizacion(did, dlk);
+      else if(dact === 'sync-monto') cevenPipeActualizarMontoFila(did);
       return;
     }
 

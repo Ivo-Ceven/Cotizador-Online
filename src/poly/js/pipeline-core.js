@@ -29,6 +29,16 @@ function refreshOpgDatalist(){
    lo mismo o la fila muestra un total que la cotización no dice. */
 function _pipeMontoDeItems(its){ return cevenPolyMonto(its); }
 
+/* El monto de una fila a partir de líneas GUARDADAS de `cquotes` (ya filtradas
+   a la opción vigente). Misma firma que el de Apple (apple/js/pipeline-detail.js):
+   lo usan la ✂️ y cevenPipeSincronizarConCotiz() en shared/pipeline-store.js,
+   que lo llama cada vez que se guarda una cotización que ya está en el pipeline. */
+function _pipeAplicarAgregados(row, lineas){
+  row.monto = _pipeMontoDeItems(lineas.map(function(l){
+    return {qty: parseInt(l['Cantidad'], 10) || 1, salePrice: parseFloat(l['P. Venta Unitario']) || 0};
+  }));
+}
+
 /* Cambia la opción vigente de una cotización desde su fila del pipeline, sin
    reabrirla. Es el momento en que el cliente define cuál de las dos compra.
 
