@@ -56,6 +56,7 @@ const paginas = {
   'poly/index.html':        'poly/',
   'legamaster/index.html':  'legamaster/',
   'huawei/index.html':      'huawei/',
+  'hp/index.html':          'hp/',
   'multi/index.html':       'multi/',
   'tareas/index.html':      'tareas/',
   'compras/index.html':     'compras/'

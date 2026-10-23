@@ -271,12 +271,13 @@ console.log('\n6 · Lo que no se puede emitir se dice, no se inventa');
   ok(planes.length === 1 && planes[0].brand === 'apple',
      'un pedido de una sola marca emite a esa sola marca');
 
-  const conDesconocida = soloApple.concat([{brand:'hp', sku:'X', description:'Notebook', qty:1, salePrice:100}]);
+  // 'sony' y no 'hp': HP entró al registro el 23/10/2026.
+  const conDesconocida = soloApple.concat([{brand:'sony', sku:'X', description:'Notebook', qty:1, salePrice:100}]);
   const planes2 = E.cevenEmitirPlan(conDesconocida, ctx, VACIO(), {});
-  const hp = planes2.find(p => p.brand === 'hp');
-  ok(hp && hp.error, 'una marca que el registro no conoce devuelve un error explícito, no una fila vacía',
-     JSON.stringify(hp));
-  ok(!hp.pipeRow, 'y no arma ninguna fila de pipeline para ella');
+  const desc = planes2.find(p => p.brand === 'sony');
+  ok(desc && desc.error, 'una marca que el registro no conoce devuelve un error explícito, no una fila vacía',
+     JSON.stringify(desc));
+  ok(!desc.pipeRow, 'y no arma ninguna fila de pipeline para ella');
 }
 
 /* ============ 7) SE ESCRIBE EN LA CLAVE QUE LA MARCA REALMENTE LEE ======== */

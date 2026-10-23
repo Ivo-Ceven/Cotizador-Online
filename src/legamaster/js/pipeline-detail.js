@@ -335,7 +335,8 @@ function buildPipelineWorkbook(){
 }
 
 function exportPipeline(){
-  var wb = buildPipelineWorkbook();
-  if(!wb){ showToast('No hay proyectos para exportar con los filtros actuales.'); return; }
-  XLSX.writeFile(wb, 'Ceven_Legamaster_Pipeline.xlsx');
+  /* El "⬇ Excel" de la pantalla es el que se le manda a la marca: con formato y
+     sin datos internos (shared/pipeline-excel.js, 23/10/2026). Este
+     buildPipelineWorkbook() sigue siendo el del backup a carpeta, completo. */
+  cevenExportarPipelineMarca();
 }

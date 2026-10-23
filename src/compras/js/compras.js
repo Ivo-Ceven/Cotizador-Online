@@ -20,7 +20,7 @@
 
   var REST = (window.SUPABASE_URL || '') + '/rest/v1/';
   var CFG_BRAND = 'compras', CFG_KEY = 'fc_config';
-  var MARCAS = {apple: 'Apple', poly: 'Poly', legamaster: 'Legamaster', huawei: 'Huawei'};
+  var MARCAS = {apple: 'Apple', poly: 'Poly', legamaster: 'Legamaster', huawei: 'Huawei', hp: 'HP'};
   var ESTADOS = ['Proyecto', 'Cotizado', 'Negociacion', 'Commit', 'Con OC', 'Autorizando'];
 
   var S = {

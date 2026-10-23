@@ -89,6 +89,7 @@ var ASSETS = [
   './shared/pipeline-group.js',
   './shared/pipeline-ui.js',
   './shared/pipeline-perdido.js',
+  './shared/pipeline-excel.js',
   './shared/pdf-core.js',
   './shared/comprobante.js',
   './shared/asistente.js',
@@ -99,6 +100,9 @@ var ASSETS = [
   './vendor/html2canvas.min.js',
   './vendor/jspdf.umd.min.js',
   './vendor/jspdf.plugin.autotable.min.js',
+  // Solo para el ⬇ Excel del pipeline (shared/pipeline-excel.js): se pide al
+  // exportar, pero va precacheado para que funcione sin conexión.
+  './vendor/exceljs.min.js',
 
   './apple/css/cevencare.css',
   './tareas/css/board.css',
@@ -184,6 +188,23 @@ var ASSETS = [
   './huawei/js/history.js',
   './huawei/js/pdf.js',
   './huawei/js/boot.js',
+  './hp/brand.js',
+  './hp/js/archive-view.js',
+  './hp/js/boot.js',
+  './hp/js/catalog.js',
+  './hp/js/history.js',
+  './hp/js/pdf.js',
+  './hp/js/picker.js',
+  './hp/js/pipeline-core.js',
+  './hp/js/pipeline-data.js',
+  './hp/js/pipeline-detail.js',
+  './hp/js/pipeline-view.js',
+  './hp/js/pricing-core.js',
+  './hp/js/products.js',
+  './hp/js/quote.js',
+  './hp/js/quotes-db.js',
+  './hp/js/state.js',
+  './hp/js/tiers.js',
 
   /* Cotizador multimarca. Carga ADEMÁS los `pricing-core.js` de Apple, Poly y
      Legamaster (ya listados arriba): son las cuentas de precio de cada marca, y
@@ -220,6 +241,8 @@ var DOCS = [
   './legamaster/index.html',
   './huawei/',
   './huawei/index.html',
+  './hp/',
+  './hp/index.html',
   './multi/',
   './multi/index.html',
   './tareas/',
@@ -334,6 +357,7 @@ async function respond(e){
                        : url.pathname.indexOf('/poly/') === 0  ? './poly/'
                        : url.pathname.indexOf('/legamaster/') === 0 ? './legamaster/'
                        : url.pathname.indexOf('/huawei/') === 0 ? './huawei/'
+                       : url.pathname.indexOf('/hp/') === 0 ? './hp/'
                        : './';
     var fb = await cache.match(brandFallback);
     if(fb) return fb;

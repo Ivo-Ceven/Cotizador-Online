@@ -235,9 +235,10 @@ console.log('\n5 · Reparto: a cada marca solo lo suyo');
   ok(deApple.every(l => l.brand === 'apple'), 'ninguna línea de otra marca se cuela en Apple');
   ok(dePoly.every(l => l.brand === 'poly'),   'ni en Poly');
 
-  ok(M.cevenMultiMarcasDe([{brand:'hp'}]).indexOf('hp') === 0,
+  // 'sony' y no 'hp': HP entró al registro el 23/10/2026.
+  ok(M.cevenMultiMarcasDe([{brand:'sony'}]).indexOf('sony') === 0,
      'una marca que el registro no conoce se devuelve igual, para poder avisar');
-  ok(M.cevenMultiMarcaLabel('hp') === 'hp', 'y su etiqueta sale cruda en vez de caer a otra marca');
+  ok(M.cevenMultiMarcaLabel('sony') === 'sony', 'y su etiqueta sale cruda en vez de caer a otra marca');
 }
 
 /* ===================== 6) LA FORMA DE LO QUE SE EMITE ===================== */

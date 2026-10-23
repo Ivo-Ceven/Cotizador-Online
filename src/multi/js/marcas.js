@@ -34,7 +34,7 @@
    cuando alguien la abre desde el historial de esa marca.
 
    Depende de: apple/js/pricing-core.js, poly/js/pricing-core.js,
-   legamaster/js/pricing-core.js, huawei/js/pricing-core.js,
+   legamaster/js/pricing-core.js, huawei/js/pricing-core.js, hp/js/pricing-core.js,
    shared/quote-num.js (cevenQNumFmt).
    ============================================================ */
 
@@ -310,6 +310,60 @@ var CEVEN_MULTI_MARCAS = {
        y `factura` guarda el link a Netsuite (se llama así por historia, ver
        huawei/brand.js). Los dos son NULL al emitir — son seguimiento posterior,
        y una re-emisión NO los pisa. */
+    pipelineExtra: function(ctx){
+      return { opg: ctx.opg || null, factura: null };
+    }
+  },
+
+  /* ── HP (23/10/2026) ────────────────────────────────────────────────
+     Copia de la entrada de Huawei: mismo modelo (nivel de catálogo, OPG, sin
+     margen). Las cuentas son las de hp/js/pricing-core.js, el mismo archivo
+     que usa el cotizador de HP. */
+  hp: {
+    label: 'HP',
+    prefix: 'hp_',
+    controles: ['tier'],
+
+    nuevaLinea: function(p, ctx){
+      var it = {
+        brand: 'hp',
+        sku: p.sku, description: p.description,
+        iva: p.iva || '', qty: 1, salePrice: '', stock: '',
+        tier: ''            // '' = sigue al nivel global
+      };
+      cevenHpRepricear(it, ctx.catalogos.hp, ctx.tierGlobal);
+      return it;
+    },
+
+    repricear: function(it, ctx){
+      if(it.tier) return false;
+      return cevenHpRepricear(it, ctx.catalogos.hp, ctx.tierGlobal);
+    },
+
+    // Claves de doSave() en hp/js/quotes-db.js. Con OPG, como Poly.
+    filaCquotes: function(it, ctx){
+      var sp = (it.salePrice === '' || it.salePrice == null) ? 0 : it.salePrice;
+      return {
+        'N° Cotización': ctx.qn, 'Fecha': ctx.fecha, 'Hora': ctx.hora,
+        'Cliente': ctx.cliente, 'OPG': ctx.opg || '—', 'Proyecto': ctx.proyecto,
+        'Ejecutivo': ctx.ejecutivo, 'Observaciones': ctx.obs,
+        'Mes Cierre': ctx.mesCierre,
+        'Condición de pago': ctx.payMode, 'Propuesta efectiva hasta': ctx.effDate,
+        'Entrega': ctx.delivery,
+        'Opción': 1, '_opcEf': 1,
+        'Nivel de precio': cevenHpTierEfectivo(it, ctx.tierGlobal),
+        'SKU': it.sku, 'Descripción': it.description, 'Cantidad': it.qty,
+        'Nota': it.stock || '—', 'IVA': cevenFormatoIVA(it.iva),
+        'P. Venta Unitario': it.salePrice, 'Total': sp * it.qty,
+        'Tipo': 'producto', '_estado': ctx.estado,
+        '_multi': ctx.multiQNum
+      };
+    },
+
+    filaPipeline: function(its, ctx){
+      return { monto: cevenHpMonto(its) };
+    },
+
     pipelineExtra: function(ctx){
       return { opg: ctx.opg || null, factura: null };
     }

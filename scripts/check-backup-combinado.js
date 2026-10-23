@@ -116,8 +116,8 @@ function seedTodo(){
 
   ok(snap._app === 'CevenCotizadorFull', 'el _app marca que es el combinado');
   ok(snap._cdark === '1', 'se lleva la preferencia de modo oscuro (una vez)');
-  ok(Object.keys(snap.brands).sort().join(',') === 'apple,legamaster,multi,poly',
-     'trae las cuatro marcas', Object.keys(snap.brands).join(','));
+  ok(Object.keys(snap.brands).sort().join(',') === 'apple,hp,huawei,legamaster,multi,poly',
+     'trae las seis (Huawei y HP desde el 23/10/2026)', Object.keys(snap.brands).join(','));
 
   ['poly', 'apple', 'legamaster', 'multi'].forEach(id => {
     const all = snap.brands[id]._all;

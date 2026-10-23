@@ -150,6 +150,63 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 23/10/2026 · Cotizador de HP
+
+`src/hp/` es una copia de `src/huawei/` (que a su vez es Poly sin el REGI ni
+el nivel DEAL), con los nombres cambiados (`cevenHp*`, prefijo `hp_`). Los SKUs
+los carga el equipo a mano con "+ Nuevo artículo". El importador ya prefiere
+la hoja `HP` del export "LP y Stock" para cuando haya archivo.
+
+- **REGI y DEAL quedaron afuera a propósito, aunque son de HP**. El REGI vive
+  en `poly_regi_pipeline`, que no tiene columna `brand`, y el importador de deals
+  está en `poly/js/catalog.js`. Sumarlos es un trabajo aparte.
+- **Supabase**: nada. Las tablas separan por `brand` sin restricción de
+  valores, y los 8 usuarios tienen acceso a todas las marcas.
+- **Color** `#006ba6` (5,75:1 sobre blanco; `dk` `#4cb8ec`, 7,6:1). El azul
+  del logo (`#0096d6`) da 3,32:1 y no alcanza para botones. Va en
+  `hp/brand.js`, en `.mcard[data-brand="hp"]` del shell y en `.mk-hp` del
+  multimarca.
+- **Cableado**:
+  - tarjeta del panel (era "Próximamente");
+  - precache y fallback offline de `sw.js`;
+  - registro del multimarca (`marcas.js` + su `pricing-core.js`);
+  - selector de Compras;
+  - `check-globals` y `check-precache`;
+  - `scripts/check-hp-catalogo.js`, copia del de Huawei: 42 OK.
+- **De paso**: el backup completo (`shared/backup.js`) y el Excel combinado de
+  pipeline **no incluían Huawei desde su alta**. Ahora llevan Huawei y HP, y las
+  hojas se llaman con la marca bien escrita.
+- Las pruebas de `check-emitir` y `check-multi` usaban `'hp'` como ejemplo de
+  "marca que el registro no conoce". Ahora usan `'sony'`.
+- `APP_VERSION` 8.5 → 8.6. Smoke test con `scripts/dev-server.js`: `/hp/` y sus
+  56 scripts responden 200. **No probado en un navegador con sesión.**
+
+## 23/10/2026 · "⬇ Excel" del pipeline: el archivo que se le manda a la marca
+
+En las cinco marcas, `exportPipeline()` llama a `cevenExportarPipelineMarca()`
+(`shared/pipeline-excel.js`). Pedido: el compañero se lo manda a HP, así que
+tiene que verse bien y no llevar información interna.
+
+- **Hoja "Pipeline"**: Canal, Cliente final, Oportunidad (solo donde existe
+  `opg`: Poly, Huawei, HP), Cierre estimado (como fecha), Estado, Monto USD.
+  Lleva título, encabezado con el color de la marca, filas cebradas, total con
+  `SUBTOTAL(9,…)` (respeta los filtros de Excel), filtros y encabezado fijo.
+- **Hoja "Productos"**: SKU, descripción, cantidad, precio y total por línea,
+  solo de la opción vigente y solo productos (sin garantías CevenCare).
+- **Queda afuera**: Netsuite/OV, N° de cotización, observaciones, ejecutivo,
+  margen, estados por ítem y fecha de alta.
+- Exporta lo que está en pantalla (`cevenPipeFilasVisibles`), igual que antes.
+- **`buildPipelineWorkbook()` de cada marca no se tocó**: es el Excel interno
+  del backup a carpeta y ahí sirve todo.
+- **ExcelJS 4.4.0** en `vendor/exceljs.min.js` (~950 KB): la edición gratuita
+  de SheetJS no escribe estilos. Se carga recién al exportar y va en el
+  precache para que funcione sin conexión. Las filas se arman por clave de
+  columna y no como array, porque ExcelJS reconoce los arrays con
+  `instanceof`.
+- `scripts/check-pipeline-excel.js` (nuevo): arma el libro con el ExcelJS real,
+  lo relee y verifica contenido, que no viaje nada interno y el formato. 21/21.
+  **No probado en navegador.**
+
 ## 23/10/2026 · REGI: oportunidades que HP renumeró
 
 En los casos encontrados, cuando HP "cambia el REGI" da de baja la oportunidad

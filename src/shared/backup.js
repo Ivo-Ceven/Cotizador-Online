@@ -250,7 +250,8 @@ function _applyBackupRestore(snap){
    PUBLICA su lista blanca al cargar (_ceven_bkbases_<id>) y el snapshot
    combinado la lee; si un cotizador nunca se abrió, hay un fallback mínimo. */
 
-var CEVEN_FULL_BACKUP_BRANDS = ['poly', 'apple', 'legamaster', 'multi'];
+// huawei y hp entraron el 23/10/2026: Huawei estaba afuera desde su alta (21/09).
+var CEVEN_FULL_BACKUP_BRANDS = ['poly', 'apple', 'legamaster', 'huawei', 'hp', 'multi'];
 var CEVEN_FULL_BACKUP_APP    = 'CevenCotizadorFull';
 
 // Bases (sin prefijo) que entran al backup combinado de una marca: sus
@@ -278,6 +279,8 @@ var _CEVEN_BACKUP_SPEC_FALLBACK = {
   poly:       { prefix: 'poly_',       bases: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera','cpipeline'] },
   apple:      { prefix: '',            bases: ['cquotes','cpl','carchive','cnac','cqc','cclientes','ctarget','ctarget_manual','clogo','clogo_dark','cpapelera','cnac_neo25_v3','cpipeline'] },
   legamaster: { prefix: 'legamaster_', bases: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera','cpipeline'] },
+  huawei:     { prefix: 'huawei_',     bases: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera','cpipeline'] },
+  hp:         { prefix: 'hp_',         bases: ['cquotes','cpl','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera','cpipeline'] },
   multi:      { prefix: 'multi_',      bases: ['cquotes','carchive','cqc','cclientes','clogo','clogo_dark','cpapelera'] }
 };
 
@@ -409,7 +412,7 @@ function _applyCombinedBackupRestore(snap){
    apple, legamaster). Tabla plana leída CRUDA de `<prefix>cpipeline`, con el
    texto de "Proyecto/observaciones" traído de la cotización por su número.
    Es un reporte para mirar/compartir — el restore de verdad es el JSON. */
-var CEVEN_PIPELINE_XLSX_BRANDS = ['poly', 'apple', 'legamaster'];
+var CEVEN_PIPELINE_XLSX_BRANDS = ['poly', 'apple', 'legamaster', 'huawei', 'hp'];
 
 function _lsJSONraw(k){
   try{ var v = localStorage.getItem(k); return v == null ? null : JSON.parse(v); }
@@ -464,7 +467,8 @@ function buildCombinedPipelineWorkbook(){
       'Estado':'(pipeline vacío)','Monto USD':0,'OV / Netsuite':'','N° Cotización':''
     }]);
     ws['!cols'] = [{wch:11},{wch:16},{wch:22},{wch:24},{wch:14},{wch:30},{wch:14},{wch:14},{wch:13},{wch:13},{wch:24},{wch:12}];
-    XLSX.utils.book_append_sheet(wb, ws, id.charAt(0).toUpperCase() + id.slice(1));
+    var NOMBRES_HOJA = {poly:'Poly', apple:'Apple', legamaster:'Legamaster', huawei:'Huawei', hp:'HP'};
+    XLSX.utils.book_append_sheet(wb, ws, NOMBRES_HOJA[id] || id);
     algo = true;
   });
   return algo ? wb : null;
