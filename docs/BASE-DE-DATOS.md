@@ -58,13 +58,16 @@ create table public.pipeline (
   "skuArchivedQty"   jsonb,   -- qty ya archivada por línea
   "ovLink"        text,       -- link a la orden de venta
   opg             text,       -- usada solo por brand='poly': número de precio especial que asigna la marca.
-                              -- Desde 27/08/2026 tiene un segundo uso: si acá se
-                              -- carga el mismo código que trae la columna `regi`
-                              -- de poly_regi_pipeline (el REGI ya aprobado por HP,
-                              -- no el `opd` interno del archivo), esa oportunidad
-                              -- se oculta sola de la vista "Pipeline REGI" — ver
-                              -- src/poly/js/pipeline-regi.js (_regiOpgVinculadosSet)
-                              -- y docs/HISTORIAL.md (27/08/2026).
+                              -- Desde 27/08/2026 tiene un segundo uso: vincula la
+                              -- fila con una oportunidad de poly_regi_pipeline.
+                              -- Desde 23/10/2026 se compara el NÚMERO (REGI y OPD
+                              -- de una oportunidad comparten número: REGI-0005235328,
+                              -- OPD-0005235328 y 5235328 son lo mismo), entran
+                              -- también las filas del archivo mensual, y un número
+                              -- viejo vale para la oportunidad nueva si la fila vieja
+                              -- tiene `poly_regi_pipeline.reemplazada_por` (HP la
+                              -- renumeró). Ver src/poly/js/pipeline-regi.js
+                              -- (_regiNumero, _regiFilasDe) y docs/HISTORIAL.md.
   salas           jsonb,      -- usada solo por brand='poly': desglose [{qNum,sala,monto,fecha}] de las Salas agrupadas bajo el OPG
   factura         text,       -- usada solo por brand='poly': número de factura, se completa post-hoc (análogo a ovLink)
   primary key (brand, id)

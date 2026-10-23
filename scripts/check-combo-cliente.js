@@ -171,6 +171,29 @@ console.log('\n6 · Casos borde');
   ok(conBasura._probe._todos().length === 1, 'las <option> vacías no entran como cliente');
 }
 
+/* ═══ 6b · Campo precargado: la lista no sale vacía (23/10/2026) ═══════════ */
+console.log('\n6b · Un canal precargado que no existe igual ofrece la lista completa');
+{
+  // "Copiar a Ceven" de REGI deja escrito "Icap Sa", que no está en la lista.
+  ok(p._filtrar('Icap Sa', true).length === NOMBRES.length,
+     'abierto sin tipear: lista completa aunque no matchee nada');
+  const r = p._filtrar('newtech', true).map(x => x.nombre);
+  ok(r[0] === 'Newtech SA' && r.length === NOMBRES.length,
+     'y si matchea, el que coincide va primero y el resto atrás', JSON.stringify(r));
+  ok(p._filtrar('Icap Sa').length === 0, 'tipeando sí filtra (sin el resto)');
+}
+
+/* ═══ 6c · Canales sacados de la lista con la × (23/10/2026) ═══════════════ */
+console.log('\n6c · Un canal oculto no se ofrece, pero sigue existiendo');
+{
+  const oc = cargar(NOMBRES, Object.assign({}, FICHAS, {'newtech sa': {nombre:'Newtech SA', oculto:true}}));
+  const r = oc._probe._filtrar('').map(x => x.nombre);
+  ok(r.indexOf('Newtech SA') === -1 && r.length === NOMBRES.length - 1, 'el oculto no aparece', JSON.stringify(r));
+  ok(oc.cevenClienteOculto('NEWTECH SA ') === true, 'la marca se lee con el nombre normalizado');
+  oc.cevenClienteSet('Newtech SA', {oculto: false});
+  ok(oc._probe._filtrar('').length === NOMBRES.length, 'al des-ocultarlo vuelve');
+}
+
 /* ═══ 7 · El nombre es texto libre y va escapado ═══════════════════════════ */
 console.log('\n7 · El nombre del cliente se interpola en el HTML del desplegable');
 {

@@ -65,8 +65,10 @@ function cargar(){
     'regi-pipe-body':         nodo(),
     'client':                 { value: '' },
     'proyecto':               { value: '' },
+    'obs':                    { value: '' },
     'opg':                    { value: '' }
   };
+  var store = {};
   var ctx = {
     console,
     document: {
@@ -94,6 +96,12 @@ function cargar(){
     showError(m){ ctx._lastError = m; },
     cevenCanUsePipeline(){ return ctx._canUse !== false; },
     getPipeline(){ return ctx._pipelineData || []; },
+    // Archivo mensual {mes: [filas]}: las facturadas viejas viven acá.
+    getArchive(){ return ctx._archiveData || {}; },
+    // shared/clientes.js (canales conocidos, para "Copiar a Ceven").
+    cevenK: b => 'poly_' + b,
+    cevenLsSet: (k, v) => { store[k] = String(v); return true; },
+    cevenLsJSON: (k, d) => { try{ return JSON.parse(store[k]) || d; }catch(e){ return d; } },
     // Por defecto resuelve OK; un test que quiera simular una falla de red
     // pisa ctx._fetchImpl antes de llamar a la acción bajo prueba.
     cevenAuthedFetch(){
@@ -364,13 +372,18 @@ console.log('\n5 · La vista REGI oculta por defecto lo que ya está vinculado')
 }
 
 /* ═══ 6 · Copiar a Ceven prellena la cotización, sin tocar addToPipeline ═══ */
-console.log('\n6 · _regiCopiarAPipeline prellena cliente/proyecto/OPG y avisa según haya REGI aprobado o no');
+console.log('\n6 · _regiCopiarAPipeline prellena canal/cliente final/OPG y avisa según haya REGI aprobado o no');
 {
+  /* 23/10/2026: una fila REGI es un CLIENTE FINAL. Antes esto verificaba que
+     el Account fuera al campo Canal, que era justamente el bug. */
   const e = cargar();
-  e._regiPipeRows = [ filaRegi('OPD1', 'REGI-777', {cliente:'Hospital Italiano', proyecto:'Sala Directorio', mesCierre:'2026-11'}) ];
+  e._pipelineData = [ filaReal('', {cliente:'Molver'}) ];   // un canal ya usado por el equipo
+  e._regiPipeRows = [ filaRegi('OPD1', 'REGI-777', {cliente:'Hospital Italiano', proyecto:'Sala Directorio',
+    primaryPartner:'Molver Technology S.A', mesCierre:'2026-11'}) ];
   e._regiCopiarAPipeline('OPD1');
-  ok(e._els['client'].value === 'Hospital Italiano', 'precarga el cliente');
-  ok(e._els['proyecto'].value === 'Sala Directorio', 'precarga el proyecto');
+  ok(e._els['client'].value === 'Molver', 'Canal = Primary Partner, con la grafía que ya usa el equipo', e._els['client'].value);
+  ok(e._els['proyecto'].value === 'Hospital Italiano', 'Cliente final = Account', e._els['proyecto'].value);
+  ok(e._els['obs'].value === 'Sala Directorio', 'Proyecto/observaciones = nombre de la oportunidad');
   ok(e._els['opg'].value === 'REGI-777', 'precarga el OPG con el REGI ya aprobado — así matchea solo al agregar al pipeline');
   ok(e._calls.some(c => c[0] === 'goTo' && c[1] === 'quote'), 'navega al cotizador');
   ok(e._calls.some(c => c[0] === 'nuevaCotizacion'), 'arranca una cotización NUEVA (no una fila liviana sin cotización atrás)');
@@ -391,6 +404,141 @@ console.log('\n6 · _regiCopiarAPipeline prellena cliente/proyecto/OPG y avisa s
   e._regiCopiarAPipeline('OPD3');
   ok(e._calls.length === 0, 'sin permiso, no navega ni toca nada del cotizador', JSON.stringify(e._calls));
   ok(/no permite/.test(e._lastToast), 'y avisa que el rol no permite la acción');
+}
+
+/* ═══ 6b · Se vincula por NÚMERO, no por texto exacto (23/10/2026) ═════════ */
+console.log('\n6b · REGI y OPD comparten número: se vincula por el número, con o sin prefijo');
+{
+  const e = cargar();
+  ok(e._regiNumero('REGI-0005235328') === '5235328', 'REGI-0005235328 → 5235328');
+  ok(e._regiNumero('OPD-0005235328') === '5235328', 'el OPD de la misma oportunidad da el mismo número');
+  ok(e._regiNumero(' regi 0005 235 328 ') === '5235328', 'espacios, minúsculas y separadores dentro del número no importan');
+  ok(e._regiNumero('5235328') === '5235328', 'el número solo, sin prefijo, también');
+  ok(e._regiNumero('PMI') === '' && e._regiNumero('REGI Argentina Ceven Newtech') === '', 'un OPG de texto libre no tiene número');
+  ok(e._regiNumero('REGI-0005235328 / OPD-0005999999') === '', 'con dos números distintos no adivina: no vincula');
+  ok(e._regiNumero('OC 12345') === '', 'un número corto (< 6 dígitos) no es de HP');
+
+  // El caso real de #0043: cargada con el OPD, después HP aprobó el REGI.
+  e._pipelineData = [ filaReal('OPD-0005258523', {qNum: 43, estado: 'Negociacion', monto: 1000}) ];
+  e._regiPipeRows = [ filaRegi('OPD-0005258523', 'REGI-0005258523') ];
+  const v = e._regiOpgVinculadosSet();
+  ok(e._regiEsVinculada(e._regiPipeRows[0], v), 'un proyecto cargado con el OPD sigue vinculado cuando HP aprueba el REGI');
+  ok(e._regiOpgMatcheaVigente('regi 5258523'), 'y el 🎯 del pipeline real lo reconoce escrito de cualquier forma');
+}
+
+/* ═══ 6c · El archivo mensual también vincula (23/10/2026) ═════════════════ */
+console.log('\n6c · Una cotización facturada y archivada no "suelta" su REGI');
+{
+  const e = cargar();
+  e._pipelineData = [];
+  e._archiveData = { '2026-09': [ filaReal('OPD-0005035127', {id: 'a1', qNum: 107, estado: 'Facturado', monto: 5000}) ] };
+  e._regiPipeRows = [ filaRegi('OPD-0005035127', 'REGI-0005035127', {montoArchivo: 6000, monto: 6000}) ];
+  const st = e._regiEstadoCeven(e._regiPipeRows[0], e._regiOpgVinculadosSet());
+  ok(st.linkReal, 'la facturada del archivo cuenta como vínculo real (antes volvía a pedir "Copiar a Ceven")');
+  ok(st.montoVinculado === 5000, 'y su monto facturado entra en "REGI CEVEN"', st.montoVinculado);
+  // Una misma fila en el pipeline vivo y en el archivo (mismo id) entra una vez.
+  e._pipelineData = [ filaReal('OPD-0005035127', {id: 'a1', qNum: 107, estado: 'Facturado', monto: 5000}) ];
+  ok(e._regiOpgVinculadosSet()['5035127'].length === 1, 'sin duplicar una fila que esté en los dos lados');
+}
+
+/* ═══ 6d · "Perdida": una sola fuente de verdad (23/10/2026) ═══════════════ */
+console.log('\n6d · Con cotización real manda el pipeline; el switch de REGI solo vale sin ella');
+{
+  const e = cargar();
+  e._pipelineData = [ filaReal('REGI-0005370551', {qNum: 188, estado: 'Negociacion', monto: 3000}) ];
+  const conCot = filaRegi('OPD-0005370551', 'REGI-0005370551', {perdidaManual: true, montoArchivo: 4000});
+  const st = e._regiEstadoCeven(conCot, e._regiOpgVinculadosSet());
+  ok(!st.perdidaDeclarada && !st.perdidaCeven, 'switch prendido de antes + cotización viva en Ceven: NO está perdida');
+  const t = e._regiTotalesGlobales([conCot]);
+  ok(t.perdidas === 0 && t.vinculadosHP === 4000, 'y no suma a "REGIs perdidas" (antes contaba en los dos lados)', JSON.stringify(t));
+
+  e._pipelineData[0].estado = 'Perdido';
+  const st2 = e._regiEstadoCeven(conCot, e._regiOpgVinculadosSet());
+  ok(st2.perdidaCeven && !st2.perdidaDeclarada, 'perdida en el pipeline: cuenta una vez, por Ceven');
+  ok(e._regiComposicionKpis([conCot]).perd[0].via === 'ceven', 'el desglose dice "ceven", ya no "ambas"');
+
+  conCot.linkReal = true; conCot.perdidaCeven = true; conCot.filasReales = e._pipelineData;
+  const sw = e._regiPerdidaCheckboxHTML(conCot);
+  ok(/disabled/.test(sw) && / checked/.test(sw) && /#0188/.test(sw), 'el switch se muestra trabado, refleja el pipeline y dice qué cotización', sw);
+
+  e._regiPipeRows = [conCot];
+  e._lastFetch = null;
+  e._regiMarcarPerdida('OPD-0005370551', false);
+  ok(e._lastFetch === null && /desde el pipeline/.test(e._lastToast), 'tocar el switch de una vinculada no escribe nada y avisa', e._lastToast);
+}
+{
+  const e = cargar();
+  e._pipelineData = [];
+  const suelta = filaRegi('OPD-0005999001', '', {perdidaManual: true, montoArchivo: 2000});
+  ok(e._regiEstadoCeven(suelta, e._regiOpgVinculadosSet()).perdidaDeclarada, 'sin cotización real, el switch sí la declara perdida');
+  // Al marcar se pide el motivo (mismo modal que el pipeline) y se guarda con la marca.
+  e._regiPipeRows = [ filaRegi('OPD-0005999002', '') ];
+  e.abrirModalMotivoPerdida = function(ok){ ok({motivo: 'Por precio', detalle: 'HP cotizó directo'}); };
+  e._regiMarcarPerdida('OPD-0005999002', true);
+  const body = e._lastFetch && JSON.parse(e._lastFetch[1].body);
+  ok(body && body.forecast_override === 'Perdido' && body.perdido_motivo && body.perdido_motivo.motivo === 'Por precio',
+     'marcarla guarda el motivo junto con la marca', e._lastFetch && e._lastFetch[1].body);
+  ok(e._regiPipeRows[0].perdidoMotivo.detalle === 'HP cotizó directo', 'y queda en la fila para mostrarlo');
+  let cancelo = false;
+  e._regiPipeRows = [ filaRegi('OPD-0005999003', '') ];
+  e._lastFetch = null;
+  e.abrirModalMotivoPerdida = function(ok, cancel){ cancelo = true; cancel(); };
+  e._regiMarcarPerdida('OPD-0005999003', true);
+  ok(cancelo && e._lastFetch === null && !e._regiPipeRows[0].perdidaManual, 'cancelar el motivo no marca nada');
+}
+
+/* ═══ 6e · Oportunidades que HP renumeró (23/10/2026) ═════════════════════ */
+console.log('\n6e · HP la renumeró: el número viejo vale como alias del nuevo y la vieja no suma');
+{
+  const e = cargar();
+  e.localStorage = { getItem: () => null, setItem: () => {} };
+  // IBERO tal cual está en la base: la vieja fuera del Excel y marcada perdida
+  // a mano; la nueva con el mismo nombre y monto. Una cotización con el número viejo.
+  const viejo = filaRegi('OPD-0005283476', 'REGI-0005283476', {cliente:'IBERO ASISTENCIA S.A.', primaryPartner:'Novadata SA',
+    proyecto:'REGI Poly Ibero V72 (10)', montoArchivo:25001, monto:25001, perdidaManual:true, fueraExcel:true});
+  const nuevo = filaRegi('OPD-0005555397', 'REGI-0005555397', {cliente:'IBERO ASISTENCIA S.A.', primaryPartner:'Novadata SA',
+    proyecto:'REGI Poly Ibero V72 (10)', montoArchivo:25001, monto:25001});
+  // EY "Segunda Etapa": mismo cliente y canal, otro nombre y otro monto → NO es renumeración.
+  const eyViejo = filaRegi('OPD-0005376453', 'REGI-0005376453', {cliente:'EY GLOBAL', primaryPartner:'Abc1', proyecto:'EY Salas', montoArchivo:69151, fueraExcel:true});
+  const eyNuevo = filaRegi('OPD-0005554495', 'REGI-0005554495', {cliente:'EY GLOBAL', primaryPartner:'Abc1', proyecto:'EY Segunda Etapa', montoArchivo:56751});
+  e._regiPipeRows = [viejo, nuevo, eyViejo, eyNuevo];
+  e._pipelineData = [ filaReal('REGI-0005283476', {id:'q1', qNum: 99, estado:'Cotizado', monto: 20000}) ];
+
+  const sugs = e._regiSugerenciasRenum(e._regiVigentes(e._regiPipeRows));
+  ok(sugs.length === 1 && sugs[0].viejo.opd === 'OPD-0005283476' && sugs[0].nuevo.opd === 'OPD-0005555397',
+     'sugiere IBERO (mismo cliente, canal y nombre) y NO sugiere EY Segunda Etapa', JSON.stringify(sugs.map(s => s.viejo.opd + '>' + s.nuevo.opd)));
+
+  let t = e._regiTotalesGlobales(e._regiVigentes(e._regiPipeRows));
+  ok(t.totalExcel === 25001 * 2 + 69151 + 56751, 'antes de marcarla, IBERO cuenta dos veces en el total', t.totalExcel);
+
+  e._lastFetch = null;
+  e._regiMarcarRenumerada('OPD-0005283476', 'OPD-0005555397');
+  ok(viejo.reemplazadaPor === 'OPD-0005555397', 'marcarla deja el alias en la fila vieja');
+  ok(e._lastFetch && JSON.parse(e._lastFetch[1].body).reemplazada_por === 'OPD-0005555397' && /opd=eq\.OPD-0005283476/.test(e._lastFetch[0]),
+     'y lo guarda en la base sobre la fila VIEJA', e._lastFetch && e._lastFetch[0]);
+
+  const vig = e._regiVigentes(e._regiPipeRows);
+  ok(vig.indexOf(viejo) === -1 && vig.length === 3, 'la vieja deja de verse');
+  t = e._regiTotalesGlobales(vig);
+  ok(t.totalExcel === 25001 + 69151 + 56751, 'ya no cuenta dos veces', t.totalExcel);
+  ok(t.perdidas === 0, 'y su "Perdida" a mano deja de sumar a REGIs perdidas (no se perdió: la renumeraron)', t.perdidas);
+  const st = e._regiEstadoCeven(nuevo, e._regiOpgVinculadosSet());
+  ok(st.linkReal && st.montoVinculado === 20000, 'la cotización con el número VIEJO queda vinculada a la nueva, sin editarla');
+  ok(e._regiSugerenciasRenum(vig).length === 0, 'resuelta, deja de sugerirse');
+  ok(/antes OPD-0005283476/.test(e._regiRowHTML(Object.assign({}, nuevo, {linkReal:true, filasReales: st.filas}))),
+     'la fila nueva dice de cuál viene, con deshacer');
+
+  // Al reimportar, la vieja (que ya no viene en el Excel) se conserva: es el alias.
+  const plan = e._regiPlanBorrado(
+    [{opd:'OPD-0005283476', regi:'REGI-0005283476', reemplazada_por:'OPD-0005555397'}, {opd:'OPD-0009999999', regi:''}],
+    {'OPD-0005555397': true}, e._regiOpgVinculadosSet());
+  ok(plan.conservar.indexOf('OPD-0005283476') !== -1 && plan.borrar.indexOf('OPD-0009999999') !== -1,
+     'reimportar conserva la renumerada (sin ella se soltaría la cotización) y borra la suelta', JSON.stringify(plan));
+
+  e._lastToast = '';
+  e._regiMarcarRenumerada('OPD-0005555397', 'OPD-0005283476');
+  ok(nuevo.reemplazadaPor === '' || nuevo.reemplazadaPor === undefined, 'no deja armar un ciclo A→B→A');
+  ok(/No se puede/.test(e._lastToast), 'y avisa por qué', e._lastToast);
 }
 
 /* ═══ 7 · La vista REGI es una FOTO del Excel: no se edita nada ══════ */

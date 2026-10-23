@@ -85,6 +85,16 @@ function cevenClienteTier(nombre){
   return (f && f.tier) || '';
 }
 
+/* Canal sacado a mano del desplegable (la × de cada opción, en el combo de
+   abajo). No se borra nada: el nombre sigue en el pipeline, el historial y la
+   tabla `clientes`, que es de donde sale la lista — solo deja de ofrecerse.
+   Vive en la ficha, así que se sincroniza al equipo con el resto de `cclientes`.
+   Volver a escribirlo a mano en el campo lo devuelve a la lista. */
+function cevenClienteOculto(nombre){
+  var f = cevenClienteFicha(nombre);
+  return !!(f && f.oculto);
+}
+
 /* Lista de nombres de clientes conocidos, para el <datalist> del formulario.
    Se arma con las fichas MAS lo que ya aparece en el pipeline y en el
    historial: con la base recien migrada no hay fichas todavia, y un
@@ -201,6 +211,11 @@ function cevenRefreshProyectoDatalist(){
   var input = null;  // el <input> que lo abrió
   var items = [];    // [{nombre, tier}] de lo que se está mostrando
   var sel = -1;      // índice resaltado con el teclado
+  /* Si se tipeó algo desde que se abrió. Mientras no, el texto que ya traía el
+     campo NO filtra: con un canal precargado (el "Copiar a Ceven" de REGI, una
+     cotización abierta del historial) la lista salía vacía —"Sin
+     coincidencias"— en vez de ofrecer los canales para elegir. */
+  var _tipeo = false;
 
   /* Sin acentos y en minúscula. cevenNormClient() no alcanza acá: sirve para
      decidir si dos nombres SON el mismo cliente (y ahí "Peña" y "Pena" no lo
@@ -235,6 +250,7 @@ function cevenRefreshProyectoDatalist(){
     for(i = 0; i < opts.length; i++){
       var n = opts[i].value;
       if(!n) continue;
+      if(cfg.conTier && cevenClienteOculto(n)) continue;
       out.push({nombre: n, tier: cfg.conTier ? cevenClienteTier(n) : ''});
     }
     return out;
@@ -244,18 +260,22 @@ function cevenRefreshProyectoDatalist(){
      nativo no hace: primero los que empiezan con lo tipeado, después los que lo
      contienen en el medio ("galicia" → "Banco Galicia"), y dentro de cada
      grupo, el orden alfabético con el que ya venían. Sin eso, buscar por una
-     palabra del medio devuelve todo alfabético y el que buscabas queda 40°. */
-  function _filtrar(q){
+     palabra del medio devuelve todo alfabético y el que buscabas queda 40°.
+
+     `completa`: además de los que matchean, el resto atrás. Es lo que se ve al
+     abrir un campo que ya trae texto sin haber tipeado nada (ver _tipeo). */
+  function _filtrar(q, completa){
     var todos = _todos();
     var f = _fold(q);
     if(!f) return todos.slice(0, MAX_VISIBLES);
-    var empieza = [], contiene = [];
+    var empieza = [], contiene = [], resto = [];
     for(var i = 0; i < todos.length; i++){
       var pos = _fold(todos[i].nombre).indexOf(f);
       if(pos === 0)     empieza.push(todos[i]);
       else if(pos > 0)  contiene.push(todos[i]);
+      else if(completa) resto.push(todos[i]);
     }
-    return empieza.concat(contiene).slice(0, MAX_VISIBLES);
+    return empieza.concat(contiene, resto).slice(0, MAX_VISIBLES);
   }
 
   /* El nombre con la parte que matchea en <b>. Se busca sobre el texto plegado
@@ -304,11 +324,16 @@ function cevenRefreshProyectoDatalist(){
   function _pintar(){
     if(!pop || !input) return;
     var q = input.value || '';
-    items = _filtrar(q);
+    items = _filtrar(q, !_tipeo);
     sel = -1;
 
     var _cfgP = _cfg(input) || CAMPOS.client;
     var h = '';
+    // Lo precargado no coincide con nadie: se avisa arriba de la lista completa.
+    if(!_tipeo && q.trim() && items.length && !_filtrar(q).length){
+      h += '<div class="cbo-vacio"><b>"' + cevenEsc(q.trim()) + '"</b> no está en la lista: '
+         + 'elegí uno o dejalo como ' + _cfgP.noun + ' nuevo.</div>';
+    }
     if(!items.length){
       /* Los dos vacíos son distintos y antes decían lo mismo (nada). Con la
          lista cargada, "no hay ninguno con ese nombre" es además el aviso de
@@ -331,6 +356,9 @@ function cevenRefreshProyectoDatalist(){
              es la verdad: todavía no tienen nivel recordado. */
           +   (it.tier ? '<span class="cbo-t">' + cevenEsc(
                 (typeof cevenTierLabel === 'function') ? cevenTierLabel(it.tier) : it.tier) + '</span>' : '')
+          /* Sacarlo de la lista: solo en Canal, que es donde se acumulan las
+             variantes mal escritas de un mismo canal ("Molver", "MOLVER"). */
+          +   (_cfgP.conTier ? '<span class="cbo-x" data-cbo-del="' + i + '" role="button" title="Sacar de la lista (Supr)">×</span>' : '')
           + '</div>';
       }
       // Se avisa el recorte en vez de mentir que eso es toda la lista.
@@ -367,10 +395,29 @@ function cevenRefreshProyectoDatalist(){
     if(cambio){ try{ el.dispatchEvent(new Event('change', {bubbles:true})); }catch(e){} }
   }
 
+  /* Saca el canal de la lista, sin preguntar y con Deshacer: el criterio de
+     toda la app (ver shared/notify.js). El campo no se toca aunque diga ese
+     nombre — sacarlo de la lista no es cambiar la cotización. */
+  function _ocultar(i){
+    var it = items[i], el = input;
+    if(!it || !el) return;
+    var nombre = it.nombre;
+    cevenClienteSet(nombre, {oculto: true});
+    _pintar();
+    el.focus();
+    if(typeof notifyUndo === 'function'){
+      notifyUndo('Se sacó "' + nombre + '" de la lista de canales.', function(){
+        cevenClienteSet(nombre, {oculto: false});
+        if(pop) _pintar();
+      });
+    }
+  }
+
   function abrir(el){
     if(pop && input === el){ _pintar(); return; }
     cerrar();
     input = el;
+    _tipeo = false;
     pop = document.createElement('div');
     pop.className = 'cbo-pop';
     pop.setAttribute('role', 'listbox');
@@ -395,13 +442,21 @@ function cevenRefreshProyectoDatalist(){
   });
 
   document.addEventListener('input', function(e){
-    if(_esCampo(e.target) && pop) _pintar();
+    if(_esCampo(e.target) && pop){ _tipeo = true; _pintar(); }
+  });
+
+  // Escribir a mano un canal que se había sacado de la lista lo devuelve.
+  document.addEventListener('change', function(e){
+    var cfg = _cfg(e.target);
+    if(cfg && cfg.conTier && cevenClienteOculto(e.target.value)) cevenClienteSet(e.target.value, {oculto: false});
   });
 
   document.addEventListener('click', function(e){
     var t = e.target;
     if(!t || !t.closest) return;
     if(pop && pop.contains(t)){
+      var del = t.closest('[data-cbo-del]');
+      if(del){ _ocultar(parseInt(del.getAttribute('data-cbo-del'), 10)); return; }
       var op = t.closest('[data-cbo-i]');
       if(op) _elegir(parseInt(op.getAttribute('data-cbo-i'), 10));
       return;
@@ -422,6 +477,8 @@ function cevenRefreshProyectoDatalist(){
       if(sel >= 0){ e.preventDefault(); _elegir(sel); }
       else cerrar();
     }
+    // Supr sobre una opción resaltada con ↑/↓: lo mismo que su ×.
+    else if(k === 'Delete' && sel >= 0 && (_cfg(input) || {}).conTier){ e.preventDefault(); _ocultar(sel); }
     else if(k === 'Escape' || k === 'Esc'){
       /* stopPropagation: shared/nav.js escucha Escape para cerrar la pantalla
          entera. Cerrar el desplegable no puede además sacarte de la vista. */

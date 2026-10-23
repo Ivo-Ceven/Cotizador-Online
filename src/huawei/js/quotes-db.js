@@ -86,7 +86,10 @@ function doSave(overwrite){
     db.push(cevenOpcSellarFila({'N° Cotización':qn,'Fecha':date,'Hora':time,'Cliente':client,'OPG':opg,'Proyecto':proyecto,'Ejecutivo':exec,'Observaciones':ob,'Mes Cierre':mesC,'Condición de pago':payMode,'Propuesta efectiva hasta':effDate,'Entrega':delivery,'Nivel de precio':(typeof tierDeLinea==='function'?tierDeLinea(it):''),'SKU':it.sku,'Descripción':it.description,'Cantidad':it.qty,'Nota':it.stock||'—','IVA':cevenFormatoIVA(it.iva),'P. Venta Unitario':it.salePrice,'Total':sp*it.qty,'Tipo':'producto','_estado':estadoQ}, it));
   }
   // Si ya está en el pipeline, su fila sigue a la cotización (shared/pipeline-store.js).
-  if(saveDB(db) && typeof cevenPipeSincronizarConCotiz === 'function') cevenPipeSincronizarConCotiz(qn);
+  var _guardo = saveDB(db);
+  if(_guardo && typeof cevenPipeSincronizarConCotiz === 'function') cevenPipeSincronizarConCotiz(qn);
+  // Lo que se ve quedó guardado: salir de la pestaña ya no avisa (shared/quote-guard.js).
+  if(_guardo && typeof cevenQMarcarGuardada === 'function') cevenQMarcarGuardada();
   /* Se recuerda el nivel con el que se le cotizo a este cliente. Es el germen de
      la tabla de clientes: manana la misma ficha lleva condiciones de pago, CUIT,
      etc. Ver shared/clientes.js. */
@@ -154,11 +157,14 @@ function _restoreQuoteState(snap){
   renderQ();
 }
 
-function nuevaCotizacion(){
-  var hadItems = items.length > 0;
+function nuevaCotizacion(silencioso){
+  /* `silencioso`: la limpia que hace salir de la pestaña (shared/quote-guard.js).
+     Sin cartel de Deshacer y sin reservar número: se muestra el próximo libre y
+     se consume recién al guardar, como en el arranque (ver state.js). */
+  var hadItems = !silencioso && items.length > 0;
   var snap = hadItems ? _snapshotQuoteState() : null;
   // Incrementar número
-  qNum = cevenReservarQNum();
+  qNum = silencioso ? cevenNextQNum() : cevenReservarQNum();
   cevenPintarQNum();
   cevenEditandoQNum(null);   // arranca una cotización nueva: nada que re-guardar
   // Limpiar todo
@@ -182,6 +188,7 @@ function nuevaCotizacion(){
   cevenSetDelivery('');
   cevenApplyVendorAutofill();
   renderQ();
+  if(typeof cevenQMarcarGuardada === 'function') cevenQMarcarGuardada();
   if(hadItems){
     notifyUndo('Empezaste una cotización nueva — se descartó lo que tenías sin guardar.', function(){ _restoreQuoteState(snap); });
   }
@@ -338,6 +345,7 @@ function editQuoteFromHistory(qn, skipUndoToast){
   // Resetear sort para que los productos cargados queden en orden de importación
   _qSortKey = null; _qSortDir = 1;
   renderQ();
+  if(typeof cevenQMarcarGuardada === 'function') cevenQMarcarGuardada();
   goTo('quote');
   if(hadItems && !skipUndoToast){
     notifyUndo('Cargaste la cotización #'+qn+' — se reemplazó lo que tenías sin guardar.', function(){ _restoreQuoteState(snap); goTo('quote'); });

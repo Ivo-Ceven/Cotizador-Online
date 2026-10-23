@@ -91,6 +91,8 @@ function doSave(overwrite){
   if(!saveDB(db)) return false;
   // Si ya está en el pipeline, su fila sigue a la cotización (shared/pipeline-store.js).
   if(typeof cevenPipeSincronizarConCotiz === 'function') cevenPipeSincronizarConCotiz(qn);
+  // Lo que se ve quedó guardado: salir de la pestaña ya no avisa (shared/quote-guard.js).
+  if(typeof cevenQMarcarGuardada === 'function') cevenQMarcarGuardada();
   return true;
 }
 
@@ -154,13 +156,15 @@ function _restoreQuoteState(snap){
   renderWarranties();
 }
 
-function nuevaCotizacion(){
+function nuevaCotizacion(silencioso){
   // Una cotización armada solo con garantías CevenCare es válida (saveQuote y
   // buildPDF la aceptan): también hay que poder deshacer si se descarta.
-  var hadItems = !!(items.length || warrantyItems.length);
+  // `silencioso`: la limpia al salir de la pestaña (shared/quote-guard.js),
+  // sin Deshacer y sin reservar número (se consume recién al guardar).
+  var hadItems = !silencioso && !!(items.length || warrantyItems.length);
   var snap = hadItems ? _snapshotQuoteState() : null;
   // Incrementar número
-  qNum = cevenReservarQNum();
+  qNum = silencioso ? cevenNextQNum() : cevenReservarQNum();
   cevenPintarQNum();
   cevenEditandoQNum(null);   // arranca una cotización nueva: nada que re-guardar
   // Limpiar todo
@@ -184,6 +188,7 @@ function nuevaCotizacion(){
   cevenApplyVendorAutofill();
   renderQ();
   renderWarranties();
+  if(typeof cevenQMarcarGuardada === 'function') cevenQMarcarGuardada();
   if(hadItems){
     notifyUndo('Empezaste una cotización nueva — se descartó lo que tenías sin guardar.', function(){ _restoreQuoteState(snap); });
   }
@@ -372,6 +377,7 @@ function editQuoteFromHistory(qn, skipUndoToast){
   _lastFOBState = isCotizacionFOB();
   renderQ();
   renderWarranties();
+  if(typeof cevenQMarcarGuardada === 'function') cevenQMarcarGuardada();
   goTo('quote');
   if(hadItems && !skipUndoToast){
     notifyUndo('Cargaste la cotización #'+qn+' — se reemplazó lo que tenías sin guardar.', function(){ _restoreQuoteState(snap); goTo('quote'); });

@@ -111,50 +111,172 @@ function _regiFechaDDMMYYYY(iso){
    El pipeline REGI tiene que "quedar vacío": toda oportunidad que HP nos
    reconoce tiene que terminar con una cotización real cargada del lado de
    Ceven. El matching es `pipeline.opg` (ya existe, "número de precio
-   especial que asigna la marca") contra `regi` si HP ya lo aprobó. Si no hay
-   REGI, usa `opd`, que es el dato presente en todas las filas del Excel.
-   Así el vínculo existente por REGI no cambia y las oportunidades pendientes
-   de aprobación también se pueden cargar y vincular.
+   especial que asigna la marca") contra el código de la oportunidad.
 
-   Un mismo REGI puede estar en el pipeline de Ceven en VARIAS cotizaciones
-   distintas (el mismo OPG cargado en varias filas). El vínculo es booleano
-   ("¿hay al menos una?"), pero las Estadísticas agregan TODAS esas filas
-   (_regiCevenAgg) para compararlas contra el único dato de HP.
+   23/10/2026 · SE VINCULA POR NÚMERO. HP numera la oportunidad una sola vez:
+   el REGI aprobado lleva el MISMO número que su OPD (OPD-0005235328 →
+   REGI-0005235328; verificado en las 77 aprobadas de la base). Antes se
+   comparaba el texto exacto del REGI —o del OPD si todavía no había—, y eso
+   se rompía por tres caminos:
+     · un proyecto cargado con el OPD mientras HP no aprobaba quedaba suelto
+       el día que el Excel traía el REGI (pasó con #0043, OPD-0005258523);
+     · un espacio, un guion de menos o "regi 5235328" no matcheaban;
+     · alguien escribía el REGI y HP todavía no lo traía en el Excel.
+   Ahora la clave es el número sin ceros a la izquierda: REGI-, OPD- o el
+   número solo son la misma oportunidad. Lo que no tiene un número así (OPG de
+   texto libre, "PMI", "Operacion Focus II") se compara como texto, igual que
+   antes.
 
-   Sin columna nueva ni fetch nuevo a Supabase: getPipeline() ya es la misma
-   fuente en memoria que usa toda la vista del pipeline real, mantenida al
-   día por shared/sync.js. */
+   Entran también las filas del ARCHIVO mensual: una cotización facturada se
+   archiva al mes siguiente, y hasta el 23/10/2026 su REGI volvía a aparecer
+   como "sin vincular" con el botón "Copiar a Ceven" (pasó con #0107, #0170 y
+   #0172) y su monto salía de "REGI CEVEN" y de las Estadísticas.
+
+   Un mismo REGI puede estar en VARIAS cotizaciones (el mismo OPG cargado en
+   varias filas). El vínculo es booleano ("¿hay al menos una?"), pero las
+   Estadísticas agregan TODAS esas filas (_regiCevenAgg) para compararlas
+   contra el único dato de HP.
+
+   Sin fetch nuevo a Supabase: getPipeline()/getArchive() son la misma fuente
+   en memoria que usa el resto del pipeline, mantenida al día por sync.js. */
+
+/* El número de una oportunidad de HP dentro de un texto, sin ceros a la
+   izquierda; '' si no hay uno. Los separadores ENTRE dígitos se ignoran
+   ("0005 235-328"). Hace falta un único bloque de 6 dígitos o más: los números
+   de HP andan por los 5 millones, y con dos bloques largos no hay forma de
+   saber cuál es — mejor no vincular que vincular con la oportunidad
+   equivocada. */
+function _regiNumero(v){
+  var s = String(v == null ? '' : v).replace(/(\d)[\s.\-_\/]+(?=\d)/g, '$1');
+  var largos = (s.match(/\d+/g) || []).map(function(d){ return d.replace(/^0+/, ''); })
+    .filter(function(d){ return d.length >= 6; });
+  return largos.length === 1 ? largos[0] : '';
+}
+
+/* La clave de vínculo de un código: su número si tiene uno, si no el texto
+   sin espacios de los costados y en mayúsculas. Un número (≥ 6 dígitos solos)
+   nunca choca con un texto, que tiene letras o es más corto. */
 function _regiNormCodigo(v){
-  return String(v == null ? '' : v).trim().toUpperCase();
+  return _regiNumero(v) || String(v == null ? '' : v).trim().toUpperCase();
 }
 
 function _regiCodigoVinculo(r){
   return _regiNormCodigo(r && (r.regi || r.opd));
 }
 
-// {OPG_NORMALIZADO: [fila, fila, ...]} — TODAS las filas del pipeline real que
-// tienen ese OPG, no una sola. Antes era {OPG: fila} y un segundo proyecto con
-// el mismo OPG pisaba al primero sin aviso, así que su monto/fecha quedaban
-// fuera de las Estadísticas. Los únicos consumidores son _regiEsVinculada
-// (booleano) y _regiCevenAgg (agrega la lista).
+// {CLAVE: [fila, fila, ...]} — TODAS las filas reales (pipeline vivo +
+// archivo) con ese OPG, no una sola. Una fila que por algún motivo esté en los
+// dos lados (mismo `id`) entra una vez.
 function _regiOpgVinculadosSet(){
-  var set = {};
-  (getPipeline() || []).forEach(function(r){
+  var set = {}, vistos = {};
+  function _add(r){
+    if(!r) return;
     var v = _regiNormCodigo(r.opg);
     if(!v) return;
+    if(r.id != null){
+      if(vistos[r.id]) return;
+      vistos[r.id] = 1;
+    }
     (set[v] || (set[v] = [])).push(r);
-  });
+  }
+  (getPipeline() || []).forEach(_add);
+  if(typeof getArchive === 'function'){
+    var a = getArchive() || {};
+    Object.keys(a).forEach(function(m){ (a[m] || []).forEach(_add); });
+  }
   return set;
 }
 
-/* Una oportunidad REGI está vinculada si su REGI aprobado —o su OPD cuando
-   todavía no tiene REGI— coincide con el OPG de alguna fila real.
-   `vinculados` la arma UNA vez por render (_regiOpgVinculadosSet) para no
-   recorrer getPipeline() por fila. */
+/* Las filas reales vinculadas a una oportunidad REGI ([] si ninguna). Busca
+   por su código principal y, si es otro número, también por el del OPD: hoy
+   son siempre el mismo, pero si HP algún día numera distinto el REGI, un
+   proyecto cargado con el OPD no se puede soltar por eso.
+
+   Suma además las de las oportunidades que HP RENUMERÓ y quedaron
+   reemplazadas por esta (ver _regiAliasDe): una cotización con el OPG viejo
+   cuenta para la nueva sin tener que editarla. `universo` es la lista donde
+   buscar esos alias — por defecto lo cargado en memoria; la importación le
+   pasa lo que había en la base antes de pisarla. */
+function _regiFilasDe(r, vinculados, universo, _vistos){
+  if(!r) return [];
+  var k = _regiCodigoVinculo(r);
+  var filas = (k && vinculados[k]) || [];
+  var kOpd = _regiNumero(r.opd);
+  if(kOpd && kOpd !== k && vinculados[kOpd]) filas = filas.concat(vinculados[kOpd]);
+  _vistos = _vistos || {};
+  _vistos[r.opd] = 1;
+  _regiAliasDe(r.opd, universo).forEach(function(viejo){
+    if(_vistos[viejo.opd]) return;   // una cadena mal cargada (A→B→A) no se cuelga
+    filas = filas.concat(_regiFilasDe(viejo, vinculados, universo, _vistos));
+  });
+  return filas;
+}
+
+/* ── Oportunidades renumeradas por HP (23/10/2026) ─────────────────────────
+   HP a veces da de baja una oportunidad y la vuelve a cargar con OPD y REGI
+   nuevos (IBERO ASISTENCIA: OPD-0005283476 → OPD-0005555397, mismo nombre y
+   monto). Sin esto la vieja quedaba "fuera del Excel" pero vinculada, la
+   nueva aparecía sin vincular, y "Monto total REGI" contaba la plata dos
+   veces. `reemplazada_por` (columna de poly_regi_pipeline) guarda en la fila
+   vieja el OPD de la nueva:
+     · la vieja sale de la tabla y de TODOS los totales (_regiVigentes);
+     · su número sigue valiendo como alias de la nueva (_regiFilasDe);
+     · no se borra al reimportar: es el registro del alias (_regiPlanBorrado).
+   La marca la pone una persona; el sistema solo la sugiere (_regiSugerenciasRenum). */
+function _regiReemplazadaPor(r){
+  return (r && (r.reemplazadaPor || r.reemplazada_por)) || '';
+}
+
+// Las filas viejas que apuntan a `opd` como su reemplazo.
+function _regiAliasDe(opd, universo){
+  if(!opd) return [];
+  return (universo || window._regiPipeRows || []).filter(function(x){ return _regiReemplazadaPor(x) === opd; });
+}
+
+// Lo que se ve y se suma: todo menos las renumeradas.
+function _regiVigentes(rows){
+  return (rows || []).filter(function(r){ return !_regiReemplazadaPor(r); });
+}
+
+/* Una oportunidad REGI está vinculada si alguna fila real tiene su número en
+   el OPG. `vinculados` la arma UNA vez por render (_regiOpgVinculadosSet) para
+   no recorrer el pipeline por fila. */
 function _regiEsVinculada(r, vinculados){
-  var codigo = _regiCodigoVinculo(r);
-  var filas = codigo && vinculados[codigo];
-  return !!(filas && filas.length);
+  return _regiFilasDe(r, vinculados).length > 0;
+}
+
+/* ── "Perdida": UNA sola fuente de verdad por oportunidad (23/10/2026) ─────
+   Había dos "Perdido" que se pisaban: el switch de la tabla REGI
+   (forecast_override) y el estado Perdido de la cotización en el pipeline de
+   Ceven. Una misma oportunidad podía estar "perdida" por el switch y a la vez
+   viva en el pipeline, y contaba en los dos KPI.
+
+   La regla ahora:
+     · CON cotización real vinculada → manda el pipeline de Ceven. Está
+       perdida si TODAS sus cotizaciones están en Perdido (cada una con su
+       motivo). El switch de la tabla REGI se muestra pero no se puede tocar.
+     · SIN cotización real → el switch es la única forma de declararla
+       perdida, y pide el mismo motivo que el pipeline (pipeline-perdido.js).
+   Un switch que quedó prendido de antes y después se cargó la cotización se
+   ignora: no se borra de la base, pero deja de contar.
+
+   Es el ÚNICO lugar que decide esto: lo usan la tabla, los KPI del header,
+   su desglose, las Estadísticas y el borrado al reimportar. */
+function _regiEstadoCeven(r, vinculados){
+  var filas = _regiFilasDe(r, vinculados);
+  var linkReal = filas.length > 0;
+  var perdidaCeven = linkReal && filas.every(function(f){ return (f.estado || 'Cotizado') === 'Perdido'; });
+  var perdidaDeclarada = !linkReal && !!(r && r.perdidaManual);
+  return {
+    filas: filas,
+    linkReal: linkReal,
+    perdidaCeven: perdidaCeven,
+    perdidaDeclarada: perdidaDeclarada,
+    // "Vinculada" en el sentido amplio que pide el jefe (04/09/2026):
+    // contabilizada, sea por una cotización real o declarada perdida sin ella.
+    vinculada: linkReal || perdidaDeclarada,
+    montoVinculado: linkReal ? _regiCevenMontoKpi(_regiCevenAgg(filas)) : 0
+  };
 }
 
 /* Usada desde pipeline-view.js (fila del pipeline REAL) para el 🎯 que
@@ -164,7 +286,9 @@ function _regiEsVinculada(r, vinculados){
 function _regiOpgMatcheaVigente(opg){
   var v = _regiNormCodigo(opg);
   if(!v || !window._regiPipeRows) return false;
-  return window._regiPipeRows.some(function(r){ return _regiCodigoVinculo(r) === v; });
+  return window._regiPipeRows.some(function(r){
+    return _regiCodigoVinculo(r) === v || _regiNumero(r.opd) === v;
+  });
 }
 
 /* ── Estadísticas REGI: HP vs. Ceven (27/08/2026) ──────────────────────────
@@ -277,10 +401,9 @@ function _regiCevenMontoKpi(ag){
 function _regiPairsVinculadas(){
   var vinculados = _regiOpgVinculadosSet();
   var pares = [];
-  (window._regiPipeRows || []).forEach(function(hp){
-    var codigo = _regiCodigoVinculo(hp);
-    var filas = codigo && vinculados[codigo];
-    if(filas && filas.length) pares.push({hp: hp, ceven: _regiCevenAgg(filas)});
+  _regiVigentes(window._regiPipeRows).forEach(function(hp){
+    var filas = _regiFilasDe(hp, vinculados);
+    if(filas.length) pares.push({hp: hp, ceven: _regiCevenAgg(filas)});
   });
   return pares;
 }
@@ -647,7 +770,7 @@ function _procesarRegiPipelineExcel(filas){
 
   // 1) Lo que hay HOY en la tabla, ANTES de pisarla: hace falta para saber qué
   //    oportunidades se fueron del Excel y si alguna está vinculada.
-  cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?select=opd,regi,forecast_override', {method: 'GET'}).then(function(existentes){
+  cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?select=opd,regi,forecast_override,reemplazada_por', {method: 'GET'}).then(function(existentes){
     plan = _regiPlanBorrado(Array.isArray(existentes) ? existentes : [], opdsEnExcel, _regiOpgVinculadosSet());
     // 2) Alta / actualización por OPD.
     return cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline'), {
@@ -683,10 +806,12 @@ function _regiPlanBorrado(existentes, opdsEnExcel, vinculados){
   var borrar = [], conservar = [];
   (existentes || []).forEach(function(e){
     if(!e || !e.opd || opdsEnExcel[e.opd]) return;
-    var codigo = _regiCodigoVinculo(e);
-    var link = !!(codigo && vinculados[codigo] && vinculados[codigo].length);
+    var link = _regiFilasDe(e, vinculados, existentes).length > 0;
     var perdida = e.forecast_override === 'Perdido';
-    (link || perdida ? conservar : borrar).push(e.opd);
+    // Una renumerada es el registro del alias: borrarla soltaría las
+    // cotizaciones cargadas con el número viejo.
+    var alias = !!_regiReemplazadaPor(e);
+    (link || perdida || alias ? conservar : borrar).push(e.opd);
   });
   return {borrar: borrar, conservar: conservar};
 }
@@ -732,6 +857,10 @@ function _regiRowToPipeRow(r){
     // Único uso que le queda a forecast_override: NO revive el <select> de
     // Commit/Pipeline/Upside que se fue el 03/09/2026, solo este booleano.
     perdidaManual: r.forecast_override === 'Perdido',
+    // {motivo, detalle} — el mismo que pide el pipeline (23/10/2026).
+    perdidoMotivo: (r.forecast_override === 'Perdido' && r.perdido_motivo) || null,
+    // OPD de la oportunidad que la reemplazó si HP la renumeró (23/10/2026).
+    reemplazadaPor: r.reemplazada_por || '',
     // Cuándo se vio por última vez en un Excel de HP (ver _regiMarcarFueraDelExcel).
     importadoAt: r.imported_at ? (Date.parse(r.imported_at) || 0) : 0
   };
@@ -753,16 +882,17 @@ function _cevenRegiPipeFetch(){
      ahí y otra desde renderRegiPipeline(). El in-flight promise evita el GET
      duplicado — la segunda llamada recibe el mismo resultado que la primera. */
   if(window._regiPipeFetchPromise) return window._regiPipeFetchPromise;
-  /* Un solo GET. `perdido_motivo` y la tabla `poly_regi_pipeline_productos`
-     siguen existiendo en la base con sus datos pero esta vista no las lee
-     (ver el comentario de cabecera) — `forecast_override` sí, desde el
+  /* Un solo GET. La tabla `poly_regi_pipeline_productos` sigue existiendo en
+     la base con sus datos pero esta vista no la lee (ver el comentario de
+     cabecera). `perdido_motivo` se volvió a leer el 23/10/2026: es el motivo
+     del switch "Perdida". `forecast_override` sí, desde el
      04/09/2026: es donde vive el checkbox "Perdida" (ver _regiMarcarPerdida
      y el comentario grande sobre _regiEnsureHeaderKpis). No revive el resto
      de la edición vieja: acá SOLO se usa el valor 'Perdido' de esa columna,
      nunca 'Commit'/'Pipeline'/'Upside' — el Forecast sigue siendo 100% del
      Excel, sin pastilla editable. */
   var url = _cevenRegiPipeRest('poly_regi_pipeline')
-    + '?select=opd,regi,dr_expiration,opportunity,forecast,account,primary_partner,amount,close_date,forecast_override,imported_at'
+    + '?select=opd,regi,dr_expiration,opportunity,forecast,account,primary_partner,amount,close_date,forecast_override,perdido_motivo,reemplazada_por,imported_at'
     + '&order=amount.desc';
   window._regiPipeFetchPromise = cevenAuthedFetch(url, {method: 'GET'}).then(function(res){
     window._regiPipeFetchPromise = null;
@@ -803,34 +933,18 @@ function _cevenRegiPipeFetch(){
    "← Volver" y "+ Nueva cotización". */
 
 // {totalExcel, vinculadosHP, vinculadosCeven, perdidas} a partir de TODAS las
-// filas de REGI (sin filtrar). Si `rowsTotal` ya trae `.linkReal`/
-// `.montoVinculado`/`.perdidaCeven` calculados (_renderRegiPipelineFromCache
-// los pone en cada fila antes de llamar acá), se reusan tal cual; si no
-// —porque todavía no se entró nunca a 🎯 Pipeline REGI esta sesión—, se
-// calculan acá mismo contra el pipeline real actual. `.perdidaManual` sale
-// directo del Excel (columna forecast_override), así que siempre está.
+// filas de REGI (sin filtrar), contra el pipeline real actual. La
+// clasificación es la de _regiEstadoCeven, la misma de la tabla.
 function _regiTotalesGlobales(rowsTotal){
-  var vinculados = null;
+  var vinculados = _regiOpgVinculadosSet();
   var totalExcel = 0, vinculadosHP = 0, vinculadosCeven = 0, perdidas = 0;
   (rowsTotal || []).forEach(function(r){
     var montoArchivo = Number(r.montoArchivo) || 0;
     totalExcel += montoArchivo;
-
-    var linkReal = r.linkReal, montoVinc = r.montoVinculado, perdidaCeven = r.perdidaCeven;
-    if(linkReal === undefined){
-      if(!vinculados) vinculados = _regiOpgVinculadosSet();
-      var filasReales = vinculados[_regiCodigoVinculo(r)] || null;
-      linkReal = !!(filasReales && filasReales.length);
-      montoVinc = linkReal ? _regiCevenMontoKpi(_regiCevenAgg(filasReales)) : 0;
-      perdidaCeven = !!(linkReal && filasReales.every(function(f){ return (f.estado || 'Cotizado') === 'Perdido'; }));
-    }
-    var perdidaManual = !!r.perdidaManual;
-
-    // "Vinculada" en sentido amplio: contabilizada por HP, sea por un link
-    // real (activo o ya perdido) o porque Ceven la declaró perdida a mano.
-    if(linkReal || perdidaManual) vinculadosHP += montoArchivo;
-    if(linkReal) vinculadosCeven += Number(montoVinc) || 0;
-    if(perdidaCeven || perdidaManual) perdidas += montoArchivo;
+    var st = _regiEstadoCeven(r, vinculados);
+    if(st.vinculada) vinculadosHP += montoArchivo;
+    if(st.linkReal) vinculadosCeven += st.montoVinculado;
+    if(st.perdidaCeven || st.perdidaDeclarada) perdidas += montoArchivo;
   });
   return {totalExcel: totalExcel, vinculadosHP: vinculadosHP, vinculadosCeven: vinculadosCeven, perdidas: perdidas};
 }
@@ -859,7 +973,7 @@ function _regiEnsureHeaderKpis(){
   if(!hayAlgunHeader) return;
   _regiBindHeaderKpiDrill();
   if(window._regiPipeRows){
-    _regiPintarHeaderKpis(_regiTotalesGlobales(window._regiPipeRows));
+    _regiPintarHeaderKpis(_regiTotalesGlobales(_regiVigentes(window._regiPipeRows)));
     return;
   }
   _cevenRegiPipeFetch().then(function(){ _regiEnsureHeaderKpis(); }, function(){ /* sin datos: se deja en USD 0 */ });
@@ -876,27 +990,23 @@ function _regiEnsureHeaderKpis(){
 // { hp, filas, montoHP, montoCeven, via }. MISMO criterio de clasificación que
 // _regiTotalesGlobales: si se toca uno, tocar el otro (hay un test de
 // reconciliación en scripts/check-pipe-regi-stats.js).
-//   · vinc  → linkReal || perdidaManual        (aporta montoHP al KPI)
-//   · ceven → linkReal                         (aporta montoCeven = _regiCevenMontoKpi)
-//   · perd  → perdidaCeven || perdidaManual    (aporta montoHP; via: 'manual'|'ceven'|'ambas')
-// `filas` es SIEMPRE la lista de cotizaciones reales con ese OPG (puede ser []).
+//   · vinc  → vinculada (linkReal || perdidaDeclarada)  (aporta montoHP al KPI)
+//   · ceven → linkReal                                  (aporta montoCeven = _regiCevenMontoKpi)
+//   · perd  → perdidaCeven || perdidaDeclarada          (aporta montoHP; via: 'ceven'|'manual')
+// Ya no hay via 'ambas': con cotización real, el switch de REGI no cuenta
+// (ver _regiEstadoCeven). `filas` es SIEMPRE la lista de cotizaciones reales
+// con ese número (puede ser []).
 function _regiComposicionKpis(rowsTotal){
   var vinculados = _regiOpgVinculadosSet();
   var vinc = [], ceven = [], perd = [];
   (rowsTotal || []).forEach(function(r){
     var montoHP = Number(r.montoArchivo) || 0;
-    var filas = vinculados[_regiCodigoVinculo(r)] || [];
-    var linkReal = filas.length > 0;
-    var perdidaManual = !!r.perdidaManual;
-    var perdidaCeven = linkReal && filas.every(function(f){ return (f.estado || 'Cotizado') === 'Perdido'; });
-    var montoCeven = linkReal ? _regiCevenMontoKpi(_regiCevenAgg(filas)) : 0;
-    var item = { hp: r, filas: filas, montoHP: montoHP, montoCeven: montoCeven };
-    if(linkReal || perdidaManual) vinc.push(item);
-    if(linkReal) ceven.push(item);
-    if(perdidaCeven || perdidaManual){
-      perd.push(Object.assign({}, item, {
-        via: (perdidaCeven && perdidaManual) ? 'ambas' : (perdidaManual ? 'manual' : 'ceven')
-      }));
+    var st = _regiEstadoCeven(r, vinculados);
+    var item = { hp: r, filas: st.filas, montoHP: montoHP, montoCeven: st.montoVinculado };
+    if(st.vinculada) vinc.push(item);
+    if(st.linkReal) ceven.push(item);
+    if(st.perdidaCeven || st.perdidaDeclarada){
+      perd.push(Object.assign({}, item, { via: st.perdidaDeclarada ? 'manual' : 'ceven' }));
     }
   });
   vinc.sort(function(a, b){ return b.montoHP - a.montoHP; });
@@ -939,7 +1049,7 @@ function _regiDrilldownKpiAbrir(kpi){
     _cevenRegiPipeFetch().then(function(){
       if(!_regiDrillState || _regiDrillState.kpi !== kpi) return;
       _regiDrillState.cargando = false;
-      _regiDrillState.comp = _regiComposicionKpis(window._regiPipeRows || []);
+      _regiDrillState.comp = _regiComposicionKpis(_regiVigentes(window._regiPipeRows));
       _regiDrilldownPaint();
     }, function(){
       if(!_regiDrillState || _regiDrillState.kpi !== kpi) return;
@@ -947,7 +1057,7 @@ function _regiDrilldownKpiAbrir(kpi){
       _regiDrilldownPaint();
     });
   } else {
-    _regiDrillState.comp = _regiComposicionKpis(window._regiPipeRows || []);
+    _regiDrillState.comp = _regiComposicionKpis(_regiVigentes(window._regiPipeRows));
     _regiDrilldownPaint();
   }
 }
@@ -1098,7 +1208,8 @@ function _regiDrilldownBloqueHTML(it, s, meta){
           + _regiStatsDesgloseHTML(_regiCevenAgg(filas), { linkQuotes: true, compacto: true, excluir: meta.excluir })
         + '</div>'
       : '<div style="padding:2px 6px 12px 30px;font-size:12px;color:var(--ct2)">'
-          + 'Sin cotización real de Ceven — se declaró perdida a mano con el switch "Perdida" de la tabla REGI.</div>';
+          + 'Sin cotización real de Ceven — se declaró perdida a mano con el switch "Perdida" de la tabla REGI.'
+          + _regiMotivoTxt(r.perdidoMotivo) + '</div>';
   }
   return '<div style="border-bottom:0.5px solid var(--cb2)">' + head + detalle + '</div>';
 }
@@ -1154,7 +1265,8 @@ function renderRegiPipeline(){
 }
 
 function _renderRegiPipelineFromCache(){
-  var rowsTotal = window._regiPipeRows || [];
+  // Las renumeradas por HP no se ven ni suman: su número vive como alias de la nueva.
+  var rowsTotal = _regiVigentes(window._regiPipeRows);
 
   // Se recalcula EN CADA render (no al traer del Excel): getPipeline() puede
   // haber cambiado desde el último render de esta vista —por ejemplo, se
@@ -1162,28 +1274,23 @@ function _renderRegiPipelineFromCache(){
   // haga falta reimportar ni volver a pedirle nada a Supabase.
   var vinculados = _regiOpgVinculadosSet();
   rowsTotal.forEach(function(r){
-    var filasReales = vinculados[_regiCodigoVinculo(r)] || null;
-    // `linkReal`: hay al menos una cotización real de Ceven con este OPG,
-    // sea cual sea su estado. Es el vínculo de verdad (matching por código);
-    // no confundir con `vinculada` de acá abajo, que es más ancho.
-    r.linkReal = !!(filasReales && filasReales.length);
-    // Monto Ceven real de TODAS las cotizaciones de este OPG que no estén
-    // Perdidas: posición viva + facturado (ver _regiCevenMontoKpi). Es lo que
-    // muestra el KPI celeste "REGI CEVEN" del header — mismo criterio que
-    // _regiTotalesGlobales, que reusa este valor cuando la fila viene
-    // enriquecida.
-    r.montoVinculado = r.linkReal ? _regiCevenMontoKpi(_regiCevenAgg(filasReales)) : 0;
-    // Perdida por el lado de Ceven: hubo vínculo real, pero TODAS las
-    // cotizaciones que lo forman están en 'Perdido' — ninguna activa, ninguna
-    // Facturado. El vínculo existió y no prosperó.
-    r.perdidaCeven = !!(r.linkReal && filasReales.every(function(f){ return (f.estado || 'Cotizado') === 'Perdido'; }));
+    /* Todo sale de _regiEstadoCeven, que es lo mismo que usan los KPI del
+       header y su desglose:
+         · linkReal       — hay al menos una cotización real con este número
+                            (pipeline vivo o archivo), sea cual sea su estado;
+         · montoVinculado — lo que vale en Ceven: activas + facturado;
+         · perdidaCeven   — hubo vínculo y TODAS sus cotizaciones están Perdido;
+         · perdidaDeclarada — sin cotización real, declarada con el switch. */
+    var st = _regiEstadoCeven(r, vinculados);
+    r.filasReales = st.filas;
+    r.linkReal = st.linkReal;
+    r.montoVinculado = st.montoVinculado;
+    r.perdidaCeven = st.perdidaCeven;
+    r.perdidaDeclarada = st.perdidaDeclarada;
     // "Vinculada", en el sentido amplio que pide el jefe (04/09/2026):
-    // contabilizada por HP, sea por un link real (activo o ya perdido) o
-    // porque Ceven la declaró perdida a mano con el checkbox de la tabla
-    // (`perdidaManual`, viene del Excel — ver _regiRowToPipeRow) sin llegar
-    // a cargar una cotización real. El objetivo es que sumando esto se
-    // llegue a TODO "Monto total REGI": nada de lo que ve HP queda afuera.
-    r.vinculada = r.linkReal || r.perdidaManual;
+    // contabilizada, sea por un link real (activo o ya perdido) o declarada
+    // perdida sin cotización. Sumando esto se llega a TODO "Monto total REGI".
+    r.vinculada = st.vinculada;
   });
   var nVinculadas = rowsTotal.filter(function(r){ return r.vinculada; }).length;
   var nPerdidas = rowsTotal.filter(_regiEsPerdida).length;
@@ -1263,7 +1370,9 @@ function _renderRegiPipelineFromCache(){
   } else {
     _vacio = _hayFiltros ? 'Ninguna oportunidad coincide con los filtros. Tocá "✕ Limpiar filtros".' : 'El Excel importado no tiene oportunidades.';
   }
-  document.getElementById('regi-pipe-body').innerHTML = html || '<tr><td colspan="10" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>';
+  // Arriba de todo, sin importar filtros: las que parecen renumeradas por HP.
+  document.getElementById('regi-pipe-body').innerHTML = _regiRenumBannerHTML(_regiSugerenciasRenum(rowsTotal))
+    + (html || '<tr><td colspan="10" style="text-align:center;color:#aeaeb2;padding:24px">'+_vacio+'</td></tr>');
   attachPipeSortHandlers();
   _regiBindDelegation();
 }
@@ -1293,7 +1402,14 @@ function _regiPintarToggleSoloPerdidas(n){
    sobre cada fila antes de filtrar). Mismo criterio que el KPI "REGIs
    perdidas" del header (_regiTotalesGlobales). */
 function _regiEsPerdida(r){
-  return !!(r && (r.perdidaManual || r.perdidaCeven));
+  return !!(r && (r.perdidaDeclarada || r.perdidaCeven));
+}
+
+// " Motivo: Por precio — comentario", o '' si no hay. Mismo {motivo, detalle}
+// que guarda el pipeline (shared/pipeline-perdido.js).
+function _regiMotivoTxt(m){
+  if(!m || !m.motivo) return '';
+  return ' Motivo: <b>' + cevenEsc(m.motivo) + '</b>' + (m.detalle ? ' — ' + cevenEsc(m.detalle) : '') + '.';
 }
 
 /* Los dos toggles de la vista REGI ("Mostrar vinculadas" y "Solo perdidas")
@@ -1803,11 +1919,29 @@ function _regiForecastPillHTML(r){
     + 'font-size:11px;font-weight:700;white-space:nowrap">'+cevenEsc(actual)+'</span>';
 }
 
+// "#0043, #0107" — las cotizaciones reales vinculadas, para los títulos.
+function _regiQNumsTxt(filas){
+  var vistos = {}, out = [];
+  (filas || []).forEach(function(f){
+    var q = (f.qNum == null || f.qNum === '') ? '' : String(f.qNum).padStart(4, '0');
+    if(q && !vistos[q]){ vistos[q] = 1; out.push('#' + q); }
+  });
+  return out.join(', ');
+}
+
 // Checkbox "Perdida" (04/09/2026): declara a mano que Ceven no va a trabajar
 // esta oportunidad, sin necesidad de cargar una cotización real solo para
 // poder marcarla. PATCH sobre forecast_override (ver _regiMarcarPerdida) —
 // sobrevive las reimportaciones del Excel, igual que ya hacía esa columna.
+// Con cotización real vinculada no se puede tocar: refleja el pipeline de
+// Ceven, que es el que manda (ver _regiEstadoCeven).
 function _regiPerdidaCheckboxHTML(r){
+  if(r.linkReal){
+    return '<input type="checkbox" role="switch" class="regi-perdida-toggle" disabled'
+      + (r.perdidaCeven ? ' checked' : '')
+      + ' title="Tiene cotización en Ceven (' + cevenEsc(_regiQNumsTxt(r.filasReales)) + '): '
+      + (r.perdidaCeven ? 'está perdida ahí' : 'sigue viva ahí') + '. Se marca perdida desde el pipeline, con su motivo.">';
+  }
   return '<input type="checkbox" role="switch" class="regi-perdida-toggle" data-act="regi-perdida" data-opd="'+cevenEsc(r.opd)+'"'
     + (r.perdidaManual ? ' checked' : '')
     + ' title="Marcar como perdida: HP la sigue mostrando pero Ceven no la va a trabajar. Sigue sumando a REGI vinculados.">';
@@ -1833,12 +1967,13 @@ function _regiRowHTML(r){
   // (roja, aunque haya vínculo real: la oportunidad no prosperó); link real vivo
   // → "✓ Vinculada"; sin link pero declarada perdida a mano → "✕ Perdida
   // (declarada)"; nada → botón para copiarla al pipeline real.
+  var _qns = r.linkReal ? cevenEsc(_regiQNumsTxt(r.filasReales)) : '';
   var celdaAcc = (r.linkReal && r.perdidaCeven)
-    ? '<span style="background:#fde8e6;color:#d70015;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✕ Perdida</span>'
+    ? '<span title="Perdida en el pipeline de Ceven: ' + _qns + '" style="background:#fde8e6;color:#d70015;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✕ Perdida</span>'
     : (r.linkReal
-      ? '<span style="background:#e6f7ec;color:#15863a;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✓ Vinculada</span>'
-      : (r.perdidaManual
-        ? '<span style="background:#fde8e6;color:#d70015;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✕ Perdida (declarada)</span>'
+      ? '<span title="Cotización de Ceven: ' + _qns + '" style="background:#e6f7ec;color:#15863a;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✓ Vinculada</span>'
+      : (r.perdidaDeclarada
+        ? '<span title="' + (r.perdidoMotivo && r.perdidoMotivo.motivo ? 'Motivo: ' + cevenEsc(r.perdidoMotivo.motivo) + (r.perdidoMotivo.detalle ? ' — ' + cevenEsc(r.perdidoMotivo.detalle) : '') : 'Sin motivo registrado') + '" style="background:#fde8e6;color:#d70015;border-radius:980px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap">✕ Perdida (declarada)</span>'
         : '<button class="bs" data-act="regi-copiar" data-opd="'+cevenEsc(r.opd)+'" title="Crear la cotización real en nuestro pipeline a partir de esta oportunidad" style="padding:2px 8px;font-size:12px;background:#e8f4ff;color:#0071e3;border-color:#b8ddff">'
             + ((window._regiCopiadas && window._regiCopiadas[r.opd]) ? '➕ Copiar de nuevo' : '➕ Copiar a Ceven') + '</button>'));
   // regi-row-saliendo: recién marcada "Perdida", en su ventana de 3 s antes de
@@ -1846,8 +1981,15 @@ function _regiRowHTML(r){
   // keyframe la desvanece igual).
   var _saliendo = !!(window._regiPerdidaGracia && window._regiPerdidaGracia[r.opd]);
   if(r.fueraExcel){
-    celdaAcc += '<div title="Ya no figura en el último Excel de HP. Se conserva porque está vinculada: queda lo último que informó HP." style="margin-top:3px;font-size:10px;font-weight:700;color:#b35333">fuera del Excel de HP</div>';
+    celdaAcc += '<div title="Ya no figura en el último Excel de HP. Se conserva porque está vinculada: queda lo último que informó HP." style="margin-top:3px;font-size:10px;font-weight:700;color:#b35333">fuera del Excel de HP</div>'
+      // Si HP la volvió a cargar con otro número, se marca acá (_regiAbrirRenum).
+      + '<button class="bs" data-act="regi-renum" data-opd="'+cevenEsc(r.opd)+'" title="HP la dio de baja y la volvió a cargar con otro número: elegí cuál es la nueva" style="margin-top:3px;padding:1px 7px;font-size:11px">↪ Renumerada…</button>';
   }
+  // Esta es la nueva de una o más renumeradas: se dice de cuál, con deshacer.
+  _regiAliasDe(r.opd).forEach(function(viejo){
+    celdaAcc += '<div title="HP la renumeró: las cotizaciones con el número viejo cuentan para esta" style="margin-top:3px;font-size:10px;color:#6e6e73;white-space:nowrap">↪ antes '
+      + cevenEsc(viejo.opd) + ' · <a href="#" data-act="regi-renum-deshacer" data-opd="'+cevenEsc(viejo.opd)+'" style="color:#0071e3">deshacer</a></div>';
+  });
   return '<tr'+(_saliendo ? ' class="regi-row-saliendo"' : (r.vinculada ? ' style="opacity:.55"' : ''))+'>'
     // opd/regi/partner: pueden venir larguísimos del Excel de HP. Se recortan
     // con "…" dentro de un ancho fijo (título nativo para el texto completo),
@@ -1863,6 +2005,150 @@ function _regiRowHTML(r){
     + '<td class="stk-monto" style="text-align:right;font-weight:500;white-space:nowrap;min-width:110px">USD '+fI(r.monto||0)+'</td>'
     + '<td class="stk-act" style="text-align:center;white-space:nowrap">'+celdaAcc+'</td>'
   + '</tr>';
+}
+
+/* ── Renumeradas: sugerencia, selector y guardado (23/10/2026) ──────────── */
+
+// Para comparar nombres de HP: sin acentos, sin mayúsculas, sin puntuación.
+function _regiPlano(s){
+  s = String(s == null ? '' : s).toLowerCase();
+  try{ s = s.normalize('NFD').replace(/[̀-ͯ]/g, ''); }catch(e){}
+  return s.replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/* ¿Es `n` la misma oportunidad que `v`, recargada por HP con otro número?
+   Mismo cliente final y mismo canal, y además el mismo nombre o el mismo
+   monto. EY Global "Segunda Etapa" (otro nombre, otro monto) NO entra: es
+   otro negocio con sus propias cotizaciones. */
+function _regiPareceRenumerada(v, n){
+  if(!v || !n || v.opd === n.opd) return false;
+  if(_regiPlano(v.cliente) !== _regiPlano(n.cliente)) return false;
+  if(_regiPlano(v.primaryPartner) !== _regiPlano(n.primaryPartner)) return false;
+  return _regiPlano(v.proyecto) === _regiPlano(n.proyecto)
+    || (Number(v.montoArchivo) || 0) === (Number(n.montoArchivo) || 0);
+}
+
+// Pares {viejo, nuevo} que ya se descartaron con "No es la misma", por usuario.
+var _REGI_RENUM_NO_KEY = 'ceven_regi_renum_no';
+function _regiRenumDescartadas(){
+  try{ return JSON.parse(localStorage.getItem(_REGI_RENUM_NO_KEY) || '{}') || {}; }catch(e){ return {}; }
+}
+function _regiRenumDescartar(viejo, nuevo){
+  var d = _regiRenumDescartadas();
+  d[viejo + '>' + nuevo] = 1;
+  try{ localStorage.setItem(_REGI_RENUM_NO_KEY, JSON.stringify(d)); }catch(e){}
+}
+
+/* [{viejo, nuevo}]: cada oportunidad que salió del Excel y tiene UNA sola
+   candidata a ser su versión renumerada. Con dos candidatas no se sugiere
+   nada: que lo decida una persona con el botón de la fila. Solo sugiere: no
+   escribe nada hasta que alguien confirma. */
+function _regiSugerenciasRenum(vigentes){
+  var descartadas = _regiRenumDescartadas();
+  var actuales = (vigentes || []).filter(function(r){ return !r.fueraExcel; });
+  var out = [];
+  (vigentes || []).forEach(function(v){
+    if(!v.fueraExcel) return;
+    var cands = actuales.filter(function(n){ return _regiPareceRenumerada(v, n); });
+    if(cands.length === 1 && !descartadas[v.opd + '>' + cands[0].opd]) out.push({viejo: v, nuevo: cands[0]});
+  });
+  return out;
+}
+
+function _regiRenumBannerHTML(sugs){
+  return (sugs || []).map(function(s){
+    var v = s.viejo, n = s.nuevo;
+    return '<tr><td colspan="10" style="background:#fff8e6;padding:9px 12px;font-size:12px;color:#7a5800;border-bottom:0.5px solid #f0d58a">'
+      + '⚠ HP parece haber <b>renumerado</b> <b>' + cevenEsc(v.cliente || '—') + '</b>: '
+      + '<span style="font-family:ui-monospace,Menlo,monospace">' + cevenEsc(v.opd) + '</span> → '
+      + '<span style="font-family:ui-monospace,Menlo,monospace">' + cevenEsc(n.opd) + '</span>'
+      + ' (' + cevenEsc(n.proyecto || '—') + ', USD ' + fI(n.montoArchivo || 0) + '). '
+      + '<button class="bs" data-act="regi-renum-si" data-opd="' + cevenEsc(v.opd) + '" data-nuevo="' + cevenEsc(n.opd) + '" style="margin-left:6px;padding:1px 8px;font-size:11px">Sí, es la misma</button> '
+      + '<button class="bs" data-act="regi-renum-no" data-opd="' + cevenEsc(v.opd) + '" data-nuevo="' + cevenEsc(n.opd) + '" style="padding:1px 8px;font-size:11px">No</button>'
+      + '</td></tr>';
+  }).join('');
+}
+
+function _regiFilaPorOpd(opd){
+  return (window._regiPipeRows || []).filter(function(x){ return x.opd === opd; })[0] || null;
+}
+
+/* Selector de la oportunidad nueva, para el botón "↪ Renumerada…" de la fila.
+   Primero las que se parecen; después el resto por cliente final. */
+function _regiAbrirRenum(opd){
+  var v = _regiFilaPorOpd(opd);
+  if(!v) return;
+  var cands = _regiVigentes(window._regiPipeRows).filter(function(n){ return n.opd !== opd && !n.fueraExcel; });
+  if(!cands.length){ showToast('No hay oportunidades en el Excel actual para elegir.'); return; }
+  cands.sort(function(a, b){
+    var pa = _regiPareceRenumerada(v, a) ? 0 : 1, pb = _regiPareceRenumerada(v, b) ? 0 : 1;
+    return (pa - pb) || String(a.cliente || '').localeCompare(String(b.cliente || ''));
+  });
+  var old = document.getElementById('ceven-generic-modal');
+  if(old) old.parentNode.removeChild(old);
+  var wrap = document.createElement('div');
+  wrap.id = 'ceven-generic-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif';
+  wrap.innerHTML =
+    '<div style="background:#fff;border:0.5px solid #d2d2d7;border-radius:16px;padding:22px;width:460px;max-width:92vw;box-shadow:0 10px 40px rgba(0,0,0,.15)">'
+      + '<div style="font-size:15px;font-weight:600;color:#1d1d1f;margin-bottom:6px">¿Con qué número la volvió a cargar HP?</div>'
+      + '<div style="font-size:12px;color:#6e6e73;line-height:1.45;margin-bottom:12px">'
+        + cevenEsc(v.opd) + ' · ' + cevenEsc(v.cliente || '—') + ' · USD ' + fI(v.montoArchivo || 0) + '<br>'
+        + 'Las cotizaciones cargadas con el número viejo van a contar para la nueva, y esta deja de verse y de sumar.</div>'
+      + '<select data-nuevo style="border:0.5px solid #d2d2d7;border-radius:8px;padding:9px 11px;font-size:13px;width:100%;margin-bottom:14px;box-sizing:border-box;font-family:inherit;background:#fff">'
+        + cands.map(function(n){
+            return '<option value="' + cevenEsc(n.opd) + '">' + (_regiPareceRenumerada(v, n) ? '★ ' : '')
+              + cevenEsc(n.opd + ' · ' + (n.cliente || '—') + ' · ' + (n.proyecto || '—') + ' · USD ' + fI(n.montoArchivo || 0)) + '</option>';
+          }).join('')
+      + '</select>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+        + '<button data-cancel style="border:0.5px solid #d2d2d7;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;background:#fff;color:#1d1d1f;font-family:inherit">Cancelar</button>'
+        + '<button data-ok style="border:none;border-radius:980px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;background:#1d1d1f;color:#fff;font-family:inherit">Es esta</button>'
+      + '</div>'
+    + '</div>';
+  document.body.appendChild(wrap);
+  function close(){ if(wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+  wrap.querySelector('[data-ok]').onclick = function(){
+    var nuevo = wrap.querySelector('[data-nuevo]').value;
+    close();
+    _regiMarcarRenumerada(opd, nuevo);
+  };
+  wrap.querySelector('[data-cancel]').onclick = close;
+  wrap.onclick = function(ev){ if(ev.target === wrap) close(); };
+}
+
+function _regiMarcarRenumerada(viejo, nuevo){
+  if(!cevenCanUsePipeline()){ showToast('Tu rol no permite marcar oportunidades de REGI como renumeradas.'); return; }
+  var v = _regiFilaPorOpd(viejo), n = _regiFilaPorOpd(nuevo);
+  if(!v || !n || viejo === nuevo) return;
+  // La nueva no puede terminar apuntando a la vieja (A→B→A).
+  for(var x = n, i = 0; x && i < 50; x = _regiFilaPorOpd(_regiReemplazadaPor(x)), i++){
+    if(x.opd === viejo){ showToast('No se puede: ' + nuevo + ' ya está marcada como reemplazada por ' + viejo + '.'); return; }
+  }
+  _regiGuardarRenumerada(v, nuevo, 'Marcada como renumerada: ' + viejo + ' → ' + nuevo + '.');
+}
+
+/* Optimista, como el switch "Perdida": cambia la pantalla, hace el PATCH y
+   revierte si falla. `msg` = cartel con Deshacer; sin msg, cartel simple. */
+function _regiGuardarRenumerada(r, nuevo, msg){
+  var anterior = r.reemplazadaPor || '';
+  r.reemplazadaPor = nuevo || '';
+  renderPipeline();
+  return cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?opd=eq.' + encodeURIComponent(r.opd), {
+    method: 'PATCH',
+    headers: {Prefer: 'return=minimal'},
+    body: JSON.stringify({reemplazada_por: nuevo || null})
+  }).then(function(){
+    if(msg && typeof notifyUndo === 'function'){
+      notifyUndo(msg, function(){ _regiGuardarRenumerada(r, anterior, null); });
+    } else if(!nuevo){
+      showToast(r.opd + ' vuelve a ser una oportunidad aparte.');
+    }
+  }).catch(function(e){
+    r.reemplazadaPor = anterior;
+    renderPipeline();
+    showError('No se pudo guardar el cambio: ' + ((e && e.message) || 'error desconocido'));
+  });
 }
 
 function _regiTablaHTML(filas){
@@ -1908,16 +2194,46 @@ function _regiCopiarAPipeline(opd){
   if(!r) return;
   goTo('quote');
   nuevaCotizacion();
-  document.getElementById('client').value = r.cliente;
+  /* Una fila REGI es un CLIENTE FINAL (`cliente` = Account del Excel de HP); el
+     canal es el Primary Partner y `proyecto` es el nombre de la oportunidad.
+     Hasta el 23/10/2026 esto copiaba el cliente final al campo Canal y la
+     oportunidad al de Cliente final. */
+  // Sin los canales que se sacaron a mano de la lista (cevenClienteOculto).
+  var _canales = cevenClientesConocidos().filter(function(n){ return !cevenClienteOculto(n); });
+  document.getElementById('client').value = _regiNombreConocido(r.primaryPartner, _canales);
   if(typeof aplicarTierDelCliente === 'function') aplicarTierDelCliente();
   if(typeof cevenClienteCambio === 'function') cevenClienteCambio();
-  document.getElementById('proyecto').value = r.proyecto;
+  document.getElementById('proyecto').value = _regiNombreConocido(r.cliente, cevenProyectosConocidos());
+  document.getElementById('obs').value = r.proyecto || '';
   document.getElementById('opg').value = r.regi || r.opd || '';
   if(r.mesCierre && typeof setMesCierre === 'function') setMesCierre(r.mesCierre);
   window._regiCopiadas[opd] = true;
-  showToast(r.regi
-    ? 'Cotización iniciada desde REGI "'+r.proyecto+'" (OPG '+r.regi+') — cargá los productos reales y usá "Agregar al pipeline".'
-    : 'Cotización iniciada desde REGI "'+r.proyecto+'" (OPG '+r.opd+') — cargá los productos reales y usá "Agregar al pipeline".');
+  showToast('Cotización iniciada desde REGI "'+(r.cliente || r.proyecto)+'" (OPG '+(r.regi || r.opd)+') — cargá los productos reales y usá "Agregar al pipeline".');
+}
+
+/* El Excel de HP trae la razón social ("Molver Technology S.A", "Krm
+   Ingenieria"); el equipo escribe el canal corto ("Molver", "KRM Ingenieria").
+   Si un nombre ya usado coincide —igual, o como primeras palabras del de HP,
+   sin acentos ni sufijo societario— se usa esa grafía, así la cotización cae
+   en el mismo grupo del pipeline y toma el nivel de precio del canal. Si no,
+   va el nombre del Excel tal cual: es un campo editable, y unir de más es peor
+   que unir de menos (ver cevenNormClient en shared/clientes.js). */
+function _regiNombreConocido(nombre, conocidos){
+  nombre = String(nombre || '').trim();
+  function _fold(s){
+    s = String(s || '').toLowerCase();
+    try{ s = s.normalize('NFD').replace(/[̀-ͯ]/g, ''); }catch(e){}
+    s = s.replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+    return s.replace(/\s+(s ?a ?u?|s ?r ?l|s ?a ?s|s ?a ?c ?i ?f ?i ?a)$/, '');
+  }
+  var f = _fold(nombre), mejor = '', largo = 0;
+  if(!f) return nombre;
+  (conocidos || []).forEach(function(k){
+    var fk = _fold(k);
+    if(fk.length < 3 || fk.length <= largo) return;
+    if(f === fk || f.indexOf(fk + ' ') === 0){ mejor = k; largo = fk.length; }
+  });
+  return mejor || nombre;
 }
 
 /* Checkbox "Perdida" de la tabla (04/09/2026): declara a mano que Ceven no
@@ -1929,7 +2245,12 @@ function _regiCopiarAPipeline(opd){
    Persiste en `forecast_override` (columna que ya existía en la base, ver el
    comentario de _cevenRegiPipeFetch): sobrevive las reimportaciones del
    Excel igual que ya hacía antes con el <select> de Forecast que se fue el
-   03/09/2026. */
+   03/09/2026.
+
+   23/10/2026: pide el MISMO motivo que marcar Perdido en el pipeline
+   (abrirModalMotivoPerdida, shared/pipeline-perdido.js) y lo guarda en
+   `perdido_motivo`, que existía desde el 31/08 sin usarse. Con cotización
+   real vinculada no hace nada: ahí manda el pipeline (_regiEstadoCeven). */
 function _regiMarcarPerdida(opd, marcar){
   if(!cevenCanUsePipeline()){
     showToast('Tu rol no permite marcar oportunidades de REGI como perdidas.');
@@ -1938,8 +2259,26 @@ function _regiMarcarPerdida(opd, marcar){
   }
   var r = (window._regiPipeRows || []).filter(function(x){ return x.opd === opd; })[0];
   if(!r) return;
-  var anterior = r.perdidaManual;
+  if(_regiEstadoCeven(r, _regiOpgVinculadosSet()).linkReal){
+    showToast('Esta oportunidad ya tiene cotización en Ceven: marcala como perdida desde el pipeline.');
+    renderPipeline();
+    return;
+  }
+  if(marcar && typeof abrirModalMotivoPerdida === 'function'){
+    abrirModalMotivoPerdida(
+      function(motivo){ _regiAplicarPerdida(r, true, motivo); },
+      function(){ renderPipeline(); }   // canceló: el switch vuelve a apagado
+    );
+    return;
+  }
+  _regiAplicarPerdida(r, marcar, null);
+}
+
+function _regiAplicarPerdida(r, marcar, motivo){
+  var opd = r.opd;
+  var anterior = r.perdidaManual, motivoAnterior = r.perdidoMotivo;
   r.perdidaManual = marcar;
+  r.perdidoMotivo = marcar ? motivo : null;
 
   /* Al marcarla, la fila pasa a contar como "vinculada" y el filtro por
      defecto la saca de la tabla. Antes se iba en el mismo frame del click y no
@@ -1972,9 +2311,10 @@ function _regiMarcarPerdida(opd, marcar){
   cevenAuthedFetch(_cevenRegiPipeRest('poly_regi_pipeline') + '?opd=eq.' + encodeURIComponent(opd), {
     method: 'PATCH',
     headers: {Prefer: 'return=minimal'},
-    body: JSON.stringify({forecast_override: marcar ? 'Perdido' : null})
+    body: JSON.stringify({forecast_override: marcar ? 'Perdido' : null, perdido_motivo: marcar ? motivo : null})
   }).catch(function(e){
     r.perdidaManual = anterior;
+    r.perdidoMotivo = motivoAnterior;
     _regiCancelarGracia(opd);
     renderPipeline();
     showError('No se pudo guardar el cambio: ' + ((e && e.message) || 'error desconocido'));
@@ -2007,6 +2347,19 @@ function _regiBindDelegation(){
       var act = el.getAttribute('data-act');
       if(act === 'expcli') togglePipeNode(el.getAttribute('data-k'));
       else if(act === 'regi-copiar') _regiCopiarAPipeline(el.getAttribute('data-opd'));
+      // Renumeradas por HP (23/10/2026).
+      else if(act === 'regi-renum') _regiAbrirRenum(el.getAttribute('data-opd'));
+      else if(act === 'regi-renum-si') _regiMarcarRenumerada(el.getAttribute('data-opd'), el.getAttribute('data-nuevo'));
+      else if(act === 'regi-renum-no'){
+        _regiRenumDescartar(el.getAttribute('data-opd'), el.getAttribute('data-nuevo'));
+        renderPipeline();
+      }
+      else if(act === 'regi-renum-deshacer'){
+        ev.preventDefault();
+        if(!cevenCanUsePipeline()){ showToast('Tu rol no permite deshacer una renumeración.'); return; }
+        var viejo = _regiFilaPorOpd(el.getAttribute('data-opd'));
+        if(viejo) _regiGuardarRenumerada(viejo, '', null);
+      }
     });
     // El checkbox "Perdida" (04/09/2026) es el único control editable que
     // quedó en esta tabla desde que volvió a ser una foto del Excel — de ahí

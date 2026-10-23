@@ -34,9 +34,16 @@
     try { history.replaceState({ cevenView: initialView }, ''); } catch(e){}
   }
 
+  /* Guardia de salida de una vista: fn(desde, hacia, seguir) devuelve true si
+     retiene la navegación (p. ej. un aviso de cambios sin guardar, ver
+     shared/quote-guard.js) y llama a seguir() si después hay que completarla. */
+  var leaveGuard = null;
+  function setLeaveGuard(fn){ leaveGuard = fn; }
+
   // Navegación pública entre vistas (lo llama goTo de cada cotizador).
   function goToView(name){
     if(name === currentView){ if(applyView) applyView(name); return; }
+    if(leaveGuard && leaveGuard(currentView, name, function(){ goToView(name); })) return;
     currentView = name;
     if(applyView) applyView(name);
     try { history.pushState({ cevenView: name }, '', '#' + name); } catch(e){}
@@ -72,14 +79,18 @@
     }
 
     // Sin modales → navegación entre vistas.
+    if(!applyView) return;
     var st = e.state;
-    if(st && st.cevenView && applyView){
-      currentView = st.cevenView;
-      applyView(st.cevenView);
-    } else if(applyView){
-      currentView = 'quote';
-      applyView('quote');
+    var dest = (st && st.cevenView) || 'quote';
+    /* El navegador ya retrocedió: si la guardia retiene la salida, se vuelve a
+       empujar la vista actual para que la URL y el próximo "Atrás" sigan
+       coincidiendo con lo que se ve. */
+    if(leaveGuard && dest !== currentView && leaveGuard(currentView, dest, function(){ goToView(dest); })){
+      try { history.pushState({ cevenView: currentView }, '', '#' + currentView); } catch(err){}
+      return;
     }
+    currentView = dest;
+    applyView(dest);
   });
 
   // Escape: si hay un modal abierto, retrocede en el historial → el popstate
@@ -93,6 +104,7 @@
   window.cevenNav = {
     registerView: registerView,
     goToView:     goToView,
+    setLeaveGuard: setLeaveGuard,
     openOverlay:  openOverlay,
     notifyClosed: notifyClosed
   };

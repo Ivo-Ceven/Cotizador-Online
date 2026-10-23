@@ -206,7 +206,18 @@ input::placeholder,textarea::placeholder{color:#aeaeb2}
    así que el <b> se distingue por peso y no por color. */
 .cbo-op b{font-weight:600;color:var(--acc)}
 .cbo-op.on b{color:inherit}
-.cbo-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cbo-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:auto}
+/* La × que saca un canal de la lista. Aparece con el hover o la fila resaltada
+   para no llenar la lista de cruces; en pantallas táctiles (sin hover) se ve
+   siempre. */
+.cbo-x{
+  flex-shrink:0;align-self:center;width:20px;height:20px;line-height:19px;text-align:center;
+  border-radius:50%;font-size:15px;color:var(--ct2);opacity:0;
+}
+.cbo-op:hover .cbo-x,.cbo-op.on .cbo-x{opacity:1}
+.cbo-x:hover{background:#d70015;color:#fff}
+.cbo-op.on .cbo-x{color:inherit}
+@media (hover:none){.cbo-x{opacity:1}}
 /* El nivel de precio del cliente. Es exactamente el que se va a aplicar al
    elegirlo, así que no puede competir con el nombre pero tiene que leerse. */
 .cbo-t{

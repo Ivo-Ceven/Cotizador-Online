@@ -77,6 +77,7 @@ var ASSETS = [
   './shared/opciones.js',
   './shared/catalog-core.js',
   './shared/quote-num.js',
+  './shared/quote-guard.js',
   './shared/clientes.js',
   './shared/clientes-db.js',
   './shared/equipo.js',

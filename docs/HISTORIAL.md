@@ -150,6 +150,163 @@ Los signups públicos están cerrados: la única alta es la Edge Function
 
 ---
 
+## 23/10/2026 · REGI: oportunidades que HP renumeró
+
+En los casos encontrados, cuando HP "cambia el REGI" da de baja la oportunidad
+y la vuelve a cargar con OPD **y** REGI nuevos. IBERO ASISTENCIA:
+`0005283476` → `0005555397`, mismo nombre y monto. Pasaba esto:
+- la vieja quedaba "fuera del Excel" pero se conservaba porque tenía vínculo;
+- la nueva aparecía sin vincular;
+- "Monto total REGI" contaba la plata dos veces.
+
+Con IBERO, además, alguien marcó la vieja "Perdida" para sacarla del medio,
+así que suma USD 25.001 a "REGIs perdidas" sin haberse perdido.
+
+- **Migración `20261023161217_poly_regi_reemplazada_por`** (aplicada en
+  producción): columna `poly_regi_pipeline.reemplazada_por text`, el OPD de la
+  oportunidad nueva, guardado en la fila vieja. Solo agrega una columna vacía.
+  El upsert de la importación no la manda, así que sobrevive.
+- **Efecto** (`_regiAliasDe`, `_regiVigentes`, `_regiFilasDe`):
+  - la vieja sale de la tabla y de todos los totales;
+  - las cotizaciones con el OPG viejo se vinculan a la nueva sin editarlas;
+  - al reimportar, la vieja no se borra, porque es el registro del alias.
+  - No deja armar ciclos.
+- **UI**: un banner arriba de la tabla REGI sugiere los pares probables ("Sí,
+  es la misma" / "No"). La regla: la vieja salió del Excel, y hay una sola
+  candidata con el mismo cliente final y canal y además el mismo nombre o el
+  mismo monto. El "No" se recuerda por usuario en `localStorage`. Cada fila
+  "fuera del Excel" tiene "↪ Renumerada…" con un selector (las parecidas con
+  ★). La nueva muestra "↪ antes OPD-… · deshacer". Nada se escribe sin
+  confirmación.
+- EY Global "Segunda Etapa" **no** se sugiere: otro nombre y otro monto, con
+  cotizaciones propias en cada una.
+- **IBERO no se corrigió**, por pedido del usuario: el banner lo va a sugerir
+  y queda a criterio de quien lo vea.
+
+`check-pipe-regi-opg.js`: 13 casos nuevos con la forma real de IBERO y EY,
+128/128. `check-pipe-regi-stats.js` 141/141. No probado en navegador.
+
+## 23/10/2026 · REGI: se vincula por número, cuenta el archivo y "Perdida" tiene una sola fuente
+
+Todo en `poly/js/pipeline-regi.js`. Revisión hecha contra la base real.
+
+**Vínculo por número.** HP numera la oportunidad una vez: el REGI aprobado
+lleva el mismo número que su OPD (verificado en las 77 aprobadas). Antes se
+comparaba el texto exacto de `regi || opd` contra `pipeline.opg`. Por eso
+#0043, cargada con `OPD-0005258523`, quedó fuera del agregado Ceven el día en
+que HP aprobó el `REGI-0005258523`. `_regiNumero()` extrae un único bloque de
+≥ 6 dígitos sin ceros a la izquierda; `_regiNormCodigo()` usa ese número como
+clave o, si no hay, el texto como antes (OPG libres tipo "PMI"). Con dos
+números distintos no vincula.
+
+**El archivo mensual también vincula.** `_regiOpgVinculadosSet()` sumaba solo
+`getPipeline()`. Una cotización facturada se archiva al mes siguiente y su REGI
+volvía a aparecer "sin vincular", con "Copiar a Ceven" y fuera de "REGI CEVEN".
+Afectaba a OPD-0005035127 (#0107), OPD-0005475602 (#0170) y OPD-0005475635
+(#0172). Ahora entra `getArchive()`, deduplicado por `id`. Esas tres pasan a
+vinculadas y suben "REGI CEVEN" y "REGI vinculados".
+
+**"Perdida": una sola fuente** (`_regiEstadoCeven`, que usan la tabla, los
+KPI del header, su desglose y el borrado al reimportar).
+- Con cotización real vinculada manda el pipeline de Ceven. El switch de la
+  tabla REGI se ve trabado, refleja ese estado y nombra las cotizaciones.
+- Un switch prendido de antes se ignora; antes una oportunidad podía estar
+  "perdida" por el switch y viva en el pipeline, y contaba en los dos KPI.
+  Caso real: #0188 / REGI-0005370551. Ya no existe el `via: 'ambas'`.
+- Sin cotización, el switch pide el mismo motivo que el pipeline
+  (`abrirModalMotivoPerdida`) y lo guarda en `poly_regi_pipeline.perdido_motivo`,
+  que existía desde el 31/08 sin usarse. Las 14 declaradas de antes no tienen
+  motivo.
+- La celda "✓ Vinculada" / "✕ Perdida" muestra en el título qué cotizaciones son.
+
+`scripts/check-pipe-regi-opg.js`: 24 casos nuevos (número, archivo, perdida
+única, motivo) y se corrigió el de "Copiar a Ceven", que verificaba el mapeo
+viejo. 115/115; `check-pipe-regi-stats.js` 141/141. No probado en navegador.
+
+**Para revisar a mano** (OPG con formato REGI que no está en el Excel actual):
+#0235 `REGI-0005328929` (¿typo de REGI-0005329029, Banco Ciudad?), #0272
+`REGI-0005528718`, #0275 `REGI-0005634649`, #0026 `REGI-0005035102`, #0211
+`REGI-0005466765`, #0132 `REGI-0004993682`, #0248 `REGI-0005096003`.
+
+Fallan desde antes, sin relación con esto: `check-precache` (portal y
+`nota-pedido.js` fuera del precache), `check-sync-colecciones` (1),
+`check-portal-pricing-parity`, `check-entrega`.
+
+## 23/10/2026 · Sacar canales del desplegable
+
+Cada opción del combo de **Canal** (`shared/clientes.js`) tiene una × (o Supr
+sobre la opción resaltada con ↑/↓) que la saca de la lista, con Deshacer. No
+borra nada: la lista se arma con el pipeline, el historial y la tabla
+`clientes`, que son datos reales. Marca `oculto: true` en la ficha
+(`cclientes`, que se sincroniza al equipo por marca) y el combo la salta.
+Escribir el nombre a mano en el campo (evento `change`) lo devuelve. El
+"Copiar a Ceven" de REGI tampoco propone un canal oculto. Solo Canal, no
+Cliente final: no tiene ficha propia y compartiría la clave normalizada con un
+canal del mismo nombre. **No probado en navegador.**
+
+Mismo día: con el campo Canal ya escrito (el "Copiar a Ceven" de REGI deja
+"Icap Sa") el combo filtraba por ese texto al abrirse y mostraba "Sin
+coincidencias" en vez de la lista. Ahora el texto precargado no filtra hasta
+que se tipea (`_tipeo`): se ve la lista completa con lo que coincide arriba, y
+si no coincide nada, un aviso de que ese nombre no está en la lista.
+`scripts/check-combo-cliente.js` suma 6 casos (precargado y ocultos): 45/45.
+
+## 23/10/2026 · "Copiar a Ceven" del Pipeline REGI ponía los datos en el campo equivocado
+
+Una fila REGI es un **cliente final**: `cliente` = Account del Excel de HP,
+`primaryPartner` = el canal, `proyecto` = el nombre de la oportunidad.
+`_regiCopiarAPipeline()` (`poly/js/pipeline-regi.js`) copiaba el cliente final a
+**Canal** y la oportunidad a **Cliente final**. Ahora:
+
+| Campo de la cotización | Sale de |
+|---|---|
+| Canal | Primary Partner |
+| Cliente (cliente final) | Account |
+| Proyecto/observaciones | Opportunity (no sale en el PDF) |
+| Oportunidad (OPG) | REGI, o el OPD si todavía no tiene |
+
+`_regiNombreConocido()` usa la grafía que el equipo ya usa si coincide
+(igual, o como primeras palabras del nombre de HP, sin acentos ni sufijo
+societario): "Molver Technology S.A" → "Molver", "Abc1 Technology Sa" → "ABC1",
+"Krm Ingenieria" → "KRM Ingenieria". Si no hay coincidencia va el nombre del
+Excel tal cual. Probado en Node con los nombres reales de la base; **no
+probado en navegador.**
+
+## 23/10/2026 · Salir de la pestaña Cotización ya no deja la cotización cargada
+
+El operativo no tocaba "Nueva": iba al pipeline o al historial, volvía, borraba
+los campos de la última cotización, cargaba otra y guardaba. Como el número
+seguía marcado como "el que se está editando" (`cevenEditandoQNum`), `doSave()`
+lo tomaba como una edición legítima y **pisaba la cotización anterior**.
+
+- **`shared/quote-guard.js`** (nuevo, en Apple/Poly/Huawei/Legamaster; el
+  multimarca no): al salir del flujo de cotización (`quote`, `catalog`,
+  `addprod`, `nac`, `qnac`) hacia historial, pipeline o estadísticas:
+  - si lo que se ve está guardado, se limpia sin preguntar;
+  - si tiene cambios sin guardar, un `confirmModal` avisa que se pierden
+    ("Seguir editando" / "Salir sin guardar").
+  - Al volver hay una cotización nueva. Cerrar, recargar o irse a otra marca con
+    cambios sin guardar dispara el aviso nativo (`beforeunload`).
+- "Sin guardar" = la huella (`_snapshotQuoteState()` sin el número) difiere de
+  la tomada en el último `doSave()` exitoso, `editQuoteFromHistory()` o
+  `nuevaCotizacion()`.
+- **`nav.js`**: `cevenNav.setLeaveGuard(fn)`. Se consulta en `goToView()` y en
+  el `popstate` (botón Atrás); si retiene, vuelve a empujar la vista actual.
+- **`nuevaCotizacion(silencioso)`**: la limpieza al salir no muestra Deshacer
+  ni reserva número (`cevenNextQNum()`), así no se quema uno por cada ida al
+  pipeline.
+- `APP_VERSION` 8.4 → 8.5 (archivo nuevo en el precache de `sw.js`).
+
+Probado con un arnés en Node sobre `nav.js` + `quote-guard.js` reales (9
+casos: vacía, guardada, catálogo, sin guardar, salir igual, editada, Atrás,
+`beforeunload`). **No probado en navegador.** Riesgo a mirar: si algún render
+asíncrono (sync de catálogo, autofill del ejecutivo) cambia la cotización
+después de abrirla, va a avisar "sin guardar" sin que el usuario haya tocado
+nada.
+
+**Lo que esto no cubre**: borrar todo y cargar otra cotización *sin salir de
+la pestaña* sigue pisando el número abierto al guardar.
+
 ## 19/10/2026 · La fila del pipeline sigue a su cotización
 
 El detalle de una fila avisaba "la fila dice USD X: la cotización se editó
